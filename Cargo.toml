@@ -1,0 +1,21 @@
+[package]
+name = "poe2-auto-flask"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+description = "A small Path of Exile 2 companion for Proton, developed on Linux"
+publish = false
+
+[dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Threading",
+] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
