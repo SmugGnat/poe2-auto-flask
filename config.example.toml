@@ -1,0 +1,16 @@
+[general]
+# Auto-flask is always disabled in towns. Hideouts are disabled by default; set this to true to
+# allow auto-flask use in hideouts.
+enable_in_hideout = false
+
+[health]
+enabled = true
+threshold_percent = 60.0
+
+[mana]
+enabled = true
+threshold_percent = 30.0
+
+# Auto mode uses a fixed 100 ms (10 Hz) internal poll interval. Flask key bindings are read from
+# PoE2's own production config, while repeat timing and charge availability are read from PoE2
+# itself. PoE2 has exactly two flask inventory slots: life and mana.

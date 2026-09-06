@@ -1,0 +1,7 @@
+/target/
+*.pdb
+*.log
+config.toml
+.idea/
+.vscode/
+.DS_Store
