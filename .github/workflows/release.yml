@@ -36,25 +36,32 @@ jobs:
         run: |
           git fetch origin main --tags
 
-          $commit = (git rev-parse HEAD).Trim()
           $main = (git rev-parse origin/main).Trim()
 
           if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
-            if ($commit -ne $main) {
-              throw "Manual releases must build the current main commit."
-            }
-
             $version = '${{ inputs.version }}'
             if ($version -notmatch '^\d+\.\d+\.\d+$') {
               throw "Manual release version must use MAJOR.MINOR.PATCH format; got '$version'."
             }
             $tag = "v$version"
 
-            $existingTag = git show-ref --tags --verify "refs/tags/$tag" 2>$null
+            git show-ref --tags --verify "refs/tags/$tag" 2>$null
             if ($LASTEXITCODE -eq 0) {
-              $tagCommit = (git rev-list -n 1 $tag).Trim()
-              if ($tagCommit -ne $commit) {
-                throw "Tag $tag already exists on a different commit."
+              $commit = (git rev-list -n 1 $tag).Trim()
+
+              git merge-base --is-ancestor $commit origin/main
+              if ($LASTEXITCODE -ne 0) {
+                throw "Existing tag $tag is not contained in main."
+              }
+
+              git checkout --detach $commit
+              if ($LASTEXITCODE -ne 0) {
+                throw "Failed to check out existing tag $tag."
+              }
+            } else {
+              $commit = (git rev-parse HEAD).Trim()
+              if ($commit -ne $main) {
+                throw "New manual releases must build the current main commit."
               }
             }
           } else {
@@ -63,6 +70,7 @@ jobs:
               throw "Release tag must use vMAJOR.MINOR.PATCH format; got '$tag'."
             }
             $version = $Matches.version
+            $commit = (git rev-parse HEAD).Trim()
 
             git merge-base --is-ancestor $commit origin/main
             if ($LASTEXITCODE -ne 0) {
