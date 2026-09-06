@@ -55,10 +55,7 @@ fn run() -> Result<(), String> {
         .arg("runinprefix")
         .arg(&args.helper)
         .args(&args.helper_args)
-        .env(
-            "STEAM_COMPAT_CLIENT_INSTALL_PATH",
-            &launch.steam_client,
-        )
+        .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &launch.steam_client)
         .env("STEAM_COMPAT_DATA_PATH", &launch.compat_data)
         .status()
         .map_err(|error| format!("failed to start Proton: {error}"))?;
@@ -106,8 +103,8 @@ fn parse_args() -> Result<Option<Args>, String> {
 }
 
 fn default_helper_path() -> Result<PathBuf, String> {
-    let executable =
-        env::current_exe().map_err(|error| format!("could not determine launcher path: {error}"))?;
+    let executable = env::current_exe()
+        .map_err(|error| format!("could not determine launcher path: {error}"))?;
     let directory = executable
         .parent()
         .ok_or_else(|| "launcher path has no parent directory".to_string())?;
@@ -124,7 +121,8 @@ fn print_help() {
 }
 
 fn discover_launch_environment() -> Result<LaunchEnvironment, String> {
-    let entries = fs::read_dir("/proc").map_err(|error| format!("could not read /proc: {error}"))?;
+    let entries =
+        fs::read_dir("/proc").map_err(|error| format!("could not read /proc: {error}"))?;
 
     for entry in entries.flatten() {
         let file_name = entry.file_name();
