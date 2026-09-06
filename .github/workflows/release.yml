@@ -50,9 +50,12 @@ jobs:
             }
             $tag = "v$version"
 
-            $existingTag = git ls-remote --tags origin "refs/tags/$tag"
-            if ($existingTag) {
-              throw "Tag $tag already exists."
+            $existingTag = git show-ref --tags --verify "refs/tags/$tag" 2>$null
+            if ($LASTEXITCODE -eq 0) {
+              $tagCommit = (git rev-list -n 1 $tag).Trim()
+              if ($tagCommit -ne $commit) {
+                throw "Tag $tag already exists on a different commit."
+              }
             }
           } else {
             $tag = $env:GITHUB_REF_NAME
@@ -93,40 +96,75 @@ jobs:
 
       - name: Prepare release assets
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $source = 'target/x86_64-pc-windows-msvc/release/poe2-auto-flask.exe'
           $exe = 'poe2-auto-flask.exe'
-          $checksum = 'poe2-auto-flask.exe.sha256'
-          $notices = 'THIRD_PARTY_NOTICES.txt'
+          $licenses = 'LICENSES.txt'
+          $thirdParty = Join-Path $env:RUNNER_TEMP 'THIRD_PARTY_NOTICES.txt'
 
           Copy-Item $source $exe
-          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  poe2-auto-flask.exe" | Set-Content -Encoding ascii $checksum
 
           & ./scripts/collect-third-party-licenses.ps1 `
             -OutputDir "$env:RUNNER_TEMP/poe2-auto-flask-third-party-licenses" `
-            -NoticePath $notices
+            -NoticePath $thirdParty
 
-          $sourceUrl = "https://github.com/$env:GITHUB_REPOSITORY/tree/$env:RELEASE_TAG"
-          $notes = @(
-            "Automated CI build from tag $env:RELEASE_TAG."
-            ""
-            "Commit: $env:RELEASE_SHA"
-            "Source: $sourceUrl"
-            "License: GPL-3.0-only"
-            ""
-            "SHA-256 (poe2-auto-flask.exe):"
-            ""
-            '```text'
-            $hash
-            '```'
-          )
-          $notes | Set-Content -Encoding utf8 release-notes.md
+          @(
+            'PoE2 Auto Flask'
+            'GPL-3.0-only and third-party dependency licenses'
+            ''
+            '=============================================================================='
+            'PROJECT LICENSE'
+            '=============================================================================='
+            ''
+          ) | Set-Content -LiteralPath $licenses -Encoding utf8
+          Get-Content -LiteralPath LICENSE -Raw | Add-Content -LiteralPath $licenses -Encoding utf8
+          @(
+            ''
+            '=============================================================================='
+            'THIRD-PARTY DEPENDENCY LICENSES'
+            '=============================================================================='
+            ''
+          ) | Add-Content -LiteralPath $licenses -Encoding utf8
+          Get-Content -LiteralPath $thirdParty -Raw | Add-Content -LiteralPath $licenses -Encoding utf8
+
+          $existingReleases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
+          $previousRelease = $existingReleases |
+            Where-Object { -not $_.draft -and $_.tag_name -ne $env:RELEASE_TAG } |
+            Sort-Object published_at -Descending |
+            Select-Object -First 1
+
+          if ($null -eq $previousRelease) {
+            @(
+              'Initial public release.'
+              ''
+              '- Automatic Life and Mana flask use with configurable thresholds'
+              '- Reads PoE2 flask bindings automatically'
+              '- Supports Windows x64 and Linux through Steam Proton'
+            ) | Set-Content -LiteralPath release-notes.md -Encoding utf8
+          } else {
+            $generated = gh api --method POST "repos/$env:GITHUB_REPOSITORY/releases/generate-notes" `
+              -f "tag_name=$env:RELEASE_TAG" `
+              -f "target_commitish=$env:RELEASE_SHA" `
+              -f "previous_tag_name=$($previousRelease.tag_name)" | ConvertFrom-Json
+            $generated.body | Set-Content -LiteralPath release-notes.md -Encoding utf8
+          }
 
       - name: Create release tag
         if: github.event_name == 'workflow_dispatch'
         shell: pwsh
         run: |
+          git show-ref --tags --verify "refs/tags/$env:RELEASE_TAG" 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $tagCommit = (git rev-list -n 1 $env:RELEASE_TAG).Trim()
+            if ($tagCommit -ne $env:RELEASE_SHA) {
+              throw "Tag $env:RELEASE_TAG exists on a different commit."
+            }
+            Write-Host "Tag $env:RELEASE_TAG already exists on the release commit."
+            exit 0
+          }
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a $env:RELEASE_TAG $env:RELEASE_SHA -m $env:RELEASE_TAG
@@ -142,4 +180,31 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create $env:RELEASE_TAG poe2-auto-flask.exe poe2-auto-flask.exe.sha256 LICENSE ACKNOWLEDGEMENTS.md THIRD_PARTY_NOTICES.txt --verify-tag --title $env:RELEASE_TAG --notes-file release-notes.md
+        run: |
+          gh release view $env:RELEASE_TAG --json tagName *> $null
+          $releaseExists = ($LASTEXITCODE -eq 0)
+
+          if ($releaseExists) {
+            $release = gh release view $env:RELEASE_TAG --json assets | ConvertFrom-Json
+            foreach ($asset in $release.assets) {
+              gh release delete-asset $env:RELEASE_TAG $asset.name --yes
+              if ($LASTEXITCODE -ne 0) {
+                throw "Failed to remove old release asset $($asset.name)."
+              }
+            }
+
+            gh release edit $env:RELEASE_TAG --title $env:RELEASE_TAG --notes-file release-notes.md
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to update release notes for $env:RELEASE_TAG."
+            }
+
+            gh release upload $env:RELEASE_TAG poe2-auto-flask.exe LICENSES.txt --clobber
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to upload release assets for $env:RELEASE_TAG."
+            }
+          } else {
+            gh release create $env:RELEASE_TAG poe2-auto-flask.exe LICENSES.txt --verify-tag --title $env:RELEASE_TAG --notes-file release-notes.md
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to publish release $env:RELEASE_TAG."
+            }
+          }
