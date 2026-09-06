@@ -12,4 +12,4 @@ Because portions of the implementation were developed with reference to GPLv3 Ga
 
 The original upstream C# projects and binaries are not bundled with `poe2-auto-flask`. These acknowledgements do not imply endorsement, authorship, or affiliation.
 
-Rust dependencies retain their own licenses. Official releases include `THIRD_PARTY_NOTICES.txt`, generated from the exact registry packages selected by `Cargo.lock` for the release build.
+Rust dependencies retain their own licenses. Official releases include the project and third-party dependency license terms in `LICENSES.txt`, generated from the exact registry packages selected by `Cargo.lock` for the release build.
