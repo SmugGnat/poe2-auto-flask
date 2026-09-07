@@ -238,6 +238,7 @@ jobs:
           cp linux-artifact/poe2-auto-flask-linux-launcher AppDir/usr/bin/poe2-auto-flask
           cp windows-artifact/poe2-auto-flask-windows-x64.exe AppDir/usr/lib/poe2-auto-flask/poe2-auto-flask.exe
           cp LICENSE AppDir/usr/share/licenses/poe2-auto-flask/LICENSE
+          cp windows-artifact/LICENSES.txt AppDir/usr/share/licenses/poe2-auto-flask/LICENSES.txt
           cp packaging/linux/AppRun AppDir/AppRun
           cp packaging/linux/terminal-wrapper AppDir/usr/bin/poe2-auto-flask-terminal
           cp packaging/linux/poe2-auto-flask.desktop AppDir/poe2-auto-flask.desktop
