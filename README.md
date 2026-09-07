@@ -23,9 +23,28 @@ The helper reads game state without writing to game memory and sends normal flas
 
 ## 📦 Download
 
-Download `poe2-auto-flask.exe` from the [Releases](https://github.com/SmugGnat/poe2-auto-flask/releases) page.
+Download the file for your OS from the [Releases](https://github.com/SmugGnat/poe2-auto-flask/releases) page:
 
-There is no installer. Put the EXE in a writable folder and run it once. On first run, `config.toml` is created beside the EXE automatically.
+- **Windows x64:** `poe2-auto-flask-windows-x64.exe`
+- **Linux x86-64:** `poe2-auto-flask-x86_64.AppImage`
+
+There is no installer.
+
+### Windows
+
+Run the EXE normally.
+
+### Linux
+
+Make the AppImage executable once:
+
+```bash
+chmod +x poe2-auto-flask-x86_64.AppImage
+```
+
+Start Path of Exile 2 through Steam, then double-click the AppImage or run it from a terminal.
+
+The AppImage automatically finds the Steam install, PoE2 prefix, and Proton version currently being used by the game. Protontricks and custom Steam launch options are not required.
 
 ---
 
@@ -56,6 +75,22 @@ threshold_percent = 30.0
 
 Thresholds can be set from `1` to `99`.
 
+The config file is stored in the normal per-user config location:
+
+**Windows**
+
+```text
+%APPDATA%\poe2-auto-flask\config.toml
+```
+
+**Linux**
+
+```text
+~/.config/poe2-auto-flask/config.toml
+```
+
+`$XDG_CONFIG_HOME` is used instead of `~/.config` when it is set.
+
 Changes to `config.toml` are picked up automatically while the helper is running.
 
 Flask keys do not need to be added to the config. The helper reads them directly from PoE2 and also detects binding changes while running.
@@ -69,23 +104,22 @@ Flask keys do not need to be added to the config. The helper reads them directly
 Run:
 
 ```text
-poe2-auto-flask.exe
+poe2-auto-flask-windows-x64.exe
 ```
 
 PoE2 can be started before or after the helper.
 
 ### Linux / Steam Proton
 
-Start Path of Exile 2 through Steam first, then run:
+Start Path of Exile 2 through Steam first, then run or double-click:
 
-```fish
-protontricks-launch --appid 2694490 \
-    "$HOME/path/to/poe2-auto-flask.exe"
+```text
+poe2-auto-flask-x86_64.AppImage
 ```
 
-Replace the path with the location of the downloaded EXE.
+If PoE2 is not running, a double-clicked AppImage opens a terminal with an error message instead of failing silently.
 
-If PoE2 closes, the helper will close as well.
+If PoE2 closes, the helper closes as well.
 
 ---
 
@@ -110,13 +144,19 @@ Keyboard flask bindings are supported in both WASD and mouse + keyboard modes. C
 
 Read-only debug mode can be started with:
 
+**Windows**
+
 ```text
-poe2-auto-flask.exe --debug
+poe2-auto-flask-windows-x64.exe --debug
+```
+
+**Linux**
+
+```bash
+./poe2-auto-flask-x86_64.AppImage --debug
 ```
 
 Debug mode shows the detected game state, area, Life/Mana values, flask charges, and active flask state without sending flask input.
-
-On Linux, use the same Proton command with `--debug` added to the end.
 
 If a PoE2 update changes required game structures, the helper stops sending input rather than guessing.
 
@@ -125,7 +165,7 @@ If a PoE2 update changes required game structures, the helper stops sending inpu
 <details>
 <summary><strong>Building from source</strong></summary>
 
-Requires Rust 1.85 or newer and the Windows x64 MSVC target.
+The Windows helper requires Rust 1.85 or newer and the Windows x64 MSVC target.
 
 ```text
 rustup target add x86_64-pc-windows-msvc
@@ -135,11 +175,17 @@ cargo test --locked --target x86_64-pc-windows-msvc
 cargo build --locked --release --target x86_64-pc-windows-msvc
 ```
 
-The finished executable is written to:
+The Linux launcher is a separate Rust crate under `linux-launcher/`.
 
 ```text
-target\x86_64-pc-windows-msvc\release\poe2-auto-flask.exe
+cd linux-launcher
+cargo fmt -- --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
+cargo build --locked --release
 ```
+
+Release AppImages are assembled by GitHub Actions.
 
 </details>
 
