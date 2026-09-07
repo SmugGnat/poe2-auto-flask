@@ -41,7 +41,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -128,7 +128,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust 1.85
         uses: dtolnay/rust-toolchain@1.85.0
@@ -145,7 +145,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -178,7 +178,7 @@ jobs:
             -NoticePath "dist/THIRD_PARTY_NOTICES.txt"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: poe2-auto-flask-windows-x64
           path: dist/
@@ -191,7 +191,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust 1.85
         uses: dtolnay/rust-toolchain@1.85.0
@@ -221,7 +221,7 @@ jobs:
           cp LICENSE dist/
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: poe2-auto-flask-linux-launcher
           path: dist/
@@ -234,16 +234,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download Windows helper
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: poe2-auto-flask-windows-x64
           path: windows-artifact
 
       - name: Download Linux launcher
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: poe2-auto-flask-linux-launcher
           path: linux-artifact
@@ -299,7 +299,7 @@ jobs:
           chmod +x dist/poe2-auto-flask-linux-x86_64.AppImage
 
       - name: Upload AppImage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: poe2-auto-flask-linux-x86_64-appimage
           path: dist/poe2-auto-flask-linux-x86_64.AppImage
