@@ -139,6 +139,7 @@ jobs:
             AppDir/usr/share/licenses/poe2-auto-flask
 
           cp linux-artifact/poe2-auto-flask-linux-launcher AppDir/usr/bin/poe2-auto-flask
+          cp packaging/linux/terminal-wrapper AppDir/usr/bin/poe2-auto-flask-terminal
           cp windows-artifact/poe2-auto-flask.exe AppDir/usr/lib/poe2-auto-flask/
           cp LICENSE AppDir/usr/share/licenses/poe2-auto-flask/LICENSE
           cp windows-artifact/THIRD_PARTY_NOTICES.txt \
@@ -148,7 +149,10 @@ jobs:
           cp packaging/linux/poe2-auto-flask.svg AppDir/poe2-auto-flask.svg
           ln -s poe2-auto-flask.svg AppDir/.DirIcon
 
-          chmod +x AppDir/AppRun AppDir/usr/bin/poe2-auto-flask
+          chmod +x \
+            AppDir/AppRun \
+            AppDir/usr/bin/poe2-auto-flask \
+            AppDir/usr/bin/poe2-auto-flask-terminal
 
       - name: Download AppImage tools
         run: |
