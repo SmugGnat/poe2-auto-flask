@@ -1,6 +1,7 @@
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs;
+use std::io;
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -8,6 +9,7 @@ use std::process::{Command, ExitCode};
 
 const APP_ID: &str = "2694490";
 const GAME_EXE: &[u8] = b"PathOfExileSteam.exe";
+const BUNDLED_HELPER_ENV: &str = "POE2_AUTO_FLASK_BUNDLED_HELPER";
 
 struct LaunchEnvironment {
     pid: u32,
@@ -17,7 +19,7 @@ struct LaunchEnvironment {
 }
 
 struct Args {
-    helper: PathBuf,
+    helper: Option<PathBuf>,
     helper_args: Vec<OsString>,
 }
 
@@ -36,10 +38,11 @@ fn run() -> Result<(), String> {
         return Ok(());
     };
 
-    if !args.helper.is_file() {
+    let helper = resolve_helper_path(args.helper)?;
+    if !helper.is_file() {
         return Err(format!(
             "helper executable was not found at {}",
-            args.helper.display()
+            helper.display()
         ));
     }
 
@@ -53,7 +56,7 @@ fn run() -> Result<(), String> {
 
     let status = Command::new(&launch.proton)
         .arg("runinprefix")
-        .arg(&args.helper)
+        .arg(&helper)
         .args(&args.helper_args)
         .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &launch.steam_client)
         .env("STEAM_COMPAT_DATA_PATH", &launch.compat_data)
@@ -68,7 +71,7 @@ fn run() -> Result<(), String> {
 }
 
 fn parse_args() -> Result<Option<Args>, String> {
-    let mut helper = default_helper_path()?;
+    let mut helper = None;
     let mut helper_args = Vec::new();
     let mut args = env::args_os().skip(1);
 
@@ -78,13 +81,13 @@ fn parse_args() -> Result<Option<Args>, String> {
             return Ok(None);
         }
         if arg == OsStr::new("--helper") {
-            helper = PathBuf::from(
+            helper = Some(PathBuf::from(
                 args.next()
                     .ok_or_else(|| "--helper requires a path".to_string())?,
-            );
+            ));
             continue;
         }
-        if arg == OsStr::new("--debug") {
+        if arg == OsStr::new("--auto") || arg == OsStr::new("--debug") {
             helper_args.push(arg);
             continue;
         }
@@ -102,6 +105,18 @@ fn parse_args() -> Result<Option<Args>, String> {
     }))
 }
 
+fn resolve_helper_path(explicit: Option<PathBuf>) -> Result<PathBuf, String> {
+    if let Some(helper) = explicit {
+        return Ok(helper);
+    }
+
+    if let Some(source) = env::var_os(BUNDLED_HELPER_ENV) {
+        return install_bundled_helper(&PathBuf::from(source));
+    }
+
+    default_helper_path()
+}
+
 fn default_helper_path() -> Result<PathBuf, String> {
     let executable = env::current_exe()
         .map_err(|error| format!("could not determine launcher path: {error}"))?;
@@ -111,11 +126,90 @@ fn default_helper_path() -> Result<PathBuf, String> {
     Ok(directory.join("poe2-auto-flask.exe"))
 }
 
+fn install_bundled_helper(source: &Path) -> Result<PathBuf, String> {
+    if !source.is_file() {
+        return Err(format!(
+            "bundled helper executable was not found at {}",
+            source.display()
+        ));
+    }
+
+    let target_dir = user_data_dir()?.join("poe2-auto-flask");
+    fs::create_dir_all(&target_dir).map_err(|error| {
+        format!(
+            "could not create helper directory {}: {error}",
+            target_dir.display()
+        )
+    })?;
+
+    let target = target_dir.join("poe2-auto-flask.exe");
+    if files_match(source, &target).map_err(|error| {
+        format!(
+            "could not compare bundled helper with {}: {error}",
+            target.display()
+        )
+    })? {
+        return Ok(target);
+    }
+
+    let temporary = target_dir.join(format!(
+        ".poe2-auto-flask.exe.tmp-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&temporary);
+
+    if let Err(error) = fs::copy(source, &temporary) {
+        let _ = fs::remove_file(&temporary);
+        return Err(format!(
+            "could not stage helper at {}: {error}",
+            temporary.display()
+        ));
+    }
+
+    if let Err(error) = fs::rename(&temporary, &target) {
+        let _ = fs::remove_file(&temporary);
+        return Err(format!(
+            "could not install helper at {}: {error}",
+            target.display()
+        ));
+    }
+
+    println!("Helper updated: {}", target.display());
+    Ok(target)
+}
+
+fn user_data_dir() -> Result<PathBuf, String> {
+    if let Some(path) = env::var_os("XDG_DATA_HOME").filter(|path| !path.is_empty()) {
+        return Ok(PathBuf::from(path));
+    }
+
+    let home = env::var_os("HOME")
+        .filter(|path| !path.is_empty())
+        .ok_or_else(|| "HOME is not set and XDG_DATA_HOME is unavailable".to_string())?;
+
+    Ok(PathBuf::from(home).join(".local").join("share"))
+}
+
+fn files_match(left: &Path, right: &Path) -> io::Result<bool> {
+    let left_metadata = fs::metadata(left)?;
+    let right_metadata = match fs::metadata(right) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+
+    if left_metadata.len() != right_metadata.len() {
+        return Ok(false);
+    }
+
+    Ok(fs::read(left)? == fs::read(right)?)
+}
+
 fn print_help() {
     println!("poe2-auto-flask Linux launcher");
     println!();
     println!("Usage:");
-    println!("  poe2-auto-flask-linux-launcher [--debug] [--helper PATH]");
+    println!("  poe2-auto-flask-linux-launcher [--auto | --debug] [--helper PATH]");
     println!();
     println!("Path of Exile 2 must already be running through Steam Proton.");
 }
@@ -218,7 +312,9 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{contains_bytes, env_value, environment_matches_app, find_proton};
+    use super::{
+        contains_bytes, env_value, environment_matches_app, files_match, find_proton,
+    };
     use std::env;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
@@ -273,6 +369,23 @@ mod tests {
 
         let tool_paths = env::join_paths([first.as_os_str(), second.as_os_str()]).unwrap();
         assert_eq!(find_proton(&tool_paths), Some(proton));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn compares_helper_payload_contents() {
+        let root = unique_temp_dir();
+        fs::create_dir_all(&root).unwrap();
+
+        let left = root.join("left.exe");
+        let right = root.join("right.exe");
+        fs::write(&left, b"same helper").unwrap();
+        fs::write(&right, b"same helper").unwrap();
+        assert!(files_match(&left, &right).unwrap());
+
+        fs::write(&right, b"different").unwrap();
+        assert!(!files_match(&left, &right).unwrap());
 
         fs::remove_dir_all(root).unwrap();
     }
