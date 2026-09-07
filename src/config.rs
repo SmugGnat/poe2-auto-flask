@@ -7,6 +7,7 @@ use serde::Deserialize;
 use crate::file_watch::{file_stamp, FileStamp};
 
 const DEFAULT_CONFIG_TEXT: &str = include_str!("../config.example.toml");
+const CONFIG_PATH_ENV: &str = "POE2_AUTO_FLASK_CONFIG";
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default)]
@@ -112,12 +113,28 @@ impl Config {
 }
 
 impl ConfigManager {
-    pub fn load_next_to_exe() -> io::Result<Self> {
+    pub fn load_default() -> io::Result<Self> {
+        if let Some(path) = std::env::var_os(CONFIG_PATH_ENV).filter(|path| !path.is_empty()) {
+            return Self::load(PathBuf::from(path));
+        }
+
         let exe = std::env::current_exe()?;
-        let path = exe
+        let legacy_path = exe
             .parent()
             .unwrap_or_else(|| Path::new("."))
             .join("config.toml");
+
+        let path = std::env::var_os("APPDATA")
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+            .map(|path| path.join("poe2-auto-flask").join("config.toml"))
+            .unwrap_or_else(|| legacy_path.clone());
+
+        if path != legacy_path && !path.is_file() && legacy_path.is_file() {
+            create_parent_directory(&path)?;
+            fs::copy(&legacy_path, &path)?;
+        }
+
         Self::load(path)
     }
 
@@ -128,6 +145,7 @@ impl ConfigManager {
 
         let current = Config::default();
         current.validate()?;
+        create_parent_directory(&path)?;
 
         match create_default_config(&path) {
             Ok(()) => {
@@ -243,6 +261,13 @@ impl ConfigManager {
             ConfigReload::ReadError(message)
         }
     }
+}
+
+fn create_parent_directory(path: &Path) -> io::Result<()> {
+    let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) else {
+        return Ok(());
+    };
+    fs::create_dir_all(parent)
 }
 
 fn create_default_config(path: &Path) -> io::Result<()> {
