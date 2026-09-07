@@ -1,0 +1,12 @@
+#!/bin/sh
+
+set +e
+"$@"
+status=$?
+
+if [ "$status" -ne 0 ]; then
+    printf '\nPress Enter to close...'
+    IFS= read -r _
+fi
+
+exit "$status"
