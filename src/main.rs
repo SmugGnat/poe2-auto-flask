@@ -68,7 +68,7 @@ fn fail_usage() -> ! {
 }
 
 fn run(mode: Mode) -> io::Result<()> {
-    let mut config_manager = ConfigManager::load_next_to_exe()?;
+    let mut config_manager = ConfigManager::load_default()?;
     print_config_startup(config_manager.startup());
     let under_wine = running_under_wine();
 
