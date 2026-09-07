@@ -152,10 +152,7 @@ fn install_bundled_helper(source: &Path) -> Result<PathBuf, String> {
         return Ok(target);
     }
 
-    let temporary = target_dir.join(format!(
-        ".poe2-auto-flask.exe.tmp-{}",
-        std::process::id()
-    ));
+    let temporary = target_dir.join(format!(".poe2-auto-flask.exe.tmp-{}", std::process::id()));
     let _ = fs::remove_file(&temporary);
 
     if let Err(error) = fs::copy(source, &temporary) {
@@ -312,9 +309,7 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        contains_bytes, env_value, environment_matches_app, files_match, find_proton,
-    };
+    use super::{contains_bytes, env_value, environment_matches_app, files_match, find_proton};
     use std::env;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
