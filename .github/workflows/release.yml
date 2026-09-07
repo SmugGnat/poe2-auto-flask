@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   prepare:
@@ -24,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout release source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
@@ -107,7 +108,7 @@ jobs:
 
     steps:
       - name: Checkout release source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.sha }}
 
@@ -162,7 +163,7 @@ jobs:
           Get-Content -LiteralPath $thirdParty -Raw | Add-Content -LiteralPath $licenses -Encoding utf8
 
       - name: Upload Windows release assets
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-windows-x64
           path: dist/
@@ -174,7 +175,7 @@ jobs:
 
     steps:
       - name: Checkout release source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.sha }}
 
@@ -200,7 +201,7 @@ jobs:
         run: cargo build --locked --release
 
       - name: Upload Linux launcher
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-linux-launcher
           path: linux-launcher/target/release/poe2-auto-flask-linux-launcher
@@ -212,18 +213,18 @@ jobs:
 
     steps:
       - name: Checkout release source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.sha }}
 
       - name: Download Windows helper
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-windows-x64
           path: windows-artifact
 
       - name: Download Linux launcher
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-linux-launcher
           path: linux-artifact
@@ -278,7 +279,7 @@ jobs:
           chmod +x dist/poe2-auto-flask-x86_64.AppImage
 
       - name: Upload Linux release asset
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-linux-appimage
           path: dist/poe2-auto-flask-x86_64.AppImage
@@ -290,19 +291,19 @@ jobs:
 
     steps:
       - name: Checkout release source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ needs.prepare.outputs.sha }}
 
       - name: Download Windows release assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-windows-x64
           path: release-dist
 
       - name: Download Linux release asset
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-linux-appimage
           path: release-dist
@@ -330,11 +331,31 @@ jobs:
           - Windows x64 executable and Linux x86-64 AppImage
           EOF
           else
-            gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
-              -f "tag_name=$RELEASE_TAG" \
-              -f "target_commitish=$RELEASE_SHA" \
-              -f "previous_tag_name=$previous_tag" \
-              --jq '.body' > release-notes.md
+            release_pr_body=$(gh api \
+              "repos/$GITHUB_REPOSITORY/commits/$RELEASE_SHA/pulls" \
+              --jq 'map(select(.merged_at != null and .base.ref == "main")) | first | .body // ""')
+
+            if [[ -n "$release_pr_body" ]]; then
+              first_line=$(printf '%s\n' "$release_pr_body" | head -n 1)
+              if [[ "$first_line" == "Prepare $RELEASE_TAG." ]]; then
+                release_pr_body=$(printf '%s\n' "$release_pr_body" | tail -n +2 | sed '/./,$!d')
+              fi
+
+              {
+                echo '## Highlights'
+                echo
+                printf '%s\n' "$release_pr_body"
+                echo
+                printf '**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+                  "$GITHUB_REPOSITORY" "$previous_tag" "$RELEASE_TAG"
+              } > release-notes.md
+            else
+              gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+                -f "tag_name=$RELEASE_TAG" \
+                -f "target_commitish=$RELEASE_SHA" \
+                -f "previous_tag_name=$previous_tag" \
+                --jq '.body' > release-notes.md
+            fi
           fi
 
       - name: Create release tag
