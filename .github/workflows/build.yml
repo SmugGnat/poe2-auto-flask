@@ -3,16 +3,128 @@ name: Build
 on:
   push:
     branches: [main, develop]
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "config.example.toml"
+      - "linux-launcher/**"
+      - "packaging/linux/**"
+      - "scripts/**"
+      - "LICENSE"
+      - ".github/workflows/build.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "config.example.toml"
+      - "linux-launcher/**"
+      - "packaging/linux/**"
+      - "scripts/**"
+      - "LICENSE"
+      - ".github/workflows/build.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      msrv: ${{ steps.changes.outputs.msrv }}
+      windows: ${{ steps.changes.outputs.windows }}
+      linux: ${{ steps.changes.outputs.linux }}
+      appimage: ${{ steps.changes.outputs.appimage }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect affected components
+        id: changes
+        shell: bash
+        env:
+          BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "msrv=true" >> "$GITHUB_OUTPUT"
+            echo "windows=true" >> "$GITHUB_OUTPUT"
+            echo "linux=true" >> "$GITHUB_OUTPUT"
+            echo "appimage=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            base="$PR_BASE"
+            head="$PR_HEAD"
+          else
+            base="$BEFORE"
+            head="$GITHUB_SHA"
+          fi
+
+          if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base=$(git rev-parse "$head^" 2>/dev/null || printf '%s' "$head")
+          fi
+
+          mapfile -t files < <(git diff --name-only "$base" "$head")
+          printf 'Changed files:\n'
+          printf '  %s\n' "${files[@]}"
+
+          windows_changed=false
+          linux_changed=false
+          appimage=false
+
+          for file in "${files[@]}"; do
+            case "$file" in
+              src/*|Cargo.toml|Cargo.lock|config.example.toml)
+                windows_changed=true
+                ;;
+              linux-launcher/*)
+                linux_changed=true
+                appimage=true
+                ;;
+              packaging/linux/*|scripts/*|LICENSE)
+                appimage=true
+                ;;
+              .github/workflows/build.yml)
+                windows_changed=true
+                linux_changed=true
+                appimage=true
+                ;;
+            esac
+          done
+
+          windows="$windows_changed"
+          linux="$linux_changed"
+
+          # AppImage assembly consumes both build artifacts, so packaging or
+          # launcher changes need fresh Windows and Linux artifacts in this run.
+          if [[ "$appimage" == "true" ]]; then
+            windows=true
+            linux=true
+          fi
+
+          echo "msrv=$windows_changed" >> "$GITHUB_OUTPUT"
+          echo "windows=$windows" >> "$GITHUB_OUTPUT"
+          echo "linux=$linux" >> "$GITHUB_OUTPUT"
+          echo "appimage=$appimage" >> "$GITHUB_OUTPUT"
+
+          printf 'Jobs: msrv=%s windows=%s linux=%s appimage=%s\n' \
+            "$windows_changed" "$windows" "$linux" "$appimage"
+
   msrv:
     runs-on: windows-latest
+    needs: changes
+    if: needs.changes.outputs.msrv == 'true'
 
     steps:
       - name: Checkout
@@ -28,6 +140,8 @@ jobs:
 
   windows-x64:
     runs-on: windows-latest
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
 
     steps:
       - name: Checkout
@@ -72,6 +186,8 @@ jobs:
 
   linux-launcher:
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.linux == 'true'
 
     steps:
       - name: Checkout
@@ -113,7 +229,8 @@ jobs:
 
   linux-appimage:
     runs-on: ubuntu-latest
-    needs: [windows-x64, linux-launcher]
+    needs: [changes, windows-x64, linux-launcher]
+    if: needs.changes.outputs.appimage == 'true'
 
     steps:
       - name: Checkout
