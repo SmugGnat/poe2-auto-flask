@@ -30,20 +30,6 @@ Download the file for your OS from the [Releases](https://github.com/SmugGnat/po
 
 There is no installer.
 
-### Windows
-
-Run the EXE normally.
-
-### Linux
-
-Make the AppImage executable once:
-
-```bash
-chmod +x poe2-auto-flask-x86_64.AppImage
-```
-
-Start Path of Exile 2 through Steam, then double-click the AppImage or run it from a terminal.
-
 ---
 
 ## ⚙️ Configuration
@@ -109,10 +95,16 @@ PoE2 can be started before or after the helper.
 
 ### Linux / Steam Proton
 
-Start Path of Exile 2 through Steam first, then run:
+Make the AppImage executable once:
 
-```text
-poe2-auto-flask-x86_64.AppImage
+```bash
+chmod +x poe2-auto-flask-x86_64.AppImage
+```
+
+Start Path of Exile 2 through Steam first, then double-click the AppImage or run:
+
+```bash
+./poe2-auto-flask-x86_64.AppImage
 ```
 
 If PoE2 closes, the helper closes as well.
