@@ -3,16 +3,128 @@ name: Build
 on:
   push:
     branches: [main, develop]
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "config.example.toml"
+      - "linux-launcher/**"
+      - "packaging/linux/**"
+      - "scripts/**"
+      - "LICENSE"
+      - ".github/workflows/build.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "config.example.toml"
+      - "linux-launcher/**"
+      - "packaging/linux/**"
+      - "scripts/**"
+      - "LICENSE"
+      - ".github/workflows/build.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      msrv: ${{ steps.changes.outputs.msrv }}
+      windows: ${{ steps.changes.outputs.windows }}
+      linux: ${{ steps.changes.outputs.linux }}
+      appimage: ${{ steps.changes.outputs.appimage }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect affected components
+        id: changes
+        shell: bash
+        env:
+          BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "msrv=true" >> "$GITHUB_OUTPUT"
+            echo "windows=true" >> "$GITHUB_OUTPUT"
+            echo "linux=true" >> "$GITHUB_OUTPUT"
+            echo "appimage=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            base="$PR_BASE"
+            head="$PR_HEAD"
+          else
+            base="$BEFORE"
+            head="$GITHUB_SHA"
+          fi
+
+          if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base=$(git rev-parse "$head^" 2>/dev/null || printf '%s' "$head")
+          fi
+
+          mapfile -t files < <(git diff --name-only "$base" "$head")
+          printf 'Changed files:\n'
+          printf '  %s\n' "${files[@]}"
+
+          windows_changed=false
+          linux_changed=false
+          appimage=false
+
+          for file in "${files[@]}"; do
+            case "$file" in
+              src/*|Cargo.toml|Cargo.lock|config.example.toml)
+                windows_changed=true
+                ;;
+              linux-launcher/*)
+                linux_changed=true
+                appimage=true
+                ;;
+              packaging/linux/*|scripts/*|LICENSE)
+                appimage=true
+                ;;
+              .github/workflows/build.yml)
+                windows_changed=true
+                linux_changed=true
+                appimage=true
+                ;;
+            esac
+          done
+
+          windows="$windows_changed"
+          linux="$linux_changed"
+
+          # AppImage assembly consumes both build artifacts, so packaging or
+          # launcher changes need fresh Windows and Linux artifacts in this run.
+          if [[ "$appimage" == "true" ]]; then
+            windows=true
+            linux=true
+          fi
+
+          echo "msrv=$windows_changed" >> "$GITHUB_OUTPUT"
+          echo "windows=$windows" >> "$GITHUB_OUTPUT"
+          echo "linux=$linux" >> "$GITHUB_OUTPUT"
+          echo "appimage=$appimage" >> "$GITHUB_OUTPUT"
+
+          printf 'Jobs: msrv=%s windows=%s linux=%s appimage=%s\n' \
+            "$windows_changed" "$windows" "$linux" "$appimage"
+
   msrv:
     runs-on: windows-latest
+    needs: changes
+    if: needs.changes.outputs.msrv == 'true'
 
     steps:
       - name: Checkout
@@ -28,6 +140,8 @@ jobs:
 
   windows-x64:
     runs-on: windows-latest
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
 
     steps:
       - name: Checkout
@@ -68,4 +182,125 @@ jobs:
         with:
           name: poe2-auto-flask-windows-x64
           path: dist/
+          if-no-files-found: error
+
+  linux-launcher:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.linux == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust 1.85
+        uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          components: clippy, rustfmt
+
+      - name: Check formatting
+        working-directory: linux-launcher
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        working-directory: linux-launcher
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        working-directory: linux-launcher
+        run: cargo test --locked
+
+      - name: Build release
+        working-directory: linux-launcher
+        run: cargo build --locked --release
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p dist
+          cp linux-launcher/target/release/poe2-auto-flask-linux-launcher dist/
+          cp LICENSE dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: poe2-auto-flask-linux-launcher
+          path: dist/
+          if-no-files-found: error
+
+  linux-appimage:
+    runs-on: ubuntu-latest
+    needs: [changes, windows-x64, linux-launcher]
+    if: needs.changes.outputs.appimage == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows helper
+        uses: actions/download-artifact@v4
+        with:
+          name: poe2-auto-flask-windows-x64
+          path: windows-artifact
+
+      - name: Download Linux launcher
+        uses: actions/download-artifact@v4
+        with:
+          name: poe2-auto-flask-linux-launcher
+          path: linux-artifact
+
+      - name: Prepare AppDir
+        run: |
+          mkdir -p \
+            AppDir/usr/bin \
+            AppDir/usr/lib/poe2-auto-flask \
+            AppDir/usr/share/licenses/poe2-auto-flask
+
+          cp linux-artifact/poe2-auto-flask-linux-launcher AppDir/usr/bin/poe2-auto-flask
+          cp packaging/linux/terminal-wrapper AppDir/usr/bin/poe2-auto-flask-terminal
+          cp windows-artifact/poe2-auto-flask.exe AppDir/usr/lib/poe2-auto-flask/
+          cp LICENSE AppDir/usr/share/licenses/poe2-auto-flask/LICENSE
+          cp windows-artifact/THIRD_PARTY_NOTICES.txt \
+            AppDir/usr/share/licenses/poe2-auto-flask/THIRD_PARTY_NOTICES.txt
+          cp packaging/linux/AppRun AppDir/AppRun
+          cp packaging/linux/poe2-auto-flask.desktop AppDir/poe2-auto-flask.desktop
+          cp packaging/linux/poe2-auto-flask.svg AppDir/poe2-auto-flask.svg
+          ln -s poe2-auto-flask.svg AppDir/.DirIcon
+
+          chmod +x \
+            AppDir/AppRun \
+            AppDir/usr/bin/poe2-auto-flask \
+            AppDir/usr/bin/poe2-auto-flask-terminal
+
+      - name: Download AppImage tools
+        run: |
+          curl --fail --location --retry 3 \
+            --output appimagetool-x86_64.AppImage \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool-x86_64.AppImage" \
+            | sha256sum --check -
+
+          curl --fail --location --retry 3 \
+            --output runtime-x86_64 \
+            https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
+          echo "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  runtime-x86_64" \
+            | sha256sum --check -
+
+          chmod +x appimagetool-x86_64.AppImage
+
+      - name: Build AppImage
+        run: |
+          mkdir -p dist
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage \
+            --appimage-extract-and-run \
+            --no-appstream \
+            --runtime-file runtime-x86_64 \
+            AppDir \
+            dist/poe2-auto-flask-linux-x86_64.AppImage
+          chmod +x dist/poe2-auto-flask-linux-x86_64.AppImage
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: poe2-auto-flask-linux-x86_64-appimage
+          path: dist/poe2-auto-flask-linux-x86_64.AppImage
           if-no-files-found: error

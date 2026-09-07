@@ -1,0 +1,11 @@
+[package]
+name = "poe2-auto-flask-linux-launcher"
+version = "0.7.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Linux launcher for poe2-auto-flask"
+license = "GPL-3.0-only"
+repository = "https://github.com/SmugGnat/poe2-auto-flask"
+publish = false
+
+[dependencies]

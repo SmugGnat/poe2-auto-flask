@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version without the v prefix (for example, 0.6.6)"
+        description: "Release version without the v prefix (for example, 0.6.7)"
         required: true
         type: string
 
@@ -15,8 +15,12 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: windows-latest
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
 
     steps:
       - name: Checkout release source
@@ -25,70 +29,93 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
 
+      - name: Verify release source and version
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+
+          main=$(git rev-parse origin/main)
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            version='${{ inputs.version }}'
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Manual release version must use MAJOR.MINOR.PATCH format; got '$version'." >&2
+              exit 1
+            fi
+            tag="v$version"
+
+            if git show-ref --tags --verify --quiet "refs/tags/$tag"; then
+              commit=$(git rev-list -n 1 "$tag")
+              if ! git merge-base --is-ancestor "$commit" origin/main; then
+                echo "Existing tag $tag is not contained in main." >&2
+                exit 1
+              fi
+              git checkout --detach "$commit"
+            else
+              commit=$(git rev-parse HEAD)
+              if [[ "$commit" != "$main" ]]; then
+                echo "New manual releases must build the current main commit." >&2
+                exit 1
+              fi
+            fi
+          else
+            tag="$GITHUB_REF_NAME"
+            if [[ ! "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+              echo "Release tag must use vMAJOR.MINOR.PATCH format; got '$tag'." >&2
+              exit 1
+            fi
+            version="${BASH_REMATCH[1]}"
+            commit=$(git rev-parse HEAD)
+
+            if ! git merge-base --is-ancestor "$commit" origin/main; then
+              echo "Release tag must point to a commit contained in main." >&2
+              exit 1
+            fi
+          fi
+
+          root_version=$(python3 - <<'PY'
+          import tomllib
+          with open("Cargo.toml", "rb") as f:
+              print(tomllib.load(f)["package"]["version"])
+          PY
+          )
+          launcher_version=$(python3 - <<'PY'
+          import tomllib
+          with open("linux-launcher/Cargo.toml", "rb") as f:
+              print(tomllib.load(f)["package"]["version"])
+          PY
+          )
+
+          if [[ "$root_version" != "$version" ]]; then
+            echo "Release version $version does not match Cargo.toml version $root_version." >&2
+            exit 1
+          fi
+          if [[ "$launcher_version" != "$version" ]]; then
+            echo "Release version $version does not match linux-launcher/Cargo.toml version $launcher_version." >&2
+            exit 1
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "sha=$commit" >> "$GITHUB_OUTPUT"
+
+  windows-x64:
+    runs-on: windows-latest
+    needs: prepare
+
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
       - name: Install Rust 1.85
         uses: dtolnay/rust-toolchain@1.85.0
         with:
           targets: x86_64-pc-windows-msvc
           components: clippy, rustfmt
-
-      - name: Verify release source and version
-        shell: pwsh
-        run: |
-          git fetch origin main --tags
-
-          $main = (git rev-parse origin/main).Trim()
-
-          if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
-            $version = '${{ inputs.version }}'
-            if ($version -notmatch '^\d+\.\d+\.\d+$') {
-              throw "Manual release version must use MAJOR.MINOR.PATCH format; got '$version'."
-            }
-            $tag = "v$version"
-
-            git show-ref --tags --verify "refs/tags/$tag" 2>$null
-            if ($LASTEXITCODE -eq 0) {
-              $commit = (git rev-list -n 1 $tag).Trim()
-
-              git merge-base --is-ancestor $commit origin/main
-              if ($LASTEXITCODE -ne 0) {
-                throw "Existing tag $tag is not contained in main."
-              }
-
-              git checkout --detach $commit
-              if ($LASTEXITCODE -ne 0) {
-                throw "Failed to check out existing tag $tag."
-              }
-            } else {
-              $commit = (git rev-parse HEAD).Trim()
-              if ($commit -ne $main) {
-                throw "New manual releases must build the current main commit."
-              }
-            }
-          } else {
-            $tag = $env:GITHUB_REF_NAME
-            if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+)$') {
-              throw "Release tag must use vMAJOR.MINOR.PATCH format; got '$tag'."
-            }
-            $version = $Matches.version
-            $commit = (git rev-parse HEAD).Trim()
-
-            git merge-base --is-ancestor $commit origin/main
-            if ($LASTEXITCODE -ne 0) {
-              throw "Release tag must point to a commit contained in main."
-            }
-          }
-
-          $metadata = cargo metadata --no-deps --locked --format-version 1 | ConvertFrom-Json
-          $package = $metadata.packages | Where-Object { $_.name -eq 'poe2-auto-flask' }
-          if ($null -eq $package) {
-            throw "Could not find poe2-auto-flask in Cargo metadata."
-          }
-          if ($package.version -ne $version) {
-            throw "Release version $version does not match Cargo.toml version $($package.version)."
-          }
-
-          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "RELEASE_SHA=$commit" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -104,15 +131,12 @@ jobs:
 
       - name: Prepare release assets
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          $source = 'target/x86_64-pc-windows-msvc/release/poe2-auto-flask.exe'
-          $exe = 'poe2-auto-flask.exe'
-          $licenses = 'LICENSES.txt'
-          $thirdParty = Join-Path $env:RUNNER_TEMP 'THIRD_PARTY_NOTICES.txt'
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Copy-Item target/x86_64-pc-windows-msvc/release/poe2-auto-flask.exe dist/poe2-auto-flask-windows-x64.exe
 
-          Copy-Item $source $exe
+          $licenses = 'dist/LICENSES.txt'
+          $thirdParty = Join-Path $env:RUNNER_TEMP 'THIRD_PARTY_NOTICES.txt'
 
           & ./scripts/collect-third-party-licenses.ps1 `
             -OutputDir "$env:RUNNER_TEMP/poe2-auto-flask-third-party-licenses" `
@@ -137,82 +161,230 @@ jobs:
           ) | Add-Content -LiteralPath $licenses -Encoding utf8
           Get-Content -LiteralPath $thirdParty -Raw | Add-Content -LiteralPath $licenses -Encoding utf8
 
-          $existingReleases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
-          $previousRelease = $existingReleases |
-            Where-Object { -not $_.draft -and $_.tag_name -ne $env:RELEASE_TAG } |
-            Sort-Object published_at -Descending |
-            Select-Object -First 1
+      - name: Upload Windows release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-x64
+          path: dist/
+          if-no-files-found: error
 
-          if ($null -eq $previousRelease) {
-            @(
-              'Initial public release.'
-              ''
-              '- Automatic Life and Mana flask use with configurable thresholds'
-              '- Reads PoE2 flask bindings automatically'
-              '- Supports Windows x64 and Linux through Steam Proton'
-            ) | Set-Content -LiteralPath release-notes.md -Encoding utf8
-          } else {
-            $generated = gh api --method POST "repos/$env:GITHUB_REPOSITORY/releases/generate-notes" `
-              -f "tag_name=$env:RELEASE_TAG" `
-              -f "target_commitish=$env:RELEASE_SHA" `
-              -f "previous_tag_name=$($previousRelease.tag_name)" | ConvertFrom-Json
-            $generated.body | Set-Content -LiteralPath release-notes.md -Encoding utf8
-          }
+  linux-launcher:
+    runs-on: ubuntu-latest
+    needs: prepare
+
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - name: Install Rust 1.85
+        uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          components: clippy, rustfmt
+
+      - name: Check formatting
+        working-directory: linux-launcher
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        working-directory: linux-launcher
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        working-directory: linux-launcher
+        run: cargo test --locked
+
+      - name: Build release
+        working-directory: linux-launcher
+        run: cargo build --locked --release
+
+      - name: Upload Linux launcher
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-launcher
+          path: linux-launcher/target/release/poe2-auto-flask-linux-launcher
+          if-no-files-found: error
+
+  linux-appimage:
+    runs-on: ubuntu-latest
+    needs: [prepare, windows-x64, linux-launcher]
+
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - name: Download Windows helper
+        uses: actions/download-artifact@v4
+        with:
+          name: release-windows-x64
+          path: windows-artifact
+
+      - name: Download Linux launcher
+        uses: actions/download-artifact@v4
+        with:
+          name: release-linux-launcher
+          path: linux-artifact
+
+      - name: Prepare AppDir
+        run: |
+          mkdir -p \
+            AppDir/usr/bin \
+            AppDir/usr/lib/poe2-auto-flask \
+            AppDir/usr/share/licenses/poe2-auto-flask
+
+          cp linux-artifact/poe2-auto-flask-linux-launcher AppDir/usr/bin/poe2-auto-flask
+          cp windows-artifact/poe2-auto-flask-windows-x64.exe AppDir/usr/lib/poe2-auto-flask/poe2-auto-flask.exe
+          cp LICENSE AppDir/usr/share/licenses/poe2-auto-flask/LICENSE
+          cp windows-artifact/LICENSES.txt AppDir/usr/share/licenses/poe2-auto-flask/LICENSES.txt
+          cp packaging/linux/AppRun AppDir/AppRun
+          cp packaging/linux/terminal-wrapper AppDir/usr/bin/poe2-auto-flask-terminal
+          cp packaging/linux/poe2-auto-flask.desktop AppDir/poe2-auto-flask.desktop
+          cp packaging/linux/poe2-auto-flask.svg AppDir/poe2-auto-flask.svg
+          ln -s poe2-auto-flask.svg AppDir/.DirIcon
+
+          chmod +x \
+            AppDir/AppRun \
+            AppDir/usr/bin/poe2-auto-flask \
+            AppDir/usr/bin/poe2-auto-flask-terminal
+
+      - name: Download AppImage tools
+        run: |
+          curl --fail --location --retry 3 \
+            --output appimagetool-x86_64.AppImage \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool-x86_64.AppImage" \
+            | sha256sum --check -
+
+          curl --fail --location --retry 3 \
+            --output runtime-x86_64 \
+            https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
+          echo "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  runtime-x86_64" \
+            | sha256sum --check -
+
+          chmod +x appimagetool-x86_64.AppImage
+
+      - name: Build AppImage
+        run: |
+          mkdir -p dist
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage \
+            --appimage-extract-and-run \
+            --no-appstream \
+            --runtime-file runtime-x86_64 \
+            AppDir \
+            dist/poe2-auto-flask-x86_64.AppImage
+          chmod +x dist/poe2-auto-flask-x86_64.AppImage
+
+      - name: Upload Linux release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-appimage
+          path: dist/poe2-auto-flask-x86_64.AppImage
+          if-no-files-found: error
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: [prepare, windows-x64, linux-appimage]
+
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - name: Download Windows release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-windows-x64
+          path: release-dist
+
+      - name: Download Linux release asset
+        uses: actions/download-artifact@v4
+        with:
+          name: release-linux-appimage
+          path: release-dist
+
+      - name: Prepare release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          previous_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.draft == false and .tag_name != \"$RELEASE_TAG\") | [.published_at, .tag_name] | @tsv" \
+            | sort -r \
+            | head -n 1 \
+            | cut -f2 || true)
+
+          if [[ -z "$previous_tag" ]]; then
+            cat > release-notes.md <<'EOF'
+          Initial public release.
+
+          - Automatic Life and Mana flask use with configurable thresholds
+          - Reads PoE2 flask bindings automatically
+          - Windows x64 executable and Linux x86-64 AppImage
+          EOF
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              -f "tag_name=$RELEASE_TAG" \
+              -f "target_commitish=$RELEASE_SHA" \
+              -f "previous_tag_name=$previous_tag" \
+              --jq '.body' > release-notes.md
+          fi
 
       - name: Create release tag
         if: github.event_name == 'workflow_dispatch'
-        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
         run: |
-          git show-ref --tags --verify "refs/tags/$env:RELEASE_TAG" 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            $tagCommit = (git rev-list -n 1 $env:RELEASE_TAG).Trim()
-            if ($tagCommit -ne $env:RELEASE_SHA) {
-              throw "Tag $env:RELEASE_TAG exists on a different commit."
-            }
-            Write-Host "Tag $env:RELEASE_TAG already exists on the release commit."
+          set -euo pipefail
+          git fetch origin --tags
+
+          if git show-ref --tags --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            tag_commit=$(git rev-list -n 1 "$RELEASE_TAG")
+            if [[ "$tag_commit" != "$RELEASE_SHA" ]]; then
+              echo "Tag $RELEASE_TAG exists on a different commit." >&2
+              exit 1
+            fi
+            echo "Tag $RELEASE_TAG already exists on the release commit."
             exit 0
-          }
+          fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a $env:RELEASE_TAG $env:RELEASE_SHA -m $env:RELEASE_TAG
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to create tag $env:RELEASE_TAG."
-          }
-          git push origin "refs/tags/$env:RELEASE_TAG"
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to push tag $env:RELEASE_TAG."
-          }
+          git tag -a "$RELEASE_TAG" "$RELEASE_SHA" -m "$RELEASE_TAG"
+          git push origin "refs/tags/$RELEASE_TAG"
 
       - name: Publish GitHub Release
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          gh release view $env:RELEASE_TAG --json tagName *> $null
-          $releaseExists = ($LASTEXITCODE -eq 0)
+          set -euo pipefail
 
-          if ($releaseExists) {
-            $release = gh release view $env:RELEASE_TAG --json assets | ConvertFrom-Json
-            foreach ($asset in $release.assets) {
-              gh release delete-asset $env:RELEASE_TAG $asset.name --yes
-              if ($LASTEXITCODE -ne 0) {
-                throw "Failed to remove old release asset $($asset.name)."
-              }
-            }
+          assets=(
+            release-dist/poe2-auto-flask-windows-x64.exe
+            release-dist/poe2-auto-flask-x86_64.AppImage
+            release-dist/LICENSES.txt
+          )
 
-            gh release edit $env:RELEASE_TAG --title $env:RELEASE_TAG --notes-file release-notes.md
-            if ($LASTEXITCODE -ne 0) {
-              throw "Failed to update release notes for $env:RELEASE_TAG."
-            }
+          if gh release view "$RELEASE_TAG" --json tagName >/dev/null 2>&1; then
+            gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' \
+              | while IFS= read -r asset; do
+                  gh release delete-asset "$RELEASE_TAG" "$asset" --yes
+                done
 
-            gh release upload $env:RELEASE_TAG poe2-auto-flask.exe LICENSES.txt --clobber
-            if ($LASTEXITCODE -ne 0) {
-              throw "Failed to upload release assets for $env:RELEASE_TAG."
-            }
-          } else {
-            gh release create $env:RELEASE_TAG poe2-auto-flask.exe LICENSES.txt --verify-tag --title $env:RELEASE_TAG --notes-file release-notes.md
-            if ($LASTEXITCODE -ne 0) {
-              throw "Failed to publish release $env:RELEASE_TAG."
-            }
-          }
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file release-notes.md
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${assets[@]}" \
+              --verify-tag \
+              --title "$RELEASE_TAG" \
+              --notes-file release-notes.md
+          fi

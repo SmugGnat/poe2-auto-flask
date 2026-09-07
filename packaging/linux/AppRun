@@ -1,0 +1,68 @@
+#!/bin/sh
+set -eu
+
+APPDIR=${APPDIR:-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"}
+
+if [ -z "${POE2_AUTO_FLASK_TERMINAL_LAUNCH:-}" ] && [ ! -t 1 ] && [ -n "${APPIMAGE:-}" ]; then
+    export POE2_AUTO_FLASK_TERMINAL_LAUNCH=1
+    wrapper="$APPDIR/usr/bin/poe2-auto-flask-terminal"
+
+    if command -v konsole >/dev/null 2>&1; then
+        exec konsole -e "$wrapper" "$APPIMAGE" "$@"
+    fi
+    if command -v gnome-terminal >/dev/null 2>&1; then
+        exec gnome-terminal -- "$wrapper" "$APPIMAGE" "$@"
+    fi
+    if command -v kgx >/dev/null 2>&1; then
+        exec kgx -- "$wrapper" "$APPIMAGE" "$@"
+    fi
+    if command -v x-terminal-emulator >/dev/null 2>&1; then
+        exec x-terminal-emulator -e "$wrapper" "$APPIMAGE" "$@"
+    fi
+    if command -v xterm >/dev/null 2>&1; then
+        exec xterm -e "$wrapper" "$APPIMAGE" "$@"
+    fi
+fi
+
+export POE2_AUTO_FLASK_BUNDLED_HELPER="$APPDIR/usr/lib/poe2-auto-flask/poe2-auto-flask.exe"
+launcher="$APPDIR/usr/bin/poe2-auto-flask"
+
+# Keep Proton out of the terminal's foreground process group. Ctrl+C is handled here and converted
+# to SIGTERM for the launcher/Proton helper group so Proton's Python wrapper exits without printing
+# a KeyboardInterrupt traceback. The already-running PoE2 process belongs to Steam's process group
+# and is not affected.
+if command -v setsid >/dev/null 2>&1; then
+    child_pid=""
+    interrupted=0
+
+    stop_child() {
+        interrupted=1
+        if [ -n "$child_pid" ]; then
+            kill -TERM "-$child_pid" 2>/dev/null || kill -TERM "$child_pid" 2>/dev/null || true
+        fi
+    }
+
+    trap stop_child INT TERM
+
+    setsid "$launcher" "$@" &
+    child_pid=$!
+
+    set +e
+    wait "$child_pid"
+    status=$?
+    set -e
+
+    if [ "$interrupted" -eq 1 ]; then
+        set +e
+        wait "$child_pid" 2>/dev/null
+        set -e
+        trap - INT TERM
+        printf '\n'
+        exit 0
+    fi
+
+    trap - INT TERM
+    exit "$status"
+fi
+
+exec "$launcher" "$@"
