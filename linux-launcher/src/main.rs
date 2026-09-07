@@ -10,6 +10,7 @@ use std::process::{Command, ExitCode};
 const APP_ID: &str = "2694490";
 const GAME_EXE: &[u8] = b"PathOfExileSteam.exe";
 const BUNDLED_HELPER_ENV: &str = "POE2_AUTO_FLASK_BUNDLED_HELPER";
+const HELPER_CONFIG_ENV: &str = "POE2_AUTO_FLASK_CONFIG";
 
 struct LaunchEnvironment {
     pid: u32,
@@ -38,6 +39,7 @@ fn run() -> Result<(), String> {
         return Ok(());
     };
 
+    let launch = discover_launch_environment()?;
     let helper = resolve_helper_path(args.helper)?;
     if !helper.is_file() {
         return Err(format!(
@@ -46,12 +48,14 @@ fn run() -> Result<(), String> {
         ));
     }
 
-    let launch = discover_launch_environment()?;
+    let config = prepare_config_path()?;
+    let wine_config = host_path_to_wine_z(&config)?;
 
     println!("PoE2 PID    : {}", launch.pid);
     println!("Steam       : {}", launch.steam_client.display());
     println!("Compat data : {}", launch.compat_data.display());
     println!("Proton      : {}", launch.proton.display());
+    println!("Config      : {}", config.display());
     println!();
 
     let status = Command::new(&launch.proton)
@@ -60,6 +64,7 @@ fn run() -> Result<(), String> {
         .args(&args.helper_args)
         .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &launch.steam_client)
         .env("STEAM_COMPAT_DATA_PATH", &launch.compat_data)
+        .env(HELPER_CONFIG_ENV, wine_config)
         .status()
         .map_err(|error| format!("failed to start Proton: {error}"))?;
 
@@ -175,16 +180,69 @@ fn install_bundled_helper(source: &Path) -> Result<PathBuf, String> {
     Ok(target)
 }
 
+fn prepare_config_path() -> Result<PathBuf, String> {
+    let target_dir = user_config_dir()?.join("poe2-auto-flask");
+    fs::create_dir_all(&target_dir).map_err(|error| {
+        format!(
+            "could not create config directory {}: {error}",
+            target_dir.display()
+        )
+    })?;
+
+    let target = target_dir.join("config.toml");
+    if target.is_file() {
+        return Ok(target);
+    }
+
+    let legacy = user_data_dir()?.join("poe2-auto-flask").join("config.toml");
+    if legacy.is_file() {
+        fs::copy(&legacy, &target).map_err(|error| {
+            format!(
+                "could not migrate config from {} to {}: {error}",
+                legacy.display(),
+                target.display()
+            )
+        })?;
+        println!("Config migrated: {}", target.display());
+    }
+
+    Ok(target)
+}
+
+fn user_config_dir() -> Result<PathBuf, String> {
+    if let Some(path) = env::var_os("XDG_CONFIG_HOME").filter(|path| !path.is_empty()) {
+        return Ok(PathBuf::from(path));
+    }
+
+    let home = user_home_dir("XDG_CONFIG_HOME")?;
+    Ok(home.join(".config"))
+}
+
 fn user_data_dir() -> Result<PathBuf, String> {
     if let Some(path) = env::var_os("XDG_DATA_HOME").filter(|path| !path.is_empty()) {
         return Ok(PathBuf::from(path));
     }
 
-    let home = env::var_os("HOME")
-        .filter(|path| !path.is_empty())
-        .ok_or_else(|| "HOME is not set and XDG_DATA_HOME is unavailable".to_string())?;
+    let home = user_home_dir("XDG_DATA_HOME")?;
+    Ok(home.join(".local").join("share"))
+}
 
-    Ok(PathBuf::from(home).join(".local").join("share"))
+fn user_home_dir(fallback_for: &str) -> Result<PathBuf, String> {
+    env::var_os("HOME")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .ok_or_else(|| format!("HOME is not set and {fallback_for} is unavailable"))
+}
+
+fn host_path_to_wine_z(path: &Path) -> Result<OsString, String> {
+    if !path.is_absolute() {
+        return Err(format!("config path must be absolute: {}", path.display()));
+    }
+
+    let path = path
+        .to_str()
+        .ok_or_else(|| "config path is not valid UTF-8".to_string())?;
+    Ok(OsString::from(format!("Z:{}", path.replace('/', "\\"))))
 }
 
 fn files_match(left: &Path, right: &Path) -> io::Result<bool> {
@@ -309,11 +367,14 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{contains_bytes, env_value, environment_matches_app, files_match, find_proton};
+    use super::{
+        contains_bytes, env_value, environment_matches_app, files_match, find_proton,
+        host_path_to_wine_z,
+    };
     use std::env;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -366,6 +427,16 @@ mod tests {
         assert_eq!(find_proton(&tool_paths), Some(proton));
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn converts_host_config_path_to_wine_z_drive() {
+        assert_eq!(
+            host_path_to_wine_z(Path::new("/home/test/.config/poe2-auto-flask/config.toml"))
+                .unwrap()
+                .to_string_lossy(),
+            r"Z:\home\test\.config\poe2-auto-flask\config.toml"
+        );
     }
 
     #[test]
