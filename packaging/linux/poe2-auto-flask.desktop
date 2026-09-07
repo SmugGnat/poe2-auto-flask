@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=PoE2 Auto Flask
+Comment=Automatic Life and Mana flask helper for Path of Exile 2
+Exec=poe2-auto-flask
+Icon=poe2-auto-flask
+Type=Application
+Categories=Game;Utility;
+Terminal=true
