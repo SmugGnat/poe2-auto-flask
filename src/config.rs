@@ -264,7 +264,10 @@ impl ConfigManager {
 }
 
 fn create_parent_directory(path: &Path) -> io::Result<()> {
-    let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) else {
+    let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    else {
         return Ok(());
     };
     fs::create_dir_all(parent)
