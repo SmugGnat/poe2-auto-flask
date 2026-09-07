@@ -2,6 +2,28 @@
 set -eu
 
 APPDIR=${APPDIR:-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"}
+
+if [ -z "${POE2_AUTO_FLASK_TERMINAL_LAUNCH:-}" ] && [ ! -t 1 ] && [ -n "${APPIMAGE:-}" ]; then
+    export POE2_AUTO_FLASK_TERMINAL_LAUNCH=1
+    wrapper="$APPDIR/usr/bin/poe2-auto-flask-terminal"
+
+    if command -v konsole >/dev/null 2>&1; then
+        exec konsole -e "$wrapper" "$APPIMAGE" "$@"
+    fi
+    if command -v gnome-terminal >/dev/null 2>&1; then
+        exec gnome-terminal -- "$wrapper" "$APPIMAGE" "$@"
+    fi
+    if command -v kgx >/dev/null 2>&1; then
+        exec kgx -- "$wrapper" "$APPIMAGE" "$@"
+    fi
+    if command -v x-terminal-emulator >/dev/null 2>&1; then
+        exec x-terminal-emulator -e "$wrapper" "$APPIMAGE" "$@"
+    fi
+    if command -v xterm >/dev/null 2>&1; then
+        exec xterm -e "$wrapper" "$APPIMAGE" "$@"
+    fi
+fi
+
 export POE2_AUTO_FLASK_BUNDLED_HELPER="$APPDIR/usr/lib/poe2-auto-flask/poe2-auto-flask.exe"
 
 exec "$APPDIR/usr/bin/poe2-auto-flask" "$@"
