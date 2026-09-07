@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+
+APPDIR=${APPDIR:-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"}
+export POE2_AUTO_FLASK_BUNDLED_HELPER="$APPDIR/usr/lib/poe2-auto-flask/poe2-auto-flask.exe"
+
+exec "$APPDIR/usr/bin/poe2-auto-flask" "$@"
