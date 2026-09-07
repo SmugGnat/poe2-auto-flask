@@ -44,8 +44,6 @@ chmod +x poe2-auto-flask-x86_64.AppImage
 
 Start Path of Exile 2 through Steam, then double-click the AppImage or run it from a terminal.
 
-The AppImage automatically finds the Steam install, PoE2 prefix, and Proton version currently being used by the game. Protontricks and custom Steam launch options are not required.
-
 ---
 
 ## ⚙️ Configuration
@@ -111,13 +109,11 @@ PoE2 can be started before or after the helper.
 
 ### Linux / Steam Proton
 
-Start Path of Exile 2 through Steam first, then run or double-click:
+Start Path of Exile 2 through Steam first, then run:
 
 ```text
 poe2-auto-flask-x86_64.AppImage
 ```
-
-If PoE2 is not running, a double-clicked AppImage opens a terminal with an error message instead of failing silently.
 
 If PoE2 closes, the helper closes as well.
 
