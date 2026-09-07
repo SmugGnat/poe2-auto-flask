@@ -110,3 +110,76 @@ jobs:
           name: poe2-auto-flask-linux-launcher
           path: dist/
           if-no-files-found: error
+
+  linux-appimage:
+    runs-on: ubuntu-latest
+    needs: [windows-x64, linux-launcher]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows helper
+        uses: actions/download-artifact@v4
+        with:
+          name: poe2-auto-flask-windows-x64
+          path: windows-artifact
+
+      - name: Download Linux launcher
+        uses: actions/download-artifact@v4
+        with:
+          name: poe2-auto-flask-linux-launcher
+          path: linux-artifact
+
+      - name: Prepare AppDir
+        run: |
+          mkdir -p \
+            AppDir/usr/bin \
+            AppDir/usr/lib/poe2-auto-flask \
+            AppDir/usr/share/licenses/poe2-auto-flask
+
+          cp linux-artifact/poe2-auto-flask-linux-launcher AppDir/usr/bin/poe2-auto-flask
+          cp windows-artifact/poe2-auto-flask.exe AppDir/usr/lib/poe2-auto-flask/
+          cp LICENSE AppDir/usr/share/licenses/poe2-auto-flask/LICENSE
+          cp windows-artifact/THIRD_PARTY_NOTICES.txt \
+            AppDir/usr/share/licenses/poe2-auto-flask/THIRD_PARTY_NOTICES.txt
+          cp packaging/linux/AppRun AppDir/AppRun
+          cp packaging/linux/poe2-auto-flask.desktop AppDir/poe2-auto-flask.desktop
+          cp packaging/linux/poe2-auto-flask.svg AppDir/poe2-auto-flask.svg
+          ln -s poe2-auto-flask.svg AppDir/.DirIcon
+
+          chmod +x AppDir/AppRun AppDir/usr/bin/poe2-auto-flask
+
+      - name: Download AppImage tools
+        run: |
+          curl --fail --location --retry 3 \
+            --output appimagetool-x86_64.AppImage \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool-x86_64.AppImage" \
+            | sha256sum --check -
+
+          curl --fail --location --retry 3 \
+            --output runtime-x86_64 \
+            https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
+          echo "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  runtime-x86_64" \
+            | sha256sum --check -
+
+          chmod +x appimagetool-x86_64.AppImage
+
+      - name: Build AppImage
+        run: |
+          mkdir -p dist
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage \
+            --appimage-extract-and-run \
+            --no-appstream \
+            --runtime-file runtime-x86_64 \
+            AppDir \
+            dist/poe2-auto-flask-linux-x86_64.AppImage
+          chmod +x dist/poe2-auto-flask-linux-x86_64.AppImage
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: poe2-auto-flask-linux-x86_64-appimage
+          path: dist/poe2-auto-flask-linux-x86_64.AppImage
+          if-no-files-found: error
