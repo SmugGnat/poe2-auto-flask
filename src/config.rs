@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -23,6 +24,8 @@ pub struct Config {
 #[serde(default)]
 pub struct Poe1Config {
     pub utility: Poe1UtilityConfig,
+    /// Optional type-specific proximity requirements. Absent = no scan/gate.
+    pub nearby: BTreeMap<FlaskType, NearbyRule>,
     /// 0 disables the optional movement gate; 100..=5000 requires continuous Run animation.
     pub quicksilver_min_run_ms: u64,
 }
@@ -72,6 +75,50 @@ impl Poe1UtilityConfig {
             FlaskType::Iron => self.iron,
             FlaskType::Diamond => self.diamond,
             _ => false,
+        }
+    }
+}
+
+/// Ordering is cumulative: Rare permits Rare or Unique, Normal permits all four.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MinimumRarity {
+    #[default]
+    Normal,
+    Magic,
+    Rare,
+    Unique,
+}
+
+impl MinimumRarity {
+    pub fn first_index(self) -> usize {
+        match self {
+            Self::Normal => 0,
+            Self::Magic => 1,
+            Self::Rare => 2,
+            Self::Unique => 3,
+        }
+    }
+}
+
+/// A table's presence adds a nearby gate; enabled=false temporarily disables it.
+/// All numeric values use the same grid-unit scale as --debug --nearby.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct NearbyRule {
+    pub enabled: bool,
+    pub radius: u16,
+    pub minimum_count: u16,
+    pub minimum_rarity: MinimumRarity,
+}
+
+impl Default for NearbyRule {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            radius: 60,
+            minimum_count: 1,
+            minimum_rarity: MinimumRarity::Normal,
         }
     }
 }
@@ -160,7 +207,7 @@ impl Config {
             .filter(|kind| self.poe1.utility.enabled(*kind))
             .map(FlaskType::name)
             .collect::<Vec<_>>();
-        format!(
+        let base = format!(
             "{} | {} | Utility {} | Quicksilver movement {} | Hideout {}",
             flask_summary("Life", &self.health),
             flask_summary("Mana", &self.mana),
@@ -179,7 +226,20 @@ impl Config {
             } else {
                 "OFF"
             },
-        )
+        );
+        let rules = self.poe1.nearby.iter().filter(|(kind, rule)| {
+            rule.enabled && self.poe1.utility.enabled(**kind)
+        }).map(|(kind, rule)| {
+            format!(
+                "{} >= {} {:?}+ within {}",
+                kind.name(), rule.minimum_count, rule.minimum_rarity, rule.radius
+            )
+        }).collect::<Vec<_>>();
+        if rules.is_empty() {
+            base
+        } else {
+            format!("{base} | Nearby {}", rules.join(", "))
+        }
     }
 
     fn parse(path: &Path, text: &str) -> io::Result<Self> {
@@ -201,6 +261,17 @@ impl Config {
             return Err(invalid(
                 "poe1.quicksilver_min_run_ms must be 0 (off) or 100..=5000",
             ));
+        }
+        for (kind, rule) in &self.poe1.nearby {
+            if !crate::poe1::types::UTILITY_TYPES.contains(kind) {
+                return Err(invalid(format!("PoE1 nearby rules only support utility flasks: {kind:?}")));
+            }
+            if !(1..=150).contains(&rule.radius) || !(1..=512).contains(&rule.minimum_count) {
+                return Err(invalid(format!(
+                    "poe1.nearby.{} requires radius 1..=150 and minimum_count 1..=512",
+                    kind.name().to_ascii_lowercase()
+                )));
+            }
         }
         Ok(())
     }
@@ -539,6 +610,45 @@ key = "2"
             "[poe1]\nquicksilver_min_run_ms = 5001\n"
         )
         .is_err());
+    }
+
+    #[test]
+    fn nearby_rules_are_opt_in_and_accept_at_least_rarity() {
+        let default = Config::default();
+        assert!(default.poe1.nearby.is_empty());
+        let cfg = Config::parse(
+            Path::new("test.toml"),
+            r#"
+[poe1.utility]
+granite = true
+[poe1.nearby.granite]
+minimum_rarity = "rare"
+minimum_count = 1
+radius = 60
+"#,
+        ).unwrap();
+        assert!(cfg.poe1.utility.granite);
+        let rule = cfg.poe1.nearby.get(&FlaskType::Granite).unwrap();
+        assert!(rule.enabled);
+        assert_eq!(rule.minimum_rarity, super::MinimumRarity::Rare);
+        assert_eq!(rule.minimum_rarity.first_index(), 2);
+        assert_eq!(rule.minimum_count, 1);
+        assert_eq!(rule.radius, 60);
+    }
+
+    #[test]
+    fn invalid_nearby_rules_are_rejected() {
+        for body in [
+            "radius = 0",
+            "radius = 151",
+            "minimum_count = 0",
+            "minimum_count = 513",
+            r#"minimum_rarity = "boss""#,
+        ] {
+            let cfg = format!("[poe1.nearby.granite]\n{body}\n");
+            assert!(Config::parse(Path::new("test.toml"), &cfg).is_err(), "{body}");
+        }
+        assert!(Config::parse(Path::new("test.toml"), "[poe1.nearby.life]\nradius = 60\n").is_err());
     }
 
     #[test]

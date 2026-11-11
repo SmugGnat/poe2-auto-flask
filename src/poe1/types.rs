@@ -1,6 +1,7 @@
 //! Flask type is classified from base-item metadata, never the equipped slot.
 //! All 18 numbered PoE1 utility bases follow the BaseItemTypes metadata IDs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum FlaskType {
     Life,
     Mana,

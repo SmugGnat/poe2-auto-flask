@@ -4,6 +4,7 @@ use crate::poe2::LiveVitals;
 
 use super::buffs::EffectsSnapshot;
 use super::flasks::{FlaskSnapshot, SLOT_COUNT};
+use super::nearby::NearbySnapshot;
 use super::types::{FlaskType, UTILITY_TYPES};
 
 pub fn choose_action(
@@ -12,6 +13,19 @@ pub fn choose_action(
     flasks: &FlaskSnapshot,
     effects: &EffectsSnapshot,
     quicksilver_ready: bool,
+) -> Option<usize> {
+    choose_action_with_nearby(config, vitals, flasks, effects, quicksilver_ready, None)
+}
+
+/// Any enabled proximity rule requires a valid sampled census. Other utility
+/// types and emergency recovery never depend on nearby data.
+pub fn choose_action_with_nearby(
+    config: &Config,
+    vitals: LiveVitals,
+    flasks: &FlaskSnapshot,
+    effects: &EffectsSnapshot,
+    quicksilver_ready: bool,
+    nearby: Option<&NearbySnapshot>,
 ) -> Option<usize> {
     // Life and mana have priority over optional utility maintenance.
     let health = vitals.health;
@@ -47,12 +61,51 @@ pub fn choose_action(
             continue;
         }
         if config.poe1.utility.enabled(kind) {
+            if let Some(rule) = config.poe1.nearby.get(&kind).filter(|rule| rule.enabled) {
+                let matches = nearby.is_some_and(|census| {
+                    let counts = census.counts_at(f32::from(rule.radius));
+                    counts[rule.minimum_rarity.first_index()..]
+                        .iter()
+                        .sum::<usize>() >= usize::from(rule.minimum_count)
+                });
+                if !matches {
+                    continue;
+                }
+            }
             if let Some(slot) = best_slot(kind, flasks, effects) {
                 return Some(slot);
             }
         }
     }
     None
+}
+
+/// Return true only when a usable equipped utility needs a nearby scan.
+/// Fast-path Life/Mana without scanning so emergency recovery is never delayed.
+pub fn needs_nearby(
+    config: &Config,
+    vitals: LiveVitals,
+    flasks: &FlaskSnapshot,
+    effects: &EffectsSnapshot,
+    quicksilver_ready: bool,
+) -> bool {
+    if choose_action(config, vitals, flasks, effects, quicksilver_ready)
+        .is_some_and(|slot| {
+            flasks.slots[slot].as_ref().is_some_and(|flask| {
+                matches!(flask.flask_type, FlaskType::Life | FlaskType::Mana)
+            })
+        })
+    {
+        return false;
+    }
+    UTILITY_TYPES.into_iter().any(|kind| {
+        config.poe1.utility.enabled(kind)
+            && config.poe1.nearby.get(&kind).is_some_and(|rule| rule.enabled)
+            && !(kind == FlaskType::Quicksilver
+                && config.poe1.quicksilver_min_run_ms != 0
+                && !quicksilver_ready)
+            && best_slot(kind, flasks, effects).is_some()
+    })
 }
 
 /// Duplicates: choose most whole uses remaining, then most charges,
@@ -253,6 +306,71 @@ mod tests {
             choose_action(&config, vitals, &flasks, &effects, true),
             Some(4)
         );
+    }
+
+
+    #[test]
+    fn rarity_thresholds_include_unique_bosses() {
+        use crate::config::{MinimumRarity, NearbyRule};
+        use crate::poe1::nearby::{NearbyMonster, Rarity};
+        use std::time::Duration;
+
+        let (mut config, mut vitals, mut flasks, effects) = setup();
+        vitals.health.current = 100;
+        config.poe1.utility.granite = true;
+        flasks.slots[2] = slot(FlaskType::Granite, 45, Some(30));
+        config.poe1.nearby.insert(FlaskType::Granite, NearbyRule {
+            enabled: true, radius: 60, minimum_count: 1,
+            minimum_rarity: MinimumRarity::Rare,
+        });
+        let mut census = NearbySnapshot {
+            awake_nodes: 1, candidate_monsters: 1,
+            scan_wall: Duration::ZERO,
+            nearby: vec![NearbyMonster {
+                rarity: Rarity::Unique, distance_squared: 25.0 * 25.0,
+            }],
+        };
+        assert!(needs_nearby(&config, vitals, &flasks, &effects, true));
+        assert_eq!(choose_action_with_nearby(&config, vitals, &flasks, &effects, true, None), None);
+        assert_eq!(choose_action_with_nearby(&config, vitals, &flasks, &effects, true, Some(&census)), Some(2));
+        census.nearby[0].rarity = Rarity::Normal;
+        assert_eq!(choose_action_with_nearby(&config, vitals, &flasks, &effects, true, Some(&census)), None);
+        config.poe1.nearby.get_mut(&FlaskType::Granite).unwrap().minimum_rarity = MinimumRarity::Normal;
+        assert_eq!(choose_action_with_nearby(&config, vitals, &flasks, &effects, true, Some(&census)), Some(2));
+    }
+
+    #[test]
+    fn count_radius_and_failed_scans_block_only_proximity_gated_flasks() {
+        use crate::config::{NearbyRule, MinimumRarity};
+        use crate::poe1::nearby::{NearbyMonster, Rarity};
+        use std::time::Duration;
+
+        let (mut config, mut vitals, mut flasks, effects) = setup();
+        vitals.health.current = 100;
+        config.poe1.utility.granite = true;
+        config.poe1.utility.jade = true;
+        flasks.slots[1] = slot(FlaskType::Granite, 70, Some(30));
+        flasks.slots[3] = slot(FlaskType::Jade, 60, Some(30));
+        config.poe1.nearby.insert(FlaskType::Granite, NearbyRule {
+            enabled: true, radius: 60, minimum_count: 2,
+            minimum_rarity: MinimumRarity::Normal,
+        });
+        let census = NearbySnapshot {
+            awake_nodes: 1, candidate_monsters: 1,
+            scan_wall: Duration::ZERO,
+            nearby: vec![NearbyMonster {
+                rarity: Rarity::Unique, distance_squared: 70.0 * 70.0,
+            }],
+        };
+        assert_eq!(choose_action_with_nearby(&config, vitals, &flasks, &effects, true, Some(&census)), Some(3));
+        config.poe1.utility.jade = false;
+        assert_eq!(choose_action_with_nearby(&config, vitals, &flasks, &effects, true, Some(&census)), None);
+        assert_eq!(choose_action_with_nearby(&config, vitals, &flasks, &effects, true, None), None);
+        // Emergency flask remains eligible even if the census is unavailable.
+        vitals.health.current = 20;
+        flasks.slots[0] = slot(FlaskType::Life, 45, Some(15));
+        assert!(!needs_nearby(&config, vitals, &flasks, &effects, true));
+        assert_eq!(choose_action_with_nearby(&config, vitals, &flasks, &effects, true, None), Some(0));
     }
 
     #[test]

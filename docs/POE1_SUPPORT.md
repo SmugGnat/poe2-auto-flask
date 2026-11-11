@@ -94,6 +94,33 @@ When enabled, the reader traverses only the PoE1 **awake** entity map (not sleep
 
 **Important:** This remains an experimental candidate parser. Boss-specific targetability and dense-map traversal need further validation. The scanner only executes in `--debug --nearby`; default PoE1/PoE2 automation performs no monster scan. A future per-type optional rule can combine minimum count, radius and rarity mask while reusing one shared census for all enabled utility flasks.
 
+## Optional monster-proximity rules for utility flasks
+
+The live-tested diagnostic scan added only approximately **0.1–0.2 percentage points of one CPU core** in a moderate density instance (193 awake nodes, 44 monsters; most recent full scan 7.29 ms wall). That is an observed measurement, not a guaranteed cost for more crowded maps or every machine.
+
+GameHelper's reference `NearbyMonsterInfo` uses a rarity bitmask, with `Any` (all rarities) and `AtLeastRare` (Rare or Unique) presets. We expose a simpler **inclusive minimum rarity**: Normal matches Normal/Magic/Rare/Unique; Magic matches Magic/Rare/Unique; Rare matches Rare/Unique; and Unique matches Unique only. Thus a boss-only Unique is eligible with `minimum_rarity = "normal"` or `"rare"`, provided `minimum_count = 1`.
+
+Existing `[poe1.utility]` switches enable each type as before. To make one type eligible only when monsters are nearby, optionally add a matching table:
+
+```toml
+[poe1.utility]
+granite = true
+jade = true
+
+[poe1.nearby.granite]
+radius = 60
+minimum_count = 1
+minimum_rarity = "normal"
+```
+
+Only Granite is proximity-gated here. Jade still uses the original effect-maintenance logic. A proximity table defaults to enabled, and can be suspended with `enabled = false` while retaining the other values. Valid radius is **1–150 grid units** and `minimum_count` is **1–512**. Unknown flask types/invalid values are rejected on config load; removing the table restores the previous behavior without changing the utility toggle.
+
+The engine uses a single cached census for all proximity-enabled utility types, evaluated at most once per **750ms** while those rules are eligible. It does not scan with no enabled proximity conditions, while unarmed, out of focus, in a forbidden area, with chat open, or without a usable gated utility. Life/Mana are prioritized and evaluated **without waiting on monster scans**. If the census fails or exceeds its hard traversal bounds, only the proximity-dependent actions fail closed. The scanner isn't added to PoE2.
+
+**Phased bosses:** A Unique monster can appear in the awake/targetable entity list before its encounter becomes damageable, as observed with Kitava and its Heart. This can cause a proximity-gated utility flask to trigger early. The current implementation deliberately doesn't claim to detect damageability or aggro. More precise boss state checks need validated data; we retain Unique because boss-only encounters would otherwise be excluded altogether.
+
+**Count semantics:** A requirement of `minimum_count = 2` still requires **two** matching monsters. A single Unique does not automatically override that threshold. Use 1 for defensive utilities you want available against lone bosses.
+
 ## Build and test
 
 Windows helper CI (Rust 1.85 MSRV): `cargo fmt --all -- --check`, `cargo clippy --locked --target x86_64-pc-windows-msvc --all-targets -- -D warnings`, `cargo test --locked --target x86_64-pc-windows-msvc`, and a release build.

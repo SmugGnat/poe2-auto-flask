@@ -11,7 +11,9 @@ use crate::session::GameSession;
 
 use super::activation::ActivationGuard;
 use super::bindings::{BindingManager, BindingState};
-use super::decision::{blocks_grace_period, choose_action, enabled_demand};
+use super::decision::{
+    blocks_grace_period, choose_action_with_nearby, enabled_demand, needs_nearby,
+};
 use super::movement::{RunTracker, RUN_ANIMATION_ID};
 use super::types::FlaskType;
 
@@ -192,18 +194,25 @@ pub fn run(
             }
             let flasks = session.poe1_flasks(process)?.clone();
             activation_guard.apply_to(started, &flasks, &mut effects);
-            let chosen = choose_action(
-                manager.current(),
-                vitals,
-                &flasks,
-                &effects,
-                quicksilver_ready,
+            // Only scan monsters if an enabled, usable utility needs it.
+            // One cached census is shared across every equipped utility type.
+            // Failed scans disable nearby-gated utilities, never Life/Mana.
+            let proximity = if needs_nearby(
+                manager.current(), vitals, &flasks, &effects, quicksilver_ready,
+            ) {
+                session.poe1_nearby(process).ok()
+            } else {
+                None
+            };
+            let chosen = choose_action_with_nearby(
+                manager.current(), vitals, &flasks, &effects,
+                quicksilver_ready, proximity.as_ref(),
             );
-            Ok(chosen.map(|slot| (slot, flasks)))
+            Ok(chosen.map(|slot| (slot, flasks, proximity)))
         })();
 
         match state {
-            Ok(Some((slot, flasks))) => {
+            Ok(Some((slot, flasks, proximity))) => {
                 // Validate again immediately before any input: game state,
                 // threshold, focus and chat may have changed during reading.
                 let revalidated = session.poe1_verify_vitals(process).and_then(|v| {
@@ -234,12 +243,13 @@ pub fn run(
                         let mut effects = session.poe1_effects(process)?.clone();
                         activation_guard.apply_to(started, &flasks, &mut effects);
                         if quicksilver_motion_ok
-                            && choose_action(
+                            && choose_action_with_nearby(
                                 manager.current(),
                                 new_vitals,
                                 &flasks,
                                 &effects,
                                 quicksilver_ready,
+                                proximity.as_ref(),
                             ) == Some(slot)
                             && !blocks_grace_period(&effects)
                         {

@@ -42,4 +42,18 @@ gold = false
 corundum = false
 iron = false
 
+# Optional PoE1 utility proximity rules. A table enables gating for that flask
+# type; without a table, the existing effect-maintenance behavior is unchanged.
+# Example: once Granite is enabled above, require >=1 monster of Normal or
+# higher rarity (includes Magic/Rare/Unique) within 60 grid units.
+# [poe1.nearby.granite]
+# minimum_rarity = "normal" # "magic", "rare" or "unique" also supported
+# minimum_count = 1
+# radius = 60
+# enabled = true # optional; use false to temporarily disable the condition
+#
+# A Rare minimum also matches Unique bosses; boss intro phases may be counted
+# before the enemy is damageable. An unavailable census blocks only gated
+# utility flasks, not emergency Life/Mana recovery.
+
 # Existing PoE2 operation is unchanged: two slots, F11, 100 ms polling.
