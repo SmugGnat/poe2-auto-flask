@@ -205,6 +205,8 @@ poe2-auto-flask-linux-launcher --game poe1 --auto
 
 PoE1 binds keys from its own `production_Config.ini`. Existing `[health]` and `[mana]` settings apply to its recovery flasks; specific utility flasks may be enabled in `[poe1.utility]` (see `config.example.toml`). PoE1 checks focus, chat, area, charges, buffs, and game state before any input.
 
+The utility type registry now recognizes all **18 standard PoE1 utility flask bases**, including Jade and Silver. A `quicksilver_min_run_ms` option under `[poe1]` can optionally require sustained `Actor.Animation.Run` before using Quicksilver. It defaults to `0` (disabled) until verified in-game; the read-only diagnostic reports the current animation. See [flask/movement details](docs/POE1_UTILITY_MOVEMENT.md).
+
 See [PoE1 Milestone 1 validation](docs/POE1_MILESTONE1.md) and [PoE1 Milestone 2 details](docs/POE1_MILESTONE2.md). The imported GameHelper reference source is not built or distributed with the executable.
 
 ---

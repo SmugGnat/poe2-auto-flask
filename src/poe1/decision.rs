@@ -4,13 +4,14 @@ use crate::poe2::LiveVitals;
 
 use super::buffs::EffectsSnapshot;
 use super::flasks::{FlaskSnapshot, SLOT_COUNT};
-use super::types::FlaskType;
+use super::types::{FlaskType, UTILITY_TYPES};
 
 pub fn choose_action(
     config: &Config,
     vitals: LiveVitals,
     flasks: &FlaskSnapshot,
     effects: &EffectsSnapshot,
+    quicksilver_ready: bool,
 ) -> Option<usize> {
     // Life and mana have priority over optional utility maintenance.
     let health = vitals.health;
@@ -38,12 +39,13 @@ pub fn choose_action(
             return Some(slot);
         }
     }
-    for kind in [
-        FlaskType::Quicksilver,
-        FlaskType::Granite,
-        FlaskType::Quartz,
-        FlaskType::Diamond,
-    ] {
+    for kind in UTILITY_TYPES {
+        if kind == FlaskType::Quicksilver
+            && config.poe1.quicksilver_min_run_ms != 0
+            && !quicksilver_ready
+        {
+            continue;
+        }
         if config.poe1.utility.enabled(kind) {
             if let Some(slot) = best_slot(kind, flasks, effects) {
                 return Some(slot);
@@ -96,10 +98,7 @@ pub fn enabled_demand(config: &Config, vitals: LiveVitals) -> bool {
                         .percentage()
                         .is_some_and(|pct| pct <= config.mana.threshold_percent)
             }))
-        || config.poe1.utility.quicksilver
-        || config.poe1.utility.granite
-        || config.poe1.utility.quartz
-        || config.poe1.utility.diamond
+        || UTILITY_TYPES.into_iter().any(|kind| config.poe1.utility.enabled(kind))
 }
 
 pub fn blocks_grace_period(effects: &EffectsSnapshot) -> bool {
@@ -151,7 +150,7 @@ mod tests {
         let (config, vitals, mut flasks, effects) = setup();
         flasks.slots[0] = slot(FlaskType::Life, 45, Some(15));
         flasks.slots[1] = slot(FlaskType::Life, 60, Some(15));
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects), Some(1));
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(1));
     }
 
     #[test]
@@ -159,9 +158,9 @@ mod tests {
         let (config, vitals, mut flasks, effects) = setup();
         flasks.slots[0] = slot(FlaskType::Life, 45, Some(15));
         flasks.slots[1] = slot(FlaskType::Life, 48, Some(15));
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects), Some(1));
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(1));
         flasks.slots[0] = slot(FlaskType::Life, 48, Some(15));
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects), Some(0));
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(0));
     }
 
     #[test]
@@ -170,14 +169,14 @@ mod tests {
         flasks.slots[0] = slot(FlaskType::Life, 45, Some(15));
         flasks.slots[1] = slot(FlaskType::Life, 60, Some(15));
         effects.slots_active[0] = true;
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects), None);
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
     }
 
     #[test]
     fn no_effective_cost_never_authorizes_input() {
         let (config, vitals, mut flasks, effects) = setup();
         flasks.slots[0] = slot(FlaskType::Life, 45, None);
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects), None);
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
     }
 
     #[test]
@@ -185,9 +184,37 @@ mod tests {
         let (mut config, mut vitals, mut flasks, effects) = setup();
         vitals.health.current = 100;
         flasks.slots[3] = slot(FlaskType::Quicksilver, 50, Some(30));
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects), None);
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
         config.poe1.utility.quicksilver = true;
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects), Some(3));
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(3));
+    }
+
+    #[test]
+    fn movement_gate_only_restricts_quicksilver_not_other_flasks() {
+        let (mut config, mut vitals, mut flasks, effects) = setup();
+        vitals.health.current = 100;
+        config.poe1.utility.quicksilver = true;
+        config.poe1.quicksilver_min_run_ms = 750;
+        flasks.slots[3] = slot(FlaskType::Quicksilver, 50, Some(30));
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, false), None);
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(3));
+        // A different enabled utility still works when standing still.
+        config.poe1.utility.jade = true;
+        flasks.slots[2] = slot(FlaskType::Jade, 60, Some(30));
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, false), Some(2));
+    }
+
+    #[test]
+    fn jade_and_silver_recognize_type_not_inventory_slot() {
+        let (mut config, mut vitals, mut flasks, effects) = setup();
+        vitals.health.current = 100;
+        config.poe1.utility.jade = true;
+        config.poe1.utility.silver = true;
+        flasks.slots[0] = slot(FlaskType::Jade, 60, Some(30));
+        flasks.slots[4] = slot(FlaskType::Silver, 60, Some(40));
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(0));
+        flasks.slots[0] = None;
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(4));
     }
 
     #[test]
@@ -198,7 +225,7 @@ mod tests {
         mana.reserved_flat = 1102;
         mana.current = 30;
         flasks.slots[1] = slot(FlaskType::Mana, 40, Some(15));
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects), Some(1));
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(1));
     }
 
     #[test]
@@ -206,7 +233,7 @@ mod tests {
         let (config, mut vitals, mut flasks, effects) = setup();
         flasks.slots[0] = slot(FlaskType::Life, 45, Some(15));
         vitals.health.current = 0;
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects), None);
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
         vitals.health.total = 1;
         vitals.health.current = 1;
         vitals.energy_shield = Some(VitalPool {
@@ -215,6 +242,6 @@ mod tests {
             reserved_flat: 0,
             reserved_fraction: 0,
         });
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects), None);
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
     }
 }

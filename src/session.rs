@@ -21,6 +21,7 @@ pub struct GameSnapshot {
     pub area: Option<AreaInfo>,
     pub flasks: Option<FlaskSnapshot>,
     pub effects: Option<EffectsSnapshot>,
+    pub animation: Option<i32>,
 }
 
 impl GameSnapshot {
@@ -34,6 +35,7 @@ pub struct GameSession {
     snapshot: GameSnapshot,
     flask_cache: poe1::flasks::FlaskCache,
     effect_cache: poe1::buffs::EffectCache,
+    motion_cache: poe1::movement::MotionCache,
 }
 
 impl GameSession {
@@ -47,6 +49,7 @@ impl GameSession {
             snapshot: GameSnapshot::default(),
             flask_cache: poe1::flasks::FlaskCache::default(),
             effect_cache: poe1::buffs::EffectCache::default(),
+            motion_cache: poe1::movement::MotionCache::default(),
         })
     }
 
@@ -60,6 +63,7 @@ impl GameSession {
         self.begin_tick();
         self.flask_cache.clear();
         self.effect_cache.clear();
+        self.motion_cache.clear();
         self.reader = match &self.reader {
             Reader::Poe1(previous) => Reader::Poe1(poe1::refresh(process, previous)?),
             Reader::Poe2(previous) => Reader::Poe2(poe2::refresh_vitals(process, previous)?),
@@ -100,6 +104,27 @@ impl GameSession {
             Reader::Poe1(probe) => poe1::chat::is_chat_active(process, probe),
             Reader::Poe2(_) => Err(unsupported()),
         }
+    }
+
+    /// Sample animation only on request, once per decision tick.
+    pub fn poe1_animation(&mut self, process: &Process) -> io::Result<i32> {
+        if let Some(animation) = self.snapshot.animation {
+            return Ok(animation);
+        }
+        let Reader::Poe1(probe) = &self.reader else {
+            return Err(unsupported());
+        };
+        let animation = self.motion_cache.sample(process, probe)?;
+        self.snapshot.animation = Some(animation);
+        Ok(animation)
+    }
+
+    /// Recheck animation immediately before sending an optional movement-gated input.
+    pub fn poe1_verify_animation(&mut self, process: &Process) -> io::Result<i32> {
+        let Reader::Poe1(probe) = &self.reader else {
+            return Err(unsupported());
+        };
+        self.motion_cache.sample(process, probe)
     }
 
     /// Resolve PoE1 area metadata only when the caller requests it.
@@ -188,5 +213,6 @@ mod tests {
         assert!(snapshot.area.is_none());
         assert!(snapshot.flasks.is_none());
         assert!(snapshot.effects.is_none());
+        assert!(snapshot.animation.is_none());
     }
 }

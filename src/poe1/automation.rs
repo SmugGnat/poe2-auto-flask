@@ -11,6 +11,8 @@ use crate::session::GameSession;
 
 use super::bindings::{BindingManager, BindingState};
 use super::decision::{blocks_grace_period, choose_action, enabled_demand};
+use super::movement::{RunTracker, RUN_ANIMATION_ID};
+use super::types::FlaskType;
 
 const POLL: Duration = Duration::from_millis(100);
 const RELOAD_INTERVAL: Duration = Duration::from_secs(1);
@@ -27,6 +29,7 @@ pub fn run(
     let mut armed = false;
     let mut was_down = false;
     let mut last_fire: Option<Instant> = None;
+    let mut run_tracker = RunTracker::default();
     let mut next_refresh = Instant::now();
     let mut next_config_reload = Instant::now() + RELOAD_INTERVAL;
     let mut next_binding_reload = Instant::now() + BINDING_INTERVAL;
@@ -48,6 +51,7 @@ pub fn run(
             next_config_reload = started + RELOAD_INTERVAL;
             match manager.check_for_reload() {
                 ConfigReload::Reloaded => {
+                    run_tracker.reset();
                     println!("PoE1 config reloaded: {}", manager.current().poe1_summary())
                 }
                 ConfigReload::Invalid(error) | ConfigReload::ReadError(error) => {
@@ -66,6 +70,7 @@ pub fn run(
         let focus = is_process_foreground(process.pid());
         let down = master_toggle_down();
         if down && !was_down && focus {
+            run_tracker.reset();
             armed = !armed;
             last_fire = None;
             needs_refresh = armed;
@@ -82,6 +87,7 @@ pub fn run(
         was_down = down;
 
         if !armed {
+            run_tracker.reset();
             nap(started);
             continue;
         }
@@ -89,6 +95,7 @@ pub fn run(
             // Always refresh after focus returns, so no pointer/cache gathered
             // during an unfocused UI state can authorize an action.
             needs_refresh = true;
+            run_tracker.reset();
             show(&mut status, "PAUSED (PoE1 not focused)");
             nap(started);
             continue;
@@ -97,6 +104,7 @@ pub fn run(
         let keys = match bindings.current() {
             BindingState::Ready(keys) => *keys,
             BindingState::Unavailable(_) => {
+                run_tracker.reset();
                 show(&mut status, "PAUSED (PoE1 keybindings unavailable)");
                 nap(started);
                 continue;
@@ -112,6 +120,7 @@ pub fn run(
                 Ok(()) => {
                     needs_refresh = false;
                     last_fire = None;
+                    run_tracker.reset();
                 }
                 Err(_) => {
                     next_refresh = started + REFRESH_INTERVAL;
@@ -142,20 +151,35 @@ pub fn run(
             }
         };
         if !area_allowed {
+            run_tracker.reset();
             show(&mut status, "PAUSED (town or hideout)");
             nap(started);
             continue;
         }
         if vitals.health.current <= 0 {
+            run_tracker.reset();
             show(&mut status, "PAUSED (dead)");
             nap(started);
             continue;
         }
         if !enabled_demand(manager.current(), vitals) {
+            run_tracker.reset();
             show(&mut status, "ARMED");
             nap(started);
             continue;
         }
+
+        // Optional Quicksilver-only movement confirmation. One cheap Actor
+        // animation read per active tick, shared through GameSession.
+        // Read failures disable the Quicksilver action, never Life/Mana.
+        let moving_ms = manager.current().poe1.quicksilver_min_run_ms;
+        let quicksilver_ready = if moving_ms > 0 && manager.current().poe1.utility.quicksilver {
+            let animation_id = session.poe1_animation(process).ok();
+            run_tracker.observe(animation_id, started, Duration::from_millis(moving_ms))
+        } else {
+            run_tracker.reset();
+            true
+        };
 
         // Don't spend cross-process reads on charges/effects while the input
         // guard is active, but still validate vitals/area every 100ms.
@@ -175,7 +199,9 @@ pub fn run(
                 return Ok(None);
             }
             let flasks = session.poe1_flasks(process)?.clone();
-            let chosen = choose_action(manager.current(), vitals, &flasks, &effects);
+            let chosen = choose_action(
+                manager.current(), vitals, &flasks, &effects, quicksilver_ready
+            );
             Ok(chosen.map(|slot| (slot, flasks)))
         })();
 
@@ -192,9 +218,26 @@ pub fn run(
                         if is_process_foreground(process.pid())
                             && new_vitals.health.current > 0 =>
                     {
+                        // If Quicksilver requires sustained motion, confirm the
+                        // animation is *still* Run just before issuing the key.
+                        let quicksilver_motion_ok = if moving_ms > 0
+                            && flasks.slots[slot]
+                                .as_ref()
+                                .is_some_and(|flask| flask.flask_type == FlaskType::Quicksilver)
+                        {
+                            quicksilver_ready
+                                && session.poe1_verify_animation(process).ok()
+                                    == Some(RUN_ANIMATION_ID)
+                        } else {
+                            true
+                        };
+                        if !quicksilver_motion_ok {
+                            run_tracker.reset();
+                        }
                         let effects = session.poe1_effects(process)?;
-                        if choose_action(manager.current(), new_vitals, &flasks, effects)
-                            == Some(slot)
+                        if quicksilver_motion_ok
+                            && choose_action(manager.current(), new_vitals, &flasks, effects, quicksilver_ready)
+                                == Some(slot)
                             && !blocks_grace_period(effects)
                         {
                             send_flask_key(keys[slot])?;

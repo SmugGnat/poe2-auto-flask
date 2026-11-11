@@ -15,10 +15,31 @@ threshold_percent = 30.0
 # unreserved pool. Quicksilver and other supported utility-flask types are opt-in.
 # No per-slot keys are needed: both games read their own production_Config.ini.
 # Unknown utility bases and hybrid flasks remain manual-only in this milestone.
+[poe1]
+# 0 = use Quicksilver as before. 750 = require 750 ms of continuously
+# observed Run animation before using Quicksilver; does not restrict Life/Mana.
+# Supported range: 0 (off) or 100..5000. Verify Movement in --debug first.
+quicksilver_min_run_ms = 0
+
 [poe1.utility]
+# All standard PoE1 utility bases are recognized; enable only equipped types needed.
 quicksilver = false
 granite = false
 quartz = false
 diamond = false
+jade = false
+silver = false
+basalt = false
+stibnite = false
+sulphur = false
+ruby = false
+sapphire = false
+topaz = false
+amethyst = false
+bismuth = false
+aquamarine = false
+gold = false
+corundum = false
+iron = false
 
 # Existing PoE2 operation is unchanged: two slots, F11, 100 ms polling.

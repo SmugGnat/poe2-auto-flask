@@ -23,6 +23,8 @@ pub struct Config {
 #[serde(default)]
 pub struct Poe1Config {
     pub utility: Poe1UtilityConfig,
+    /// 0 disables the optional movement gate; 100..=5000 requires continuous Run animation.
+    pub quicksilver_min_run_ms: u64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -32,6 +34,20 @@ pub struct Poe1UtilityConfig {
     pub granite: bool,
     pub quartz: bool,
     pub diamond: bool,
+    pub jade: bool,
+    pub silver: bool,
+    pub basalt: bool,
+    pub stibnite: bool,
+    pub sulphur: bool,
+    pub ruby: bool,
+    pub sapphire: bool,
+    pub topaz: bool,
+    pub amethyst: bool,
+    pub bismuth: bool,
+    pub aquamarine: bool,
+    pub gold: bool,
+    pub corundum: bool,
+    pub iron: bool,
 }
 
 impl Poe1UtilityConfig {
@@ -40,6 +56,20 @@ impl Poe1UtilityConfig {
             FlaskType::Quicksilver => self.quicksilver,
             FlaskType::Granite => self.granite,
             FlaskType::Quartz => self.quartz,
+            FlaskType::Jade => self.jade,
+            FlaskType::Silver => self.silver,
+            FlaskType::Basalt => self.basalt,
+            FlaskType::Stibnite => self.stibnite,
+            FlaskType::Sulphur => self.sulphur,
+            FlaskType::Ruby => self.ruby,
+            FlaskType::Sapphire => self.sapphire,
+            FlaskType::Topaz => self.topaz,
+            FlaskType::Amethyst => self.amethyst,
+            FlaskType::Bismuth => self.bismuth,
+            FlaskType::Aquamarine => self.aquamarine,
+            FlaskType::Gold => self.gold,
+            FlaskType::Corundum => self.corundum,
+            FlaskType::Iron => self.iron,
             FlaskType::Diamond => self.diamond,
             _ => false,
         }
@@ -125,35 +155,26 @@ impl Config {
     }
 
     pub fn poe1_summary(&self) -> String {
+        let enabled = crate::poe1::types::UTILITY_TYPES
+            .into_iter()
+            .filter(|kind| self.poe1.utility.enabled(*kind))
+            .map(FlaskType::name)
+            .collect::<Vec<_>>();
         format!(
-            "{} | {} | Quicksilver {} | Granite {} | Quartz {} | Diamond {} | Hideout {}",
+            "{} | {} | Utility {} | Quicksilver movement {} | Hideout {}",
             flask_summary("Life", &self.health),
             flask_summary("Mana", &self.mana),
-            if self.poe1.utility.quicksilver {
-                "ON"
+            if enabled.is_empty() {
+                "OFF".to_string()
             } else {
-                "OFF"
+                enabled.join(", ")
             },
-            if self.poe1.utility.granite {
-                "ON"
+            if self.poe1.quicksilver_min_run_ms == 0 {
+                "OFF".to_string()
             } else {
-                "OFF"
+                format!("{}ms", self.poe1.quicksilver_min_run_ms)
             },
-            if self.poe1.utility.quartz {
-                "ON"
-            } else {
-                "OFF"
-            },
-            if self.poe1.utility.diamond {
-                "ON"
-            } else {
-                "OFF"
-            },
-            if self.general.enable_in_hideout {
-                "ON"
-            } else {
-                "OFF"
-            },
+            if self.general.enable_in_hideout { "ON" } else { "OFF" },
         )
     }
 
@@ -171,6 +192,10 @@ impl Config {
     fn validate(&self) -> io::Result<()> {
         validate_flask("health", &self.health)?;
         validate_flask("mana", &self.mana)?;
+        let ms = self.poe1.quicksilver_min_run_ms;
+        if ms != 0 && !(100..=5000).contains(&ms) {
+            return Err(invalid("poe1.quicksilver_min_run_ms must be 0 (off) or 100..=5000"));
+        }
         Ok(())
     }
 }
@@ -377,6 +402,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use super::{Config, ConfigManager, ConfigStartup, DEFAULT_CONFIG_TEXT};
+    use crate::poe1::types::FlaskType;
 
     static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -468,6 +494,29 @@ key = "2"
         assert!(config.poe1.utility.quicksilver);
         assert!(!config.poe1.utility.granite);
         assert!(!Config::default().poe1.utility.quicksilver);
+    }
+
+    #[test]
+    fn poe1_all_utility_types_are_independently_configurable() {
+        let text = "[poe1.utility]\njade = true\nsilver = true\n";
+        let parsed = Config::parse(Path::new("test.toml"), text).unwrap();
+        assert!(parsed.poe1.utility.enabled(FlaskType::Jade));
+        assert!(parsed.poe1.utility.enabled(FlaskType::Silver));
+        assert!(!parsed.poe1.utility.enabled(FlaskType::Quicksilver));
+        for kind in crate::poe1::types::UTILITY_TYPES {
+            let key = kind.name().to_ascii_lowercase();
+            let cfg = Config::parse(Path::new("test.toml"), &format!("[poe1.utility]\n{key} = true\n")).unwrap();
+            assert!(cfg.poe1.utility.enabled(kind), "{key}");
+        }
+    }
+
+    #[test]
+    fn quicksilver_movement_gate_defaults_off_and_checks_range() {
+        assert_eq!(Config::default().poe1.quicksilver_min_run_ms, 0);
+        let cfg = Config::parse(Path::new("test.toml"), "[poe1]\nquicksilver_min_run_ms = 750\n").unwrap();
+        assert_eq!(cfg.poe1.quicksilver_min_run_ms, 750);
+        assert!(Config::parse(Path::new("test.toml"), "[poe1]\nquicksilver_min_run_ms = 50\n").is_err());
+        assert!(Config::parse(Path::new("test.toml"), "[poe1]\nquicksilver_min_run_ms = 5001\n").is_err());
     }
 
     #[test]
