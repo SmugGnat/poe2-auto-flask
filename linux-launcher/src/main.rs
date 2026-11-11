@@ -561,11 +561,9 @@ mod tests {
 
     #[test]
     fn poe1_selection_does_not_require_auto_or_debug() {
-        let args = parse_args_from(
-            [OsString::from("--game"), OsString::from("poe1")].into_iter(),
-        )
-        .unwrap()
-        .unwrap();
+        let args = parse_args_from([OsString::from("--game"), OsString::from("poe1")].into_iter())
+            .unwrap()
+            .unwrap();
         assert_eq!(args.game, Some(Game::Poe1));
         assert!(args.helper_args.is_empty());
     }
