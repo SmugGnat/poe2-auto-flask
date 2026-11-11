@@ -2,8 +2,8 @@
 //! Unknown or unreadable UI state blocks automation.
 use std::io;
 
-use crate::process::Process;
 use super::{read_ptr, Probe};
+use crate::process::Process;
 
 const IN_GAME_UI: usize = 0x978;
 const CHAT_PARENT: usize = 0x540;

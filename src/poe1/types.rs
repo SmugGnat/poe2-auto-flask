@@ -55,15 +55,45 @@ mod tests {
 
     #[test]
     fn identifies_flasks_from_verified_metadata() {
-        assert_eq!(F::from_metadata("Metadata/Items/Flasks/FlaskUtility6"), F::Quicksilver);
-        assert_eq!(F::from_metadata("Metadata/Items/Flasks/FlaskUtility5"), F::Granite);
-        assert_eq!(F::from_metadata("Metadata/Items/Flasks/FlaskUtility8"), F::Quartz);
-        assert_eq!(F::from_metadata("Metadata/Items/Flasks/FlaskUtility1"), F::Diamond);
-        assert_eq!(F::from_metadata("Metadata/Items/Flasks/FlaskLife11"), F::Life);
-        assert_eq!(F::from_metadata("Metadata/Items/Flasks/FlaskMana10"), F::Mana);
-        assert_eq!(F::from_metadata("Metadata/Items/Flasks/FlaskHybrid2"), F::Hybrid);
-        assert_eq!(F::from_metadata("Metadata/Items/Flasks/FlaskUtility14"), F::OtherUtility);
-        assert_eq!(F::from_metadata("Metadata/Items/Other/FlaskLife11"), F::Unknown);
-        assert_eq!(F::from_metadata("Metadata/Items/Flasks/FlaskManaOops"), F::Unknown);
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Flasks/FlaskUtility6"),
+            F::Quicksilver
+        );
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Flasks/FlaskUtility5"),
+            F::Granite
+        );
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Flasks/FlaskUtility8"),
+            F::Quartz
+        );
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Flasks/FlaskUtility1"),
+            F::Diamond
+        );
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Flasks/FlaskLife11"),
+            F::Life
+        );
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Flasks/FlaskMana10"),
+            F::Mana
+        );
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Flasks/FlaskHybrid2"),
+            F::Hybrid
+        );
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Flasks/FlaskUtility14"),
+            F::OtherUtility
+        );
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Other/FlaskLife11"),
+            F::Unknown
+        );
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Flasks/FlaskManaOops"),
+            F::Unknown
+        );
     }
 }

@@ -60,15 +60,11 @@ pub fn local_charge_multiplier(process: &Process, item: usize) -> io::Result<f64
         if !name.to_ascii_lowercase().contains("flaskchargesused") {
             continue;
         }
-        let (values_start, value_count) = bounded_range(
-            u64_at(&entry, 0) as usize,
-            u64_at(&entry, 8) as usize,
-            4,
-            8,
-        )?;
+        let (values_start, value_count) =
+            bounded_range(u64_at(&entry, 0) as usize, u64_at(&entry, 8) as usize, 4, 8)?;
         let value = match value_count {
             0 => return Err(invalid("charge-use mod has no value")),
-            1 => i32_at(&entry, MOD_VALUE),  // GameHelper's optimized one-value field
+            1 => i32_at(&entry, MOD_VALUE), // GameHelper's optimized one-value field
             _ => process.read_i32(values_start)?,
         };
         multiplier *= percent_multiplier(value)?;
@@ -97,20 +93,34 @@ fn percent_multiplier(value: i32) -> io::Result<f64> {
     Ok((100 + value) as f64 / 100.0)
 }
 
-fn read_vector(process: &Process, at: usize, stride: usize, limit: usize) -> io::Result<(usize, usize)> {
+fn read_vector(
+    process: &Process,
+    at: usize,
+    stride: usize,
+    limit: usize,
+) -> io::Result<(usize, usize)> {
     let bytes = process.read_bytes(at, 16)?;
     let first = u64_at(&bytes, 0) as usize;
     let last = u64_at(&bytes, 8) as usize;
     Ok((first, bounded_range(first, last, stride, limit)?.1))
 }
 
-fn bounded_range(first: usize, last: usize, stride: usize, limit: usize) -> io::Result<(usize, usize)> {
-    if first == 0 && last == 0 { return Ok((0, 0)); }
+fn bounded_range(
+    first: usize,
+    last: usize,
+    stride: usize,
+    limit: usize,
+) -> io::Result<(usize, usize)> {
+    if first == 0 && last == 0 {
+        return Ok((0, 0));
+    }
     if !plausible_ptr(first) || last < first || stride == 0 || (last - first) % stride != 0 {
         return Err(invalid("invalid PoE1 modifier/stat vector"));
     }
     let count = (last - first) / stride;
-    if count > limit { return Err(invalid("PoE1 modifier/stat vector exceeds limit")); }
+    if count > limit {
+        return Err(invalid("PoE1 modifier/stat vector exceeds limit"));
+    }
     Ok((first, count))
 }
 

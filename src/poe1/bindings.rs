@@ -46,7 +46,9 @@ impl BindingManager {
                 return true;
             }
         };
-        if stamp == self.stamp { return false; }
+        if stamp == self.stamp {
+            return false;
+        }
         self.stamp = stamp;
         let state = load_state(&self.path);
         let changed = state != self.state;
@@ -56,9 +58,7 @@ impl BindingManager {
 }
 
 fn load_state(path: &Path) -> BindingState {
-    match File::open(path)
-        .and_then(|file| parse_reader(BufReader::new(file), path))
-    {
+    match File::open(path).and_then(|file| parse_reader(BufReader::new(file), path)) {
         Ok(bindings) => BindingState::Ready(bindings),
         Err(error) => BindingState::Unavailable(format!("{}: {error}", path.display())),
     }
@@ -76,20 +76,33 @@ fn parse_reader<R: BufRead>(input: R, path: &Path) -> io::Result<[KeyBinding; SL
             continue;
         }
         if line.starts_with('[') && line.ends_with(']') {
-            section = if line == "[ACTION_KEYS]" { "action" }
-                else if line == "[WASD_ACTION_KEYS]" { "wasd" } else { "other" };
+            section = if line == "[ACTION_KEYS]" {
+                "action"
+            } else if line == "[WASD_ACTION_KEYS]" {
+                "wasd"
+            } else {
+                "other"
+            };
             continue;
         }
-        let Some((key, value)) = line.split_once('=') else { continue; };
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
         let key = key.trim();
         let value = value.trim();
         if key == "user_input_mode" {
             mode = value.to_string();
             continue;
         }
-        let Some(n) = key.strip_prefix("use_flask_in_slot")
-            .and_then(|v| v.parse::<usize>().ok()) else { continue; };
-        if !(1..=SLOTS).contains(&n) { continue; }
+        let Some(n) = key
+            .strip_prefix("use_flask_in_slot")
+            .and_then(|v| v.parse::<usize>().ok())
+        else {
+            continue;
+        };
+        if !(1..=SLOTS).contains(&n) {
+            continue;
+        }
         match section {
             "action" => action[n - 1] = Some(value.into()),
             "wasd" => wasd[n - 1] = Some(value.into()),
@@ -99,20 +112,37 @@ fn parse_reader<R: BufRead>(input: R, path: &Path) -> io::Result<[KeyBinding; SL
     let input = match mode.as_str() {
         "mouse_and_keyboard" => &action,
         "wasd" => &wasd,
-        "gamepad" => return Err(io::Error::new(io::ErrorKind::Unsupported, "PoE1 gamepad input is unsupported")),
-        _ => return Err(io::Error::new(io::ErrorKind::Unsupported, format!("unsupported PoE1 input mode {mode}"))),
+        "gamepad" => {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "PoE1 gamepad input is unsupported",
+            ))
+        }
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!("unsupported PoE1 input mode {mode}"),
+            ))
+        }
     };
     let mut result = Vec::with_capacity(SLOTS);
     for (index, raw) in input.iter().enumerate() {
         let label = format!("use_flask_in_slot{}", index + 1);
-        let value = raw.as_deref().ok_or_else(|| invalid(format!("{label} missing")))?;
+        let value = raw
+            .as_deref()
+            .ok_or_else(|| invalid(format!("{label} missing")))?;
         let binding = parse_binding(path, &label, value)?;
         if binding.vk == 0x7A || result.contains(&binding) {
-            return Err(invalid(format!("flask slot {} is bound to the arm toggle or a duplicate key", index + 1)));
+            return Err(invalid(format!(
+                "flask slot {} is bound to the arm toggle or a duplicate key",
+                index + 1
+            )));
         }
         result.push(binding);
     }
-    result.try_into().map_err(|_| invalid("wrong number of flask bindings"))
+    result
+        .try_into()
+        .map_err(|_| invalid("wrong number of flask bindings"))
 }
 
 fn invalid(message: impl Into<String>) -> io::Error {
@@ -122,14 +152,15 @@ fn invalid(message: impl Into<String>) -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
     use crate::input::{KeyBinding, KeyModifier};
+    use std::io::Cursor;
 
     const EXAMPLE: &str = "[ACTION_KEYS]\nuse_flask_in_slot1=49\nuse_flask_in_slot2=50\nuse_flask_in_slot3=51\nuse_flask_in_slot4=52\nuse_flask_in_slot5=53\n";
 
     #[test]
     fn discovers_five_poe1_keys_without_manual_mapping() {
-        let bindings = parse_reader(Cursor::new(EXAMPLE), Path::new("production_Config.ini")).unwrap();
+        let bindings =
+            parse_reader(Cursor::new(EXAMPLE), Path::new("production_Config.ini")).unwrap();
         assert_eq!(bindings[3], KeyBinding::new(52, KeyModifier::None));
         assert_eq!(bindings[4], KeyBinding::new(53, KeyModifier::None));
     }
