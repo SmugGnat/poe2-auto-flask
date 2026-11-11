@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version without the v prefix (for example, 0.6.7)"
+        description: "Release version without the v prefix (for example, 0.8.0)"
         required: true
         type: string
 

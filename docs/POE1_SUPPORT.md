@@ -1,6 +1,6 @@
-# PoE1 support — consolidated development notes
+# PoE1 support — technical and validation notes
 
-Canonical development branch: `feature/poe1-support`. This branch incorporates the read-only session work, automated PoE1 flask support, all 18 standard utility base types, and the optional movement-gated Quicksilver rule. Its starting code matches the last live-tested build from `feature/poe1-utility-movement`, with a single squashed commit on top of `develop`.
+PoE1 support is part of the v0.8.0 multi-game release. The original work was developed on `feature/poe1-support`, reviewed and squash-merged into `develop` after automated and live testing. Historical development milestones and experiments are retained here as technical context; the release source of truth is `main` and its versioned tags.
 
 ## Scope and architecture
 
@@ -99,8 +99,12 @@ Compare the helper's sampled `%CPU` and `RES` while disarmed, armed and
 actively using flasks. Recheck PoE1 with an opt-in nearby rule separately if
 that feature is used. The PoE1 `--debug` CPU measure is useful diagnostics
 but is **not** a direct substitute for measuring the default auto loop.
-No numerical performance claim or release-readiness claim is made without
-these measurements and in-game checks. CI cannot validate future game offsets.
+The PoE1 helper was subsequently sampled during approximately two minutes
+of active mapping with Life, Quicksilver and Granite proximity automation:
+about 0.44% of one logical core on average (1.5% maximum 2-second sample),
+with roughly 20.5 MiB stable resident memory. These are helper-process-only
+measurements, not the combined Proton/Wine footprint or a PoE2 benchmark.
+CI cannot validate future game offsets.
 
 ## Automatic game selection — architecture milestone 5
 
@@ -282,7 +286,7 @@ GameHelper's reference `NearbyMonsterInfo` uses the already-maintained awake ent
 ./poe2-auto-flask-linux-x86_64.AppImage --game poe1 --debug --nearby
 ```
 
-The `--nearby` flag is **diagnostic-only**: it doesn't enable any flask use, doesn't add a nearby-combat setting yet, and cannot be used with `--auto`. The normal PoE1 and PoE2 automation loops do not call the census or pay its memory-scanning cost.
+The `--nearby` command-line flag is **diagnostic-only** and requires PoE1 `--debug`; it does not activate flasks. Separately, an explicitly configured `[poe1.nearby.<type>]` condition may request the same bounded census for that utility flask during normal PoE1 automation. With no such configured condition, normal PoE1 and PoE2 automation do not scan monsters.
 
 When enabled, the reader traverses only the PoE1 **awake** entity map (not sleeping or world decorations), with a hard limit of **1,500 map nodes** and **512 nearby monsters**. It caches static entity type/component addresses for the current area, limits remote rescans to once per **750 ms**, and groups the surviving monsters by rarity and proximity. It excludes dead/friendly/untargetable entities and known noncombat categories, including Harbingers and Tormented Spirits. It shows counts in **60** and **100 grid units** (same coordinate convention as GameHelper's circle distances). It fails closed on malformed/changing maps or invalid state; no partial result authorizes automation.
 
@@ -290,7 +294,7 @@ When enabled, the reader traverses only the PoE1 **awake** entity map (not sleep
 
 **Performance instrumentation:** Normal PoE1 `--debug` and `--debug --nearby` now both report `Helper CPU: X% of one core (Y ms CPU / 5.0s wall)` at roughly five-second intervals, measured with Windows `GetProcessTimes` inside the helper under Proton. `--nearby` additionally prints `Nearby last full scan: Z ms wall` beside the rarity counts. This wall time includes cross-process read latency and **is not the scanner's CPU time**. The CPU percentage covers the helper's entire process (including logs and all readers), not PoE or the Wine server process. It is relative to one logical core, not system-wide Task Manager percentage; compare the two modes at similar monster density and area. Metrics are diagnostic-only and cannot trigger a flask. Under unsupported Wine configurations the CPU measure explicitly prints unavailable.
 
-**Important:** This remains an experimental candidate parser. Boss-specific targetability and dense-map traversal need further validation. The scanner only executes in `--debug --nearby`; default PoE1/PoE2 automation performs no monster scan. A future per-type optional rule can combine minimum count, radius and rarity mask while reusing one shared census for all enabled utility flasks.
+**Important:** This remains an experimental candidate scanner. Boss-specific targetability and dense-map traversal need further validation. It runs only with `--debug --nearby` or when an explicitly enabled PoE1 utility proximity rule needs it; default automation without proximity rules performs no monster scan. Enabled utility rules reuse one shared cached census.
 
 ## Optional monster-proximity rules for utility flasks
 
