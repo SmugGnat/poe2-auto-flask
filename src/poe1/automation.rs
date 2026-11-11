@@ -12,7 +12,7 @@ use crate::session::GameSession;
 use super::activation::ActivationGuard;
 use super::bindings::{BindingManager, BindingState};
 use super::decision::{
-    blocks_grace_period, choose_action_rotating_guarded, enabled_demand, needs_nearby,
+    blocks_grace_period, choose_action_rotating_guarded, enabled_demand, needs_nearby_guarded,
 };
 use super::movement::{RunTracker, RUN_ANIMATION_ID};
 use super::rotation::FlaskRotation;
@@ -202,12 +202,13 @@ pub fn run(
             // Only scan monsters if an enabled, usable utility needs it.
             // One cached census is shared across every equipped utility type.
             // Failed scans disable nearby-gated utilities, never Life/Mana.
-            let proximity = if needs_nearby(
+            let proximity = if needs_nearby_guarded(
                 manager.current(),
                 vitals,
                 &flasks,
                 &effects,
                 quicksilver_ready,
+                !activation_guard.life_input_pending(),
             ) {
                 session.poe1_nearby(process).ok()
             } else {

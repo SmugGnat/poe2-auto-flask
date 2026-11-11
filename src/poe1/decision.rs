@@ -40,7 +40,8 @@ pub fn choose_action_with_nearby(
     )
 }
 
-/// Stateful variant used only in PoE1 auto mode. No additional memory reads.
+/// Test-compatible stateful variant; the production loop uses the guarded form.
+#[cfg(test)]
 pub fn choose_action_rotating_with_nearby(
     config: &Config,
     vitals: LiveVitals,
@@ -64,6 +65,7 @@ pub fn choose_action_rotating_with_nearby(
 
 /// Automation version: an outstanding unacknowledged Life input may not
 /// bypass even a genuine ongoing recovery buff.
+#[allow(clippy::too_many_arguments)]
 pub fn choose_action_rotating_guarded(
     config: &Config,
     vitals: LiveVitals,
@@ -86,6 +88,7 @@ pub fn choose_action_rotating_guarded(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn choose_action_internal(
     config: &Config,
     vitals: LiveVitals,
@@ -159,6 +162,7 @@ fn choose_action_internal(
 
 /// Return true only when a usable equipped utility needs a nearby scan.
 /// Fast-path Life/Mana without scanning so emergency recovery is never delayed.
+#[cfg(test)]
 pub fn needs_nearby(
     config: &Config,
     vitals: LiveVitals,
@@ -166,7 +170,21 @@ pub fn needs_nearby(
     effects: &EffectsSnapshot,
     quicksilver_ready: bool,
 ) -> bool {
-    if choose_action(config, vitals, flasks, effects, quicksilver_ready).is_some_and(|slot| {
+    needs_nearby_guarded(config, vitals, flasks, effects, quicksilver_ready, true)
+}
+
+pub fn needs_nearby_guarded(
+    config: &Config,
+    vitals: LiveVitals,
+    flasks: &FlaskSnapshot,
+    effects: &EffectsSnapshot,
+    quicksilver_ready: bool,
+    life_emergency_ready: bool,
+) -> bool {
+    if choose_action_internal(
+        config, vitals, flasks, effects, quicksilver_ready, None, None,
+        life_emergency_ready,
+    ).is_some_and(|slot| {
         flasks.slots[slot]
             .as_ref()
             .is_some_and(|flask| matches!(flask.flask_type, FlaskType::Life | FlaskType::Mana))
@@ -308,6 +326,7 @@ pub fn blocks_grace_period(effects: &EffectsSnapshot) -> bool {
 mod tests {
     use super::*;
     use crate::poe1::flasks::FlaskSlot;
+    use crate::poe1::recovery::RecoveryKind;
     use crate::poe2::VitalPool;
 
     fn slot(kind: FlaskType, charges: i32, cost: Option<i32>) -> Option<FlaskSlot> {
@@ -317,6 +336,7 @@ mod tests {
             current_charges: charges,
             raw_per_use: 15,
             effective_per_use: cost,
+            recovery: RecoveryKind::Gradual,
         })
     }
     fn setup() -> (Config, LiveVitals, FlaskSnapshot, EffectsSnapshot) {
@@ -772,6 +792,32 @@ mod tests {
             choose_action(&config, vitals, &flasks, &effects, true),
             None
         );
+    }
+
+    #[test]
+    fn outstanding_life_input_does_not_suppress_nearby_utility_scanning() {
+        use crate::config::NearbyRule;
+        use crate::poe1::buffs::Effect;
+        let (mut config, mut vitals, mut flasks, mut effects) = setup();
+        config.poe1.utility.granite = true;
+        config.poe1.nearby.insert(FlaskType::Granite, NearbyRule::default());
+        config.health.threshold_percent = 50.0;
+        vitals.health.current = 20;
+        flasks.slots[0] = slot(FlaskType::Life, 45, Some(15));
+        flasks.slots[1] = slot(FlaskType::Life, 45, Some(15));
+        flasks.slots[1].as_mut().unwrap().recovery = RecoveryKind::Instant;
+        flasks.slots[2] = slot(FlaskType::Granite, 60, Some(30));
+        effects.slots_active[0] = true;
+        effects.effects.push(Effect {
+            name: "flask_life".into(), flask_slot: Some(0),
+            buff_type: 4, time_left: 2.0,
+        });
+        assert!(!needs_nearby_guarded(
+            &config, vitals, &flasks, &effects, true, true,
+        ));
+        assert!(needs_nearby_guarded(
+            &config, vitals, &flasks, &effects, true, false,
+        ));
     }
 
     #[test]

@@ -181,6 +181,7 @@ mod tests {
     use crate::config::Config;
     use crate::poe1::decision::choose_action;
     use crate::poe1::flasks::FlaskSlot;
+    use crate::poe1::recovery::RecoveryKind;
     use crate::poe2::VitalPool;
 
     fn slot(kind: FlaskType, charges: i32) -> Option<FlaskSlot> {
@@ -190,6 +191,7 @@ mod tests {
             current_charges: charges,
             raw_per_use: 15,
             effective_per_use: Some(15),
+            recovery: RecoveryKind::Gradual,
         })
     }
 
