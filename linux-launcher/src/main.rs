@@ -80,6 +80,11 @@ fn run() -> Result<(), String> {
     {
         return Err("PoE1 requires explicit --auto or --debug".into());
     }
+    if args.helper_args.iter().any(|arg| arg == "--nearby")
+        && (args.game != Game::Poe1 || !args.helper_args.iter().any(|arg| arg == "--debug"))
+    {
+        return Err("--nearby requires --game poe1 --debug".into());
+    }
     let launch = discover_launch_environment(args.game)?;
     let helper = resolve_helper_path(args.helper)?;
     if !helper.is_file() {
@@ -152,7 +157,7 @@ fn parse_args() -> Result<Option<Args>, String> {
             ));
             continue;
         }
-        if arg == OsStr::new("--auto") || arg == OsStr::new("--debug") {
+        if arg == OsStr::new("--auto") || arg == OsStr::new("--debug") || arg == OsStr::new("--nearby") {
             helper_args.push(arg);
             continue;
         }
@@ -326,7 +331,7 @@ fn print_help() {
     println!();
     println!("Usage:");
     println!(
-        "  poe2-auto-flask-linux-launcher [--auto | --debug] [--game poe1|poe2] [--helper PATH]"
+        "  poe2-auto-flask-linux-launcher [--auto | --debug] [--game poe1|poe2] [--nearby] [--helper PATH]"
     );
     println!();
     println!("The selected Path of Exile game must already be running through Steam Proton.");

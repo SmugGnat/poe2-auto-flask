@@ -197,7 +197,9 @@ For PoE1 automation (starts **DISARMED**; press **F11** in the focused game to a
 
 PoE2 remains the default with its original automation behavior. PoE1 uses `[health]` and `[mana]` thresholds, and individually opt-in utility types under `[poe1.utility]`. All 18 standard PoE1 utility base types are recognized; a `quicksilver_min_run_ms` option under `[poe1]` optionally delays Quicksilver until sustained running. Keybindings are discovered from PoE1's own `production_Config.ini`.
 
-The **[PoE1 support guide](docs/POE1_SUPPORT.md)** documents memory architecture, configuration, duplicate-flask choices, safety checks, validation, and known limitations. The external GameHelper C# reference tree is deliberately not bundled in this branch pending verification of its source license and provenance.
+The **[PoE1 support guide](docs/POE1_SUPPORT.md)** documents memory architecture, configuration, duplicate-flask choices, safety checks, validation, and known limitations.
+
+A new **experimental, read-only** nearby-monster census is available with `--game poe1 --debug --nearby`. It reports rarity counts at 60 and 100 grid units, with strict scan-size/time limits; **no automation uses this unverified reader yet**. The external GameHelper C# reference tree is deliberately not bundled in this branch pending verification of its source license and provenance.
 
 ---
 

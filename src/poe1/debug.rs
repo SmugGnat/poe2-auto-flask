@@ -10,7 +10,7 @@ use crate::session::GameSession;
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const REPORT_INTERVAL: Duration = Duration::from_secs(1);
 
-pub fn run(process: &Process, mut session: GameSession) -> io::Result<()> {
+pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> io::Result<()> {
     println!("Connected to Path of Exile 1 (read-only diagnostic mode).");
     if let Some(metadata) = session.poe1_player_metadata() {
         println!("Player metadata: {metadata}");
@@ -19,6 +19,9 @@ pub fn run(process: &Process, mut session: GameSession) -> io::Result<()> {
         "Effective flask costs and chat UI state require live verification before auto input."
     );
     println!("Press Ctrl+C to exit. No automation or keyboard input is enabled.\n");
+    if nearby_debug {
+        println!("Experimental nearby census ENABLED (read-only, 750ms cache, 1500-node limit).");
+    }
 
     let mut report_at = Instant::now();
     let mut refresh_at = Instant::now();
@@ -58,6 +61,20 @@ pub fn run(process: &Process, mut session: GameSession) -> io::Result<()> {
                         format_pool(vitals.energy_shield),
                     );
                     println!("  Chat: {chat}");
+                    if nearby_debug && !area.is_town && !area.is_hideout {
+                        match session.poe1_nearby(process) {
+                            Ok(census) => {
+                                println!(
+                                    "  Nearby nodes {} | candidate monsters {} | within 60 grid units (N/M/R/U): {:?} | within 100: {:?}",
+                                    census.awake_nodes,
+                                    census.candidate_monsters,
+                                    census.counts_at(60.0),
+                                    census.counts_at(100.0)
+                                );
+                            }
+                            Err(error) => println!("  Nearby: unavailable ({error}); never authorizes input"),
+                        }
+                    }
                     match animation {
                         Some(id) => println!(
                             "  Movement: {} (Actor animation ID {})",

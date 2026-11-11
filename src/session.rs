@@ -36,6 +36,7 @@ pub struct GameSession {
     flask_cache: poe1::flasks::FlaskCache,
     effect_cache: poe1::buffs::EffectCache,
     motion_cache: poe1::movement::MotionCache,
+    nearby_cache: poe1::nearby::NearbyCache,
 }
 
 impl GameSession {
@@ -50,6 +51,7 @@ impl GameSession {
             flask_cache: poe1::flasks::FlaskCache::default(),
             effect_cache: poe1::buffs::EffectCache::default(),
             motion_cache: poe1::movement::MotionCache::default(),
+            nearby_cache: poe1::nearby::NearbyCache::default(),
         })
     }
 
@@ -64,6 +66,7 @@ impl GameSession {
         self.flask_cache.clear();
         self.effect_cache.clear();
         self.motion_cache.clear();
+        self.nearby_cache.clear();
         self.reader = match &self.reader {
             Reader::Poe1(previous) => Reader::Poe1(poe1::refresh(process, previous)?),
             Reader::Poe2(previous) => Reader::Poe2(poe2::refresh_vitals(process, previous)?),
@@ -125,6 +128,15 @@ impl GameSession {
             return Err(unsupported());
         };
         self.motion_cache.sample(process, probe)
+    }
+
+    /// EXPERIMENTAL read-only entity census; only called on explicit diagnostic
+    /// request. Throttled and bounded independently from the main 100ms loop.
+    pub fn poe1_nearby(&mut self, process: &Process) -> io::Result<poe1::nearby::NearbySnapshot> {
+        let Reader::Poe1(probe) = &self.reader else {
+            return Err(unsupported());
+        };
+        self.nearby_cache.sample(process, probe)
     }
 
     /// Resolve PoE1 area metadata only when the caller requests it.

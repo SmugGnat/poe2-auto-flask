@@ -10,6 +10,7 @@ pub mod debug;
 pub mod decision;
 pub mod flasks;
 pub mod movement;
+pub mod nearby;
 mod offsets;
 pub mod types;
 

@@ -76,6 +76,20 @@ The gate only affects Quicksilver; it never prevents Life, Mana or another utili
 - **Still needing broader live testing:** all 18 utility types, duplicate Life/Mana/utility selection, unusual/unique flask modifier behavior, gamepad input, other movement skills, and PoE2 end-to-end regression. Automated CI tests cannot prove future game versions preserve memory offsets.
 - The reference C# snapshot is deliberately excluded from this feature branch and from distributions. Any future inclusion requires licensing/provenance verification.
 
+## Experimental read-only nearby-monster census
+
+GameHelper's reference `NearbyMonsterInfo` uses the already-maintained awake entity collection to count monsters by Normal/Magic/Rare/Unique rarity in two distance circles. This app does **not** maintain a game-wide entity collection, so a full entity tracker would be an unnecessary baseline cost. Its new experimental census runs **only** with an explicit diagnostic flag:
+
+```fish
+./poe2-auto-flask-linux-x86_64.AppImage --game poe1 --debug --nearby
+```
+
+The `--nearby` flag is **diagnostic-only**: it doesn't enable any flask use, doesn't add a nearby-combat setting yet, and cannot be used with `--auto`. The normal PoE1 and PoE2 automation loops do not call the census or pay its memory-scanning cost.
+
+When enabled, the reader traverses only the PoE1 **awake** entity map (not sleeping or world decorations), with a hard limit of **1,500 map nodes** and **512 nearby monsters**. It caches static entity type/component addresses for the current area, limits remote rescans to once per **750 ms**, and groups the surviving monsters by rarity and proximity. It excludes dead/friendly/untargetable entities and known noncombat categories, including Harbingers and Tormented Spirits. It shows counts in **60** and **100 grid units** (same coordinate convention as GameHelper's circle distances). It fails closed on malformed/changing maps or invalid state; no partial result authorizes automation.
+
+**Important:** This is a candidate parser requiring live validation against actual maps and bosses. Targetability is not a universal combat/aggro indicator, especially for Unique monsters. The map traversal itself can be expensive in crowded instances, so compare helper CPU usage with `--debug` and `--debug --nearby` in both an empty and a crowded map before connecting it to utility rules. A future per-type optional rule can combine minimum count, radius and rarity mask and reuse one census for all enabled utility flasks.
+
 ## Build and test
 
 Windows helper CI (Rust 1.85 MSRV): `cargo fmt --all -- --check`, `cargo clippy --locked --target x86_64-pc-windows-msvc --all-targets -- -D warnings`, `cargo test --locked --target x86_64-pc-windows-msvc`, and a release build.

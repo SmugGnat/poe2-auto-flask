@@ -40,6 +40,7 @@ enum Mode {
 struct Options {
     mode: Mode,
     game: Game,
+    nearby_debug: bool,
 }
 
 fn main() {
@@ -56,6 +57,7 @@ fn parse_options() -> Options {
     let mut mode = Mode::Auto;
     let mut game = Game::Poe2;
     let mut mode_seen = false;
+    let mut nearby_debug = false;
     let mut game_seen = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -68,6 +70,7 @@ fn parse_options() -> Options {
                     Mode::Auto
                 };
             }
+            "--nearby" if !nearby_debug => nearby_debug = true,
             "--game" if !game_seen => {
                 game_seen = true;
                 let value = args.next().unwrap_or_else(|| fail_usage());
@@ -77,26 +80,30 @@ fn parse_options() -> Options {
             _ => fail_usage(),
         }
     }
-    Options { mode, game }
+    if nearby_debug && (mode != Mode::Debug || game != Game::Poe1) {
+        fail_usage();
+    }
+    Options { mode, game, nearby_debug }
 }
 
 fn print_help_and_exit() -> ! {
-    println!("Usage: poe2-auto-flask.exe [--auto | --debug] [--game poe1|poe2]");
+    println!("Usage: poe2-auto-flask.exe [--auto | --debug] [--game poe1|poe2] [--nearby]");
     println!("  --game   Select game (default: poe2)");
     println!("  --auto   Run selected game's automation (default; starts disarmed)");
     println!("  --debug  Read-only diagnostics for the selected game");
+    println!("  --nearby Experimental PoE1 monster census in --debug only (may cost CPU)");
     println!("  PoE1 uses type-aware flask rules and starts disarmed.");
     std::process::exit(0);
 }
 
 fn fail_usage() -> ! {
     eprintln!("ERROR: unknown or incompatible arguments");
-    eprintln!("Usage: poe2-auto-flask.exe [--auto | --debug] [--game poe1|poe2]");
+    eprintln!("Usage: poe2-auto-flask.exe [--auto | --debug] [--game poe1|poe2] [--nearby]");
     std::process::exit(2);
 }
 
 fn run(options: Options) -> io::Result<()> {
-    let Options { mode, game } = options;
+    let Options { mode, game, nearby_debug } = options;
     println!(
         "Selected {} (Steam AppID {}).",
         game.name(),
@@ -141,7 +148,7 @@ fn run(options: Options) -> io::Result<()> {
                 config_manager.current(),
                 config_manager.current_from_file(),
             )?,
-            (Mode::Debug, Game::Poe1) => poe1::debug::run(&process, probe)?,
+            (Mode::Debug, Game::Poe1) => poe1::debug::run(&process, probe, nearby_debug)?,
             (Mode::Auto, Game::Poe1) => {
                 poe1::automation::run(&process, probe, &mut config_manager)?
             }
