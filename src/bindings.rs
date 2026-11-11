@@ -171,7 +171,7 @@ fn poe2_config_path() -> io::Result<PathBuf> {
     Ok(path)
 }
 
-fn documents_path() -> io::Result<PathBuf> {
+pub(crate) fn documents_path() -> io::Result<PathBuf> {
     const MAX_PATH: usize = 260;
     let mut buffer = [0u16; MAX_PATH];
     let result = unsafe {
@@ -288,7 +288,7 @@ fn keyboard_bindings(
     })
 }
 
-fn parse_binding(path: &Path, name: &str, value: &str) -> io::Result<KeyBinding> {
+pub(crate) fn parse_binding(path: &Path, name: &str, value: &str) -> io::Result<KeyBinding> {
     let mut parts = value.split_whitespace();
     let vk = parts
         .next()

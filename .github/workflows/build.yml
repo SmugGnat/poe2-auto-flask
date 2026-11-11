@@ -14,7 +14,7 @@ on:
       - "LICENSE"
       - ".github/workflows/build.yml"
   pull_request:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - "src/**"
       - "Cargo.toml"

@@ -179,6 +179,42 @@ Release AppImages are assembled by GitHub Actions.
 
 ---
 
+## 🧪 PoE1 support (development branch)
+
+PoE1 support is developed on **[`feature/poe1-support`](https://github.com/SmugGnat/poe2-auto-flask/tree/feature/poe1-support)**. It includes the validated read-only PoE1 memory reader, five-slot flask automation, type-aware flask discovery, modifier-adjusted charge costs, automatic keybinding detection, and an optional movement gate for Quicksilver. This functionality is **not yet part of the public release**.
+
+Start PoE1 through Steam before launching a development AppImage. On Linux,
+the launcher detects which game is running from its validated Steam AppID
+and Proton prefix. For normal automation, just launch the AppImage with
+**no flags**:
+
+```bash
+./poe2-auto-flask-linux-x86_64.AppImage
+```
+
+Automation is the default for both games, but starts **DISARMED**; press **F11**
+while the selected game is focused to arm. To inspect game state without
+sending flask inputs, run:
+
+```bash
+./poe2-auto-flask-linux-x86_64.AppImage --debug
+```
+
+The optional `--auto` flag remains supported for existing commands but is
+not required. If **both** PoE1 and PoE2 are running, choose explicitly with
+`--game poe1` or `--game poe2`. The launcher never guesses between two
+running clients. If neither is detected, PoE2 remains the fallback selection,
+but an active Steam Proton environment is still required. On Windows,
+automatic Steam detection is not used; PoE2 remains the default unless
+`--game poe1` is specified. Both games default to automation mode. PoE1 uses `[health]` and `[mana]` thresholds, and individually opt-in utility types under `[poe1.utility]`. Duplicate equipped flasks are selected automatically with least-recently-used rotation and a separate same-resource guard for instant Life/Mana recovery. A Life-only emergency exception permits a positively identified instant Life flask to bypass an already-active gradual recovery effect at very low Life; conditional-instant flasks wait for actual Low Life (50% of maximum or less). All 18 standard PoE1 utility base types are recognized; a `quicksilver_min_run_ms` option under `[poe1]` optionally delays Quicksilver until sustained running. Keybindings are discovered from PoE1's own `production_Config.ini`.
+
+The **[PoE1 support guide](docs/POE1_SUPPORT.md)** documents memory architecture, configuration, duplicate-flask choices, safety checks, validation, and known limitations.
+
+A new **experimental, read-only** nearby-monster census is available with `--game poe1 --debug --nearby`. It reports rarity counts at 60 and 100 grid units, with strict scan-size/time limits; optional nearby conditions for utility flasks now share the cached reader when enabled. PoE1 debug mode now reports the helper's own **5-second CPU usage average**; with `--nearby` it also reports wall time spent on the last full entity scan, making baseline comparisons possible. A rarity threshold is inclusive (e.g. `rare` matches Rare and Unique); existing flask behavior remains unchanged unless you add a `[poe1.nearby.<type>]` table. Boss intro phases may still count before damage can be dealt. The external GameHelper C# reference tree is deliberately not bundled in this branch pending verification of its source license and provenance.
+
+---
+
+
 ## 📄 License
 
 Licensed under the **GNU General Public License v3.0 only** (`GPL-3.0-only`). See [`LICENSE`](LICENSE).

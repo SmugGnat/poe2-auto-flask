@@ -12,7 +12,15 @@ use windows_sys::Win32::System::Threading::{
     GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ,
 };
 
-const TARGET_PROCESS_NAMES: &[&str] = &["PathOfExileSteam.exe", "PathOfExile.exe"];
+use crate::game::Game;
+
+const POE2_PROCESS_NAMES: &[&str] = &["PathOfExileSteam.exe", "PathOfExile.exe"];
+const POE1_PROCESS_NAMES: &[&str] = &[
+    "PathOfExileSteam.exe",
+    "PathOfExile.exe",
+    "PathOfExile_x64.exe",
+    "PathOfExile_KG.exe",
+];
 const SCAN_CHUNK_SIZE: usize = 1024 * 1024;
 const STILL_ACTIVE_EXIT_CODE: u32 = 259;
 
@@ -37,10 +45,16 @@ pub struct Process {
 }
 
 impl Process {
-    pub fn attach_to_poe2() -> io::Result<Self> {
-        let pid = find_process_id(TARGET_PROCESS_NAMES)?;
+    pub fn attach_to_game(game: Game) -> io::Result<Self> {
+        // Executable names overlap between games. A game-specific memory probe
+        // must succeed before any state is used; multiple candidates fail closed.
+        let names = match game {
+            Game::Poe1 => POE1_PROCESS_NAMES,
+            Game::Poe2 => POE2_PROCESS_NAMES,
+        };
+        let pid = find_process_id(names)?;
         let handle = open_read_only(pid)?;
-        let main_module = find_main_module(pid, TARGET_PROCESS_NAMES)?;
+        let main_module = find_main_module(pid, names)?;
 
         Ok(Self {
             pid,
@@ -333,13 +347,20 @@ fn find_process_id(target_names: &[&str]) -> io::Result<u32> {
         return Err(io::Error::last_os_error());
     }
 
+    let mut selected: Option<u32> = None;
     loop {
         let name = utf16_z_to_string(&entry.szExeFile);
         if target_names
             .iter()
             .any(|target| name.eq_ignore_ascii_case(target))
         {
-            return Ok(entry.th32ProcessID);
+            if selected.is_some() {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    "multiple Path of Exile processes found; close the other client before attaching",
+                ));
+            }
+            selected = Some(entry.th32ProcessID);
         }
 
         let next_ok = unsafe { Process32NextW(snapshot.raw(), &mut entry) };
@@ -348,10 +369,12 @@ fn find_process_id(target_names: &[&str]) -> io::Result<u32> {
         }
     }
 
-    Err(io::Error::new(
-        io::ErrorKind::NotFound,
-        "Path of Exile 2 process was not found",
-    ))
+    selected.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "selected Path of Exile game process was not found",
+        )
+    })
 }
 
 fn find_main_module(pid: u32, target_names: &[&str]) -> io::Result<ModuleInfo> {

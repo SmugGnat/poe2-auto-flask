@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -5,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::file_watch::{file_stamp, FileStamp};
+use crate::poe1::types::FlaskType;
 
 const DEFAULT_CONFIG_TEXT: &str = include_str!("../config.example.toml");
 const CONFIG_PATH_ENV: &str = "POE2_AUTO_FLASK_CONFIG";
@@ -15,6 +17,110 @@ pub struct Config {
     pub general: GeneralConfig,
     pub health: FlaskConfig,
     pub mana: FlaskConfig,
+    pub poe1: Poe1Config,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct Poe1Config {
+    pub utility: Poe1UtilityConfig,
+    /// Optional type-specific proximity requirements. Absent = no scan/gate.
+    pub nearby: BTreeMap<FlaskType, NearbyRule>,
+    /// 0 disables the optional movement gate; 100..=5000 requires continuous Run animation.
+    pub quicksilver_min_run_ms: u64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct Poe1UtilityConfig {
+    pub quicksilver: bool,
+    pub granite: bool,
+    pub quartz: bool,
+    pub diamond: bool,
+    pub jade: bool,
+    pub silver: bool,
+    pub basalt: bool,
+    pub stibnite: bool,
+    pub sulphur: bool,
+    pub ruby: bool,
+    pub sapphire: bool,
+    pub topaz: bool,
+    pub amethyst: bool,
+    pub bismuth: bool,
+    pub aquamarine: bool,
+    pub gold: bool,
+    pub corundum: bool,
+    pub iron: bool,
+}
+
+impl Poe1UtilityConfig {
+    pub fn enabled(&self, kind: FlaskType) -> bool {
+        match kind {
+            FlaskType::Quicksilver => self.quicksilver,
+            FlaskType::Granite => self.granite,
+            FlaskType::Quartz => self.quartz,
+            FlaskType::Jade => self.jade,
+            FlaskType::Silver => self.silver,
+            FlaskType::Basalt => self.basalt,
+            FlaskType::Stibnite => self.stibnite,
+            FlaskType::Sulphur => self.sulphur,
+            FlaskType::Ruby => self.ruby,
+            FlaskType::Sapphire => self.sapphire,
+            FlaskType::Topaz => self.topaz,
+            FlaskType::Amethyst => self.amethyst,
+            FlaskType::Bismuth => self.bismuth,
+            FlaskType::Aquamarine => self.aquamarine,
+            FlaskType::Gold => self.gold,
+            FlaskType::Corundum => self.corundum,
+            FlaskType::Iron => self.iron,
+            FlaskType::Diamond => self.diamond,
+            _ => false,
+        }
+    }
+}
+
+/// Ordering is cumulative: Rare permits Rare or Unique, Normal permits all four.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MinimumRarity {
+    #[default]
+    Normal,
+    Magic,
+    Rare,
+    Unique,
+}
+
+impl MinimumRarity {
+    pub fn first_index(self) -> usize {
+        match self {
+            Self::Normal => 0,
+            Self::Magic => 1,
+            Self::Rare => 2,
+            Self::Unique => 3,
+        }
+    }
+}
+
+/// A table's presence adds a nearby gate; enabled=false temporarily disables it.
+/// All numeric values use the same grid-unit scale as --debug --nearby.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct NearbyRule {
+    pub enabled: bool,
+    pub radius: u16,
+    pub minimum_count: u16,
+    pub minimum_rarity: MinimumRarity,
+}
+
+impl Default for NearbyRule {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            radius: 60,
+            minimum_count: 1,
+            minimum_rarity: MinimumRarity::Normal,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -67,6 +173,7 @@ impl Default for Config {
                 enabled: true,
                 threshold_percent: 30.0,
             },
+            poe1: Poe1Config::default(),
         }
     }
 }
@@ -94,6 +201,54 @@ impl Config {
         )
     }
 
+    pub fn poe1_summary(&self) -> String {
+        let enabled = crate::poe1::types::UTILITY_TYPES
+            .into_iter()
+            .filter(|kind| self.poe1.utility.enabled(*kind))
+            .map(FlaskType::name)
+            .collect::<Vec<_>>();
+        let base = format!(
+            "{} | {} | Utility {} | Quicksilver movement {} | Hideout {}",
+            flask_summary("Life", &self.health),
+            flask_summary("Mana", &self.mana),
+            if enabled.is_empty() {
+                "OFF".to_string()
+            } else {
+                enabled.join(", ")
+            },
+            if self.poe1.quicksilver_min_run_ms == 0 {
+                "OFF".to_string()
+            } else {
+                format!("{}ms", self.poe1.quicksilver_min_run_ms)
+            },
+            if self.general.enable_in_hideout {
+                "ON"
+            } else {
+                "OFF"
+            },
+        );
+        let rules = self
+            .poe1
+            .nearby
+            .iter()
+            .filter(|(kind, rule)| rule.enabled && self.poe1.utility.enabled(**kind))
+            .map(|(kind, rule)| {
+                format!(
+                    "{} >= {} {:?}+ within {}",
+                    kind.name(),
+                    rule.minimum_count,
+                    rule.minimum_rarity,
+                    rule.radius
+                )
+            })
+            .collect::<Vec<_>>();
+        if rules.is_empty() {
+            base
+        } else {
+            format!("{base} | Nearby {}", rules.join(", "))
+        }
+    }
+
     fn parse(path: &Path, text: &str) -> io::Result<Self> {
         let config: Self = toml::from_str(text).map_err(|error| {
             io::Error::new(
@@ -108,6 +263,25 @@ impl Config {
     fn validate(&self) -> io::Result<()> {
         validate_flask("health", &self.health)?;
         validate_flask("mana", &self.mana)?;
+        let ms = self.poe1.quicksilver_min_run_ms;
+        if ms != 0 && !(100..=5000).contains(&ms) {
+            return Err(invalid(
+                "poe1.quicksilver_min_run_ms must be 0 (off) or 100..=5000",
+            ));
+        }
+        for (kind, rule) in &self.poe1.nearby {
+            if !crate::poe1::types::UTILITY_TYPES.contains(kind) {
+                return Err(invalid(format!(
+                    "PoE1 nearby rules only support utility flasks: {kind:?}"
+                )));
+            }
+            if !(1..=150).contains(&rule.radius) || !(1..=512).contains(&rule.minimum_count) {
+                return Err(invalid(format!(
+                    "poe1.nearby.{} requires radius 1..=150 and minimum_count 1..=512",
+                    kind.name().to_ascii_lowercase()
+                )));
+            }
+        }
         Ok(())
     }
 }
@@ -314,6 +488,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use super::{Config, ConfigManager, ConfigStartup, DEFAULT_CONFIG_TEXT};
+    use crate::poe1::types::FlaskType;
 
     static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -393,6 +568,102 @@ key = "2"
         assert!(config.general.enable_in_hideout);
         assert_eq!(config.health.threshold_percent, 55.0);
         assert_eq!(config.mana.threshold_percent, 25.0);
+    }
+
+    #[test]
+    fn poe1_utility_is_opt_in_and_keeps_old_config_compatible() {
+        let config = Config::parse(
+            Path::new("config.toml"),
+            "[poe1.utility]\nquicksilver=true\n",
+        )
+        .unwrap();
+        assert!(config.poe1.utility.quicksilver);
+        assert!(!config.poe1.utility.granite);
+        assert!(!Config::default().poe1.utility.quicksilver);
+    }
+
+    #[test]
+    fn poe1_all_utility_types_are_independently_configurable() {
+        let text = "[poe1.utility]\njade = true\nsilver = true\n";
+        let parsed = Config::parse(Path::new("test.toml"), text).unwrap();
+        assert!(parsed.poe1.utility.enabled(FlaskType::Jade));
+        assert!(parsed.poe1.utility.enabled(FlaskType::Silver));
+        assert!(!parsed.poe1.utility.enabled(FlaskType::Quicksilver));
+        for kind in crate::poe1::types::UTILITY_TYPES {
+            let key = kind.name().to_ascii_lowercase();
+            let cfg = Config::parse(
+                Path::new("test.toml"),
+                &format!("[poe1.utility]\n{key} = true\n"),
+            )
+            .unwrap();
+            assert!(cfg.poe1.utility.enabled(kind), "{key}");
+        }
+    }
+
+    #[test]
+    fn quicksilver_movement_gate_defaults_off_and_checks_range() {
+        assert_eq!(Config::default().poe1.quicksilver_min_run_ms, 0);
+        let cfg = Config::parse(
+            Path::new("test.toml"),
+            "[poe1]\nquicksilver_min_run_ms = 750\n",
+        )
+        .unwrap();
+        assert_eq!(cfg.poe1.quicksilver_min_run_ms, 750);
+        assert!(Config::parse(
+            Path::new("test.toml"),
+            "[poe1]\nquicksilver_min_run_ms = 50\n"
+        )
+        .is_err());
+        assert!(Config::parse(
+            Path::new("test.toml"),
+            "[poe1]\nquicksilver_min_run_ms = 5001\n"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn nearby_rules_are_opt_in_and_accept_at_least_rarity() {
+        let default = Config::default();
+        assert!(default.poe1.nearby.is_empty());
+        let cfg = Config::parse(
+            Path::new("test.toml"),
+            r#"
+[poe1.utility]
+granite = true
+[poe1.nearby.granite]
+minimum_rarity = "rare"
+minimum_count = 1
+radius = 60
+"#,
+        )
+        .unwrap();
+        assert!(cfg.poe1.utility.granite);
+        let rule = cfg.poe1.nearby.get(&FlaskType::Granite).unwrap();
+        assert!(rule.enabled);
+        assert_eq!(rule.minimum_rarity, super::MinimumRarity::Rare);
+        assert_eq!(rule.minimum_rarity.first_index(), 2);
+        assert_eq!(rule.minimum_count, 1);
+        assert_eq!(rule.radius, 60);
+    }
+
+    #[test]
+    fn invalid_nearby_rules_are_rejected() {
+        for body in [
+            "radius = 0",
+            "radius = 151",
+            "minimum_count = 0",
+            "minimum_count = 513",
+            r#"minimum_rarity = "boss""#,
+        ] {
+            let cfg = format!("[poe1.nearby.granite]\n{body}\n");
+            assert!(
+                Config::parse(Path::new("test.toml"), &cfg).is_err(),
+                "{body}"
+            );
+        }
+        assert!(
+            Config::parse(Path::new("test.toml"), "[poe1.nearby.life]\nradius = 60\n").is_err()
+        );
     }
 
     #[test]

@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::io;
 
+pub mod adapter;
+
 use crate::entity::resolve_component;
 use crate::process::{PeSection, Process};
 
@@ -63,59 +65,10 @@ const VITAL_CURRENT: usize = 0x30;
 const VITAL_READ_LEN: usize = VITAL_CURRENT + 4 - VITAL_RESERVED_FLAT;
 
 const MAX_METADATA_CHARS: usize = 256;
-const MAX_VITAL_TOTAL: i32 = 10_000_000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VitalPool {
-    pub current: i32,
-    /// Raw VitalStruct total before reservations are removed.
-    pub total: i32,
-    pub reserved_flat: i32,
-    /// Reservation fraction in basis points: 10_000 = 100%.
-    pub reserved_fraction: i32,
-}
-
-impl VitalPool {
-    pub fn usable_max(self) -> i32 {
-        let reserved_percent =
-            ((self.total as i64 * self.reserved_fraction as i64) + 9_999) / 10_000;
-        (self.total as i64 - reserved_percent - self.reserved_flat as i64).clamp(0, i32::MAX as i64)
-            as i32
-    }
-
-    pub fn percentage(self) -> Option<f32> {
-        let usable_max = self.usable_max();
-        (usable_max > 0).then_some(100.0 * self.current as f32 / usable_max as f32)
-    }
-
-    fn looks_valid(self) -> bool {
-        if self.total <= 0 || self.total > MAX_VITAL_TOTAL {
-            return false;
-        }
-        if self.current < -self.total || self.current > self.total + 1 {
-            return false;
-        }
-        if self.reserved_flat < 0 || self.reserved_flat > self.total {
-            return false;
-        }
-        (0..=10_000).contains(&self.reserved_fraction)
-    }
-
-    fn looks_valid_or_zero(self) -> bool {
-        (self.total == 0
-            && self.current == 0
-            && self.reserved_flat == 0
-            && (0..=10_000).contains(&self.reserved_fraction))
-            || self.looks_valid()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LiveVitals {
-    pub health: VitalPool,
-    pub mana: Option<VitalPool>,
-    pub energy_shield: Option<VitalPool>,
-}
+// Compatibility re-export during the adapter migration. The canonical
+// definitions now live in game_state, not in a PoE2-specific memory parser.
+pub use crate::game_state::{LiveVitals, VitalPool};
 
 #[derive(Debug)]
 pub struct VitalsProbe {
