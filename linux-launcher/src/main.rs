@@ -72,25 +72,15 @@ fn run() -> Result<(), String> {
         return Ok(());
     };
 
-    // Keep PoE1's existing explicit-mode safety gate. Auto-detection chooses
-    // the game, not whether automation is authorized to start.
-    let mode_selected = args
-        .helper_args
-        .iter()
-        .any(|arg| arg == "--debug" || arg == "--auto");
+    // Normal automation is the helper's default for either game; this launcher
+    // only selects the matching Steam/Proton environment. Arming still requires F11.
     let nearby = args.helper_args.iter().any(|arg| arg == "--nearby");
     let debug = args.helper_args.iter().any(|arg| arg == "--debug");
-    if args.game == Some(Game::Poe1) && !mode_selected {
-        return Err("PoE1 requires explicit --auto or --debug".into());
-    }
     if nearby && (!debug || args.game == Some(Game::Poe2)) {
         return Err("--nearby requires PoE1 --debug".into());
     }
 
     let (game, launch) = discover_launch_environment(args.game)?;
-    if game == Game::Poe1 && !mode_selected {
-        return Err("PoE1 requires explicit --auto or --debug".into());
-    }
     if nearby && game != Game::Poe1 {
         return Err("--nearby requires PoE1 --debug".into());
     }
@@ -145,11 +135,14 @@ fn run() -> Result<(), String> {
 }
 
 fn parse_args() -> Result<Option<Args>, String> {
+    parse_args_from(env::args_os().skip(1))
+}
+
+fn parse_args_from(mut args: impl Iterator<Item = OsString>) -> Result<Option<Args>, String> {
     let mut helper = None;
     let mut helper_args = Vec::new();
     let mut game = None;
     let mut game_seen = false;
-    let mut args = env::args_os().skip(1);
 
     while let Some(arg) = args.next() {
         if arg == OsStr::new("--help") || arg == OsStr::new("-h") {
@@ -359,7 +352,8 @@ fn print_help() {
     println!("Without --game, detect the single running game by its Steam AppID.");
     println!("When both games are running, use --game poe1 or --game poe2.");
     println!("When neither is detected, PoE2 remains the default (and still must be running).");
-    println!("PoE1 requires explicit --auto or --debug, including when auto-detected.");
+    println!("Normal automation is the default for either game and starts DISARMED (F11 to arm).");
+    println!("Use --debug for read-only diagnostics; --auto remains an optional alias.");
 }
 
 // Discovery happens once at launcher startup. All candidates must have a
@@ -538,9 +532,10 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
 mod tests {
     use super::{
         contains_bytes, detected_game, env_value, files_match, find_proton, host_path_to_wine_z,
-        select_game, Game,
+        parse_args_from, select_game, Game,
     };
     use std::env;
+    use std::ffi::OsString;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
@@ -555,6 +550,41 @@ mod tests {
                 .to_string_lossy(),
             "/tmp/compat data"
         );
+    }
+
+    #[test]
+    fn default_launch_has_no_required_mode_or_game_flags() {
+        let args = parse_args_from(std::iter::empty()).unwrap().unwrap();
+        assert_eq!(args.game, None);
+        assert!(args.helper_args.is_empty());
+    }
+
+    #[test]
+    fn poe1_selection_does_not_require_auto_or_debug() {
+        let args = parse_args_from(
+            [OsString::from("--game"), OsString::from("poe1")].into_iter(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(args.game, Some(Game::Poe1));
+        assert!(args.helper_args.is_empty());
+    }
+
+    #[test]
+    fn debug_remains_an_explicit_override() {
+        let args = parse_args_from([OsString::from("--debug")].into_iter())
+            .unwrap()
+            .unwrap();
+        assert_eq!(args.game, None);
+        assert_eq!(args.helper_args, vec![OsString::from("--debug")]);
+    }
+
+    #[test]
+    fn auto_flag_remains_backwards_compatible() {
+        let args = parse_args_from([OsString::from("--auto")].into_iter())
+            .unwrap()
+            .unwrap();
+        assert_eq!(args.helper_args, vec![OsString::from("--auto")]);
     }
 
     #[test]
