@@ -179,6 +179,28 @@ Release AppImages are assembled by GitHub Actions.
 
 ---
 
+## 🧪 PoE1 Milestone 1 (development branch only)
+
+The `feature/poe1-readonly-session` branch includes an experimental **read-only Path of Exile 1 diagnostic reader**. It is not part of the current public release and **does not automate PoE1 flasks**.
+
+Start PoE1 through Steam and, using a development build of the Linux launcher:
+
+```bash
+poe2-auto-flask-linux-launcher --game poe1 --debug
+```
+
+For a development Windows helper build:
+
+```text
+poe2-auto-flask.exe --game poe1 --debug
+```
+
+The original PoE2 commands remain unchanged and default to PoE2. PoE1 `--auto` intentionally fails closed. PoE1 diagnostics read player vitals, area, five flask slots, **raw** charge-cost values, and active player status effects.
+
+See [PoE1 Milestone 1 validation](docs/POE1_MILESTONE1.md) for offsets, cautions, and live-test instructions. The imported GameHelper reference source is not built or distributed with the executable.
+
+---
+
 ## 📄 License
 
 Licensed under the **GNU General Public License v3.0 only** (`GPL-3.0-only`). See [`LICENSE`](LICENSE).
