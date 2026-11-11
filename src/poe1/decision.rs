@@ -28,7 +28,15 @@ pub fn choose_action_with_nearby(
     quicksilver_ready: bool,
     nearby: Option<&NearbySnapshot>,
 ) -> Option<usize> {
-    choose_action_internal(config, vitals, flasks, effects, quicksilver_ready, nearby, None)
+    choose_action_internal(
+        config,
+        vitals,
+        flasks,
+        effects,
+        quicksilver_ready,
+        nearby,
+        None,
+    )
 }
 
 /// Stateful variant used only in PoE1 auto mode. No additional memory reads.
@@ -42,7 +50,13 @@ pub fn choose_action_rotating_with_nearby(
     rotation: &FlaskRotation,
 ) -> Option<usize> {
     choose_action_internal(
-        config, vitals, flasks, effects, quicksilver_ready, nearby, Some(rotation),
+        config,
+        vitals,
+        flasks,
+        effects,
+        quicksilver_ready,
+        nearby,
+        Some(rotation),
     )
 }
 
@@ -460,7 +474,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn duplicate_quicksilvers_round_robin_without_slot_settings() {
         let (mut config, mut vitals, mut flasks, mut effects) = setup();
@@ -471,11 +484,12 @@ mod tests {
         flasks.slots[4] = slot(FlaskType::Quicksilver, 90, Some(30));
         // First use chooses the better-filled flask; then switches to the
         // other eligible copy, even if it has fewer remaining whole uses.
-        let choose = |flasks: &FlaskSnapshot, effects: &EffectsSnapshot, rotation: &FlaskRotation| {
-            choose_action_rotating_with_nearby(
-                &config, vitals, flasks, effects, true, None, rotation,
-            )
-        };
+        let choose =
+            |flasks: &FlaskSnapshot, effects: &EffectsSnapshot, rotation: &FlaskRotation| {
+                choose_action_rotating_with_nearby(
+                    &config, vitals, flasks, effects, true, None, rotation,
+                )
+            };
         assert_eq!(choose(&flasks, &effects, &rotation), Some(4));
         rotation.record(4, FlaskType::Quicksilver);
         effects.slots_active[4] = true;
@@ -519,14 +533,20 @@ mod tests {
         flasks.slots[2] = slot(FlaskType::Quicksilver, 75, Some(30));
         flasks.slots[4] = slot(FlaskType::Quicksilver, 25, Some(30));
         rotation.record(2, FlaskType::Quicksilver);
-        assert_eq!(choose_action_rotating_with_nearby(
-            &config, vitals, &flasks, &effects, true, None, &rotation,
-        ), Some(2));
+        assert_eq!(
+            choose_action_rotating_with_nearby(
+                &config, vitals, &flasks, &effects, true, None, &rotation,
+            ),
+            Some(2)
+        );
         flasks.slots[2] = None;
         flasks.slots[0] = slot(FlaskType::Quicksilver, 75, Some(30));
-        assert_eq!(choose_action_rotating_with_nearby(
-            &config, vitals, &flasks, &effects, true, None, &rotation,
-        ), Some(0));
+        assert_eq!(
+            choose_action_rotating_with_nearby(
+                &config, vitals, &flasks, &effects, true, None, &rotation,
+            ),
+            Some(0)
+        );
     }
 
     #[test]

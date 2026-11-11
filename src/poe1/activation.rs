@@ -61,9 +61,11 @@ impl ActivationGuard {
             if last.is_some_and(|at| now.saturating_duration_since(at) < RECOVERY_SETTLING_GUARD) {
                 // The first equipped matching slot is enough to make the
                 // same-type decision gate block every duplicate of that type.
-                if let Some(slot) = flasks.slots.iter().position(|f| {
-                    f.as_ref().is_some_and(|flask| flask.flask_type == kind)
-                }) {
+                if let Some(slot) = flasks
+                    .slots
+                    .iter()
+                    .position(|f| f.as_ref().is_some_and(|flask| flask.flask_type == kind))
+                {
                     effects.slots_active[slot] = true;
                 }
             }
@@ -155,7 +157,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn instant_life_use_blocks_both_life_slots_until_vitals_can_settle() {
         let (config, vitals, mut flasks, mut effects) = setup();
@@ -165,15 +166,24 @@ mod tests {
         guard.mark(3, FlaskType::Life, now);
         guard.apply_to(now + Duration::from_millis(200), &flasks, &mut effects);
         assert!(effects.slots_active[3]);
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+        assert_eq!(
+            choose_action(&config, vitals, &flasks, &effects, true),
+            None
+        );
         effects.slots_active.fill(false);
         guard.apply_to(now + Duration::from_millis(700), &flasks, &mut effects);
         assert!(effects.slots_active[3]);
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+        assert_eq!(
+            choose_action(&config, vitals, &flasks, &effects, true),
+            None
+        );
         // At 900ms, the decision loop re-reads actual vitals/charges/effects.
         effects.slots_active.fill(false);
         guard.apply_to(now + RECOVERY_SETTLING_GUARD, &flasks, &mut effects);
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(3));
+        assert_eq!(
+            choose_action(&config, vitals, &flasks, &effects, true),
+            Some(3)
+        );
     }
 
     #[test]
@@ -184,12 +194,21 @@ mod tests {
         guard.mark(3, FlaskType::Life, now);
         flasks.slots[0] = slot(FlaskType::Mana);
         vitals.mana = Some(VitalPool {
-            current: 10, total: 100, reserved_flat: 0, reserved_fraction: 0,
+            current: 10,
+            total: 100,
+            reserved_flat: 0,
+            reserved_fraction: 0,
         });
         guard.apply_to(now + Duration::from_millis(100), &flasks, &mut effects);
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(0));
+        assert_eq!(
+            choose_action(&config, vitals, &flasks, &effects, true),
+            Some(0)
+        );
         config.mana.enabled = false;
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(1));
+        assert_eq!(
+            choose_action(&config, vitals, &flasks, &effects, true),
+            Some(1)
+        );
     }
 
     #[test]
