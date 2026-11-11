@@ -182,9 +182,16 @@ pub fn needs_nearby_guarded(
     life_emergency_ready: bool,
 ) -> bool {
     if choose_action_internal(
-        config, vitals, flasks, effects, quicksilver_ready, None, None,
+        config,
+        vitals,
+        flasks,
+        effects,
+        quicksilver_ready,
+        None,
+        None,
         life_emergency_ready,
-    ).is_some_and(|slot| {
+    )
+    .is_some_and(|slot| {
         flasks.slots[slot]
             .as_ref()
             .is_some_and(|flask| matches!(flask.flask_type, FlaskType::Life | FlaskType::Mana))
@@ -800,7 +807,10 @@ mod tests {
         use crate::poe1::buffs::Effect;
         let (mut config, mut vitals, mut flasks, mut effects) = setup();
         config.poe1.utility.granite = true;
-        config.poe1.nearby.insert(FlaskType::Granite, NearbyRule::default());
+        config
+            .poe1
+            .nearby
+            .insert(FlaskType::Granite, NearbyRule::default());
         config.health.threshold_percent = 50.0;
         vitals.health.current = 20;
         flasks.slots[0] = slot(FlaskType::Life, 45, Some(15));
@@ -809,8 +819,10 @@ mod tests {
         flasks.slots[2] = slot(FlaskType::Granite, 60, Some(30));
         effects.slots_active[0] = true;
         effects.effects.push(Effect {
-            name: "flask_life".into(), flask_slot: Some(0),
-            buff_type: 4, time_left: 2.0,
+            name: "flask_life".into(),
+            flask_slot: Some(0),
+            buff_type: 4,
+            time_left: 2.0,
         });
         assert!(!needs_nearby_guarded(
             &config, vitals, &flasks, &effects, true, true,
