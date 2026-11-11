@@ -56,16 +56,15 @@ impl RecoveryKind {
 
 fn mod_family(name: &str, family: &str) -> bool {
     name.strip_prefix(family).is_some_and(|suffix| {
-        suffix.is_empty() || (!suffix.starts_with('0')
-            && suffix.bytes().all(|byte| byte.is_ascii_digit()))
+        suffix.is_empty()
+            || (!suffix.starts_with('0') && suffix.bytes().all(|byte| byte.is_ascii_digit()))
     })
 }
 
 /// PoE1 Low Life = <= 50% of *maximum* Life, not unreserved Life.
 /// Use i64 in case either field grows; the memory reader validates totals.
 pub fn is_low_life(life: VitalPool) -> bool {
-    life.total > 0 && life.current > 0
-        && i64::from(life.current) * 2 <= i64::from(life.total)
+    life.total > 0 && life.current > 0 && i64::from(life.current) * 2 <= i64::from(life.total)
 }
 
 #[cfg(test)]
@@ -73,19 +72,48 @@ mod tests {
     use super::*;
 
     fn life(current: i32, total: i32) -> VitalPool {
-        VitalPool { current, total, reserved_flat: 0, reserved_fraction: 0 }
+        VitalPool {
+            current,
+            total,
+            reserved_flat: 0,
+            reserved_fraction: 0,
+        }
     }
 
     #[test]
     fn only_specific_mod_id_families_classify_as_instant() {
-        assert_eq!(RecoveryKind::from_mod_name("FlaskInstantRecoveryOnLowLife2"), Some(RecoveryKind::InstantOnLowLife));
-        assert_eq!(RecoveryKind::from_mod_name("FlaskInstantRecoveryOnLowLife5"), Some(RecoveryKind::InstantOnLowLife));
-        assert_eq!(RecoveryKind::from_mod_name("FlaskInstantRecovery1"), Some(RecoveryKind::Instant));
-        assert_eq!(RecoveryKind::from_mod_name("FlaskPartialInstantRecovery1"), Some(RecoveryKind::PartialInstant));
-        assert_eq!(RecoveryKind::from_mod_name("FlaskIncreasedRecoveryOnLowLife1"), None);
-        assert_eq!(RecoveryKind::from_mod_name("FlaskInstantRecoveryAtEnd"), None);
-        assert_eq!(RecoveryKind::from_mod_name("FlaskInstantRecovery1More"), None);
-        assert_eq!(RecoveryKind::from_mod_name("FlaskInstantRecoveryOnLowLifeX"), None);
+        assert_eq!(
+            RecoveryKind::from_mod_name("FlaskInstantRecoveryOnLowLife2"),
+            Some(RecoveryKind::InstantOnLowLife)
+        );
+        assert_eq!(
+            RecoveryKind::from_mod_name("FlaskInstantRecoveryOnLowLife5"),
+            Some(RecoveryKind::InstantOnLowLife)
+        );
+        assert_eq!(
+            RecoveryKind::from_mod_name("FlaskInstantRecovery1"),
+            Some(RecoveryKind::Instant)
+        );
+        assert_eq!(
+            RecoveryKind::from_mod_name("FlaskPartialInstantRecovery1"),
+            Some(RecoveryKind::PartialInstant)
+        );
+        assert_eq!(
+            RecoveryKind::from_mod_name("FlaskIncreasedRecoveryOnLowLife1"),
+            None
+        );
+        assert_eq!(
+            RecoveryKind::from_mod_name("FlaskInstantRecoveryAtEnd"),
+            None
+        );
+        assert_eq!(
+            RecoveryKind::from_mod_name("FlaskInstantRecovery1More"),
+            None
+        );
+        assert_eq!(
+            RecoveryKind::from_mod_name("FlaskInstantRecoveryOnLowLifeX"),
+            None
+        );
     }
 
     #[test]
