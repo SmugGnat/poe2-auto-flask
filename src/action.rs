@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn malformed_flask_slot_never_runs_validation_or_sends() {
-        let result = dispatch_with(
+        let result: Result<Dispatch<()>, DispatchError> = dispatch_with(
             ActionRequest::flask(5, key()),
             || true,
             || panic!("invalid slot must not be validated"),
