@@ -10,8 +10,8 @@ pub mod chat;
 pub mod debug;
 pub mod decision;
 pub mod flasks;
-pub mod movement;
 mod layout;
+pub mod movement;
 pub mod nearby;
 mod offsets;
 pub mod recovery;
@@ -23,8 +23,8 @@ use std::io;
 use crate::entity::resolve_component;
 use crate::game_state::{LiveVitals, VitalPool};
 use crate::process::Process;
-use offsets::*;
 use layout::Layout;
+use offsets::*;
 
 const MAX_METADATA_CHARS: usize = 256;
 const MAX_VITAL_TOTAL: i32 = 10_000_000;
@@ -83,7 +83,12 @@ pub fn refresh(process: &Process, previous: &Probe) -> io::Result<Probe> {
     // first. A fresh signature scan only happens if that pointer disappeared.
     match read_ptr(process, previous.game_state_slot) {
         Ok(state) => {
-            let found = from_root(process, previous.game_state_slot, state, Some(previous.layout))?;
+            let found = from_root(
+                process,
+                previous.game_state_slot,
+                state,
+                Some(previous.layout),
+            )?;
             report_recovery(&found, Some(previous.layout));
             Ok(found)
         }
@@ -172,7 +177,11 @@ fn try_layout(
     Ok(result)
 }
 
-fn player_info(process: &Process, area_instance: usize, offset: usize) -> io::Result<(usize, usize)> {
+fn player_info(
+    process: &Process,
+    area_instance: usize,
+    offset: usize,
+) -> io::Result<(usize, usize)> {
     let bytes = process.read_bytes(area_instance + offset, 16)?;
     let server = u64::from_le_bytes(bytes[0..8].try_into().expect("server pointer")) as usize;
     let player = u64::from_le_bytes(bytes[8..16].try_into().expect("player pointer")) as usize;

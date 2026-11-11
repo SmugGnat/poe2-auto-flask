@@ -89,7 +89,10 @@ mod tests {
         assert_eq!(world_offsets().count(), 9);
         assert_eq!(vital_deltas().count(), 17);
         assert_eq!(area_offsets().next(), Some(IN_GAME_AREA));
-        assert_eq!(vital_deltas().take(5).collect::<Vec<_>>(), [0, -4, 4, -8, 8]);
+        assert_eq!(
+            vital_deltas().take(5).collect::<Vec<_>>(),
+            [0, -4, 4, -8, 8]
+        );
         assert!(area_offsets().all(|offset| offset.abs_diff(IN_GAME_AREA) <= AREA_WINDOW));
         assert!(player_info_offsets().all(|offset| offset % 8 == 0));
         assert!(world_offsets().all(|offset| offset % 8 == 0));
