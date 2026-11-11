@@ -410,7 +410,7 @@ fn flask_has_usable_charges(
 
 #[cfg(test)]
 mod tests {
-    use super::{ci_like_defense, player_is_dead};
+    use super::{ci_like_defense, player_is_dead, FlaskState};
     use crate::poe2::VitalPool;
 
     fn pool(current: i32, total: i32) -> VitalPool {
@@ -420,6 +420,18 @@ mod tests {
             reserved_flat: 0,
             reserved_fraction: 0,
         }
+    }
+
+    #[test]
+    fn post_send_guard_blocks_immediate_repeat_and_clears_notice() {
+        let mut state = FlaskState::new();
+        assert!(state.ready());
+        state.charge_block_reported = true;
+
+        // Successful dispatch is the only caller of mark_fired.
+        state.mark_fired();
+        assert!(!state.ready());
+        assert!(!state.charge_block_reported);
     }
 
     #[test]
