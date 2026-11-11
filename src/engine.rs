@@ -221,6 +221,43 @@ mod tests {
     }
 
     #[test]
+    fn launch_is_disarmed_and_unfocused_key_does_not_arm_on_refocus() {
+        let mut latch = ArmLatch::default();
+        assert!(!latch.armed);
+
+        // An unfocused F11 press is consumed, not replayed on focus gain.
+        assert_eq!(latch.observe(true, false), None);
+        assert_eq!(latch.observe(true, true), None);
+        assert!(!latch.armed);
+
+        assert_eq!(latch.observe(false, true), None);
+        assert_eq!(latch.observe(true, true), Some(true));
+        assert!(latch.armed);
+    }
+
+    #[test]
+    fn focus_loss_does_not_replay_held_toggle_or_implicitly_disarm() {
+        let mut latch = ArmLatch::default();
+        assert_eq!(latch.observe(true, true), Some(true));
+        assert!(latch.armed);
+
+        // The engine pauses while unfocused; the latch itself only changes
+        // state on a fresh foreground rising edge.
+        assert_eq!(latch.observe(true, false), None);
+        assert_eq!(latch.observe(true, true), None);
+        assert!(latch.armed);
+
+        assert_eq!(latch.observe(false, false), None);
+        assert_eq!(latch.observe(true, false), None);
+        assert_eq!(latch.observe(true, true), None);
+        assert!(latch.armed);
+
+        assert_eq!(latch.observe(false, true), None);
+        assert_eq!(latch.observe(true, true), Some(false));
+        assert!(!latch.armed);
+    }
+
+    #[test]
     fn policy_can_retry_without_clearing_state_or_request_refresh() {
         assert_ne!(TickOutcome::Unchanged, TickOutcome::Refresh);
         assert_eq!(TickOutcome::Status("ARMED"), TickOutcome::Status("ARMED"));
