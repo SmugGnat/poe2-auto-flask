@@ -271,7 +271,13 @@ pub fn run(
                             if let Some(flask) = &flasks.slots[slot] {
                                 send_flask_key(keys[slot])?;
                                 let sent_at = Instant::now();
-                                activation_guard.mark(slot, flask.flask_type, sent_at, new_vitals, &flasks);
+                                activation_guard.mark(
+                                    slot,
+                                    flask.flask_type,
+                                    sent_at,
+                                    new_vitals,
+                                    &flasks,
+                                );
                                 rotation.record(slot, flask.flask_type);
                                 println!(
                                     "{} flask (slot {}) -> {} | charges {} | effective cost {}",

@@ -152,10 +152,11 @@ impl ActivationGuard {
 
         // Any same-type slot blocks the entire type, including other equipped
         // instant flasks. It never blocks the opposite recovery resource.
-        if let Some(slot) = flasks.slots.iter().position(|slot| {
-            slot.as_ref()
-                .is_some_and(|flask| flask.flask_type == kind)
-        }) {
+        if let Some(slot) = flasks
+            .slots
+            .iter()
+            .position(|slot| slot.as_ref().is_some_and(|flask| flask.flask_type == kind))
+        {
             effects.slots_active[slot] = true;
         }
     }
@@ -236,11 +237,23 @@ mod tests {
         guard.mark(3, FlaskType::Life, sent, vitals, &flasks);
         assert_eq!(choose(&config, vitals, &flasks, &mut guard, sent), None);
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(200)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_millis(200)
+            ),
             None
         );
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_secs(5)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_secs(5)
+            ),
             None
         );
     }
@@ -253,11 +266,23 @@ mod tests {
         guard.mark(3, FlaskType::Life, sent, vitals, &flasks);
         flasks.slots[3] = slot(FlaskType::Life, 65);
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(60)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_millis(60)
+            ),
             None
         );
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(100)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_millis(100)
+            ),
             Some(3)
         );
     }
@@ -270,7 +295,13 @@ mod tests {
         guard.mark(3, FlaskType::Life, sent, vitals, &flasks);
         vitals.health.current = 35;
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(100)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_millis(100)
+            ),
             Some(3)
         );
     }
@@ -282,12 +313,24 @@ mod tests {
         let sent = Instant::now();
         guard.mark(3, FlaskType::Life, sent, vitals, &flasks);
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(100)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_millis(100)
+            ),
             None
         );
         vitals.health.current = 10;
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(200)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_millis(200)
+            ),
             Some(3)
         );
     }
@@ -300,12 +343,24 @@ mod tests {
         guard.mark(3, FlaskType::Life, sent, vitals, &flasks);
         vitals.health.current = 90;
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(100)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_millis(100)
+            ),
             None
         );
         vitals.health.current = 20;
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(200)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_millis(200)
+            ),
             Some(3)
         );
     }
@@ -320,18 +375,42 @@ mod tests {
         let sent = Instant::now();
         guard.mark(0, FlaskType::Mana, sent, vitals, &flasks);
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(150)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_millis(150)
+            ),
             None
         );
         vitals.mana.as_mut().unwrap().current = 5;
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(200)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_millis(200)
+            ),
             Some(0)
         );
-        guard.mark(0, FlaskType::Mana, sent + Duration::from_millis(200), vitals, &flasks);
+        guard.mark(
+            0,
+            FlaskType::Mana,
+            sent + Duration::from_millis(200),
+            vitals,
+            &flasks,
+        );
         flasks.slots[0] = slot(FlaskType::Mana, 45);
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(300)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_millis(300)
+            ),
             Some(0)
         );
     }
@@ -346,12 +425,24 @@ mod tests {
         let sent = Instant::now();
         guard.mark(3, FlaskType::Life, sent, vitals, &flasks);
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(50)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_millis(50)
+            ),
             Some(0)
         );
         config.mana.enabled = false;
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(200)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_millis(200)
+            ),
             None
         );
     }
@@ -368,11 +459,23 @@ mod tests {
         let sent = Instant::now();
         guard.mark(1, FlaskType::Quicksilver, sent, vitals, &flasks);
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(250)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_millis(250)
+            ),
             None
         );
         assert_eq!(
-            choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(351)),
+            choose(
+                &config,
+                vitals,
+                &flasks,
+                &mut guard,
+                sent + Duration::from_millis(351)
+            ),
             Some(1)
         );
     }
@@ -388,9 +491,17 @@ mod tests {
             slots_active: [false, false, false, true, false],
             effects: Vec::new(),
         };
-        guard.apply_to(sent + Duration::from_millis(120), vitals, &flasks, &mut effects);
+        guard.apply_to(
+            sent + Duration::from_millis(120),
+            vitals,
+            &flasks,
+            &mut effects,
+        );
         assert!(effects.slots_active[3]);
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+        assert_eq!(
+            choose_action(&config, vitals, &flasks, &effects, true),
+            None
+        );
     }
 
     #[test]
