@@ -1,3 +1,4 @@
+mod action;
 mod area;
 mod automation;
 mod bindings;

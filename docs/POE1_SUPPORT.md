@@ -47,6 +47,32 @@ Selected offsets transcribed from a GameHelper C# snapshot (comments for the 202
 
 **Provenance:** The originally supplied GameHelper source snapshot had no verified original repository commit, upstream URL, or license. To avoid redistributing unverified third-party source, the consolidated branch **does not include** its approximately 3.6 MB C# reference tree. This project does not compile or link GameHelper. Relevant observations are independently implemented in Rust and documented here. Verify provenance and any attribution/licensing obligations before redistributing that original C# source.
 
+## Shared action interface and executor — architecture milestone 4
+
+- Both game-specific policies now submit `ActionRequest::flask(slot, binding)`
+  through the single, allocation-free dispatcher in `src/action.rs`. The
+  request uses an `ActionKind` enum so future skill and buff actions can
+  integrate without embedding their rules in the automation scheduler.
+- The dispatcher validates the requested flask-slot range, verifies
+  selected-game foreground focus, runs the **game policy's own final
+  validation callback**, checks focus again, and sends through the existing
+  `SendInput` binding. It does not interpret offsets, read game memory,
+  inspect buffs, or schedule additional polling.
+- Only a successful SendInput produces `Dispatch::Sent` with the validated
+  state and timestamp. A denied/stale/unfocused action is skipped; failures
+  distinguish policy validation errors from input errors. Per-game cooldown
+  and rotation state is updated **only on successful dispatch**.
+- PoE1 keeps the existing immediate pre-send player/chat check, current
+  flask-effect and threshold decision, optional Quicksilver motion check,
+  state-aware settling and rotation. Invalid game-state validation requests
+  reconnection, while input errors remain fatal as before.
+- PoE2 keeps the two-slot Life/Mana threshold, charges, active locks and
+  1000ms per-flask guard. Its pre-validated decisions also pass through the
+  common dispatcher, which now prevents a send if focus is lost during a
+  decision. Both Life and Mana can still activate in one tick when eligible.
+- No new config values, per-tick game reads, action queue, or autonomous
+  background tasks are introduced. The game adapters remain independent.
+
 ## Shared automation lifecycle — architecture milestone 3
 
 The auto-mode scheduler is now **one implementation** in `src/engine.rs`,

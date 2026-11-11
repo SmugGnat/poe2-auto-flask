@@ -4,9 +4,10 @@
 use std::io;
 use std::time::{Duration, Instant};
 
+use crate::action::{dispatch, ActionRequest, Dispatch, DispatchError};
 use crate::config::{Config, ConfigManager, ConfigReload};
 use crate::engine::{GameAutomationPolicy, TickOutcome};
-use crate::input::{is_process_foreground, send_flask_key};
+use crate::input::is_process_foreground;
 use crate::process::Process;
 use crate::session::GameSession;
 
@@ -198,71 +199,88 @@ impl GameAutomationPolicy for Policy {
 
         match state {
             Ok(Some((slot, flasks, proximity))) => {
-                // Preserve the second validation immediately before a key:
-                // vital identity, threshold, focus, chat, movement and buffs.
-                let revalidated = session.poe1_verify_vitals(process).and_then(|v| {
+                // The shared executor checks foreground before and after
+                // game-specific validation, then owns the only SendInput.
+                // No input, cooldown or rotation bookkeeping is performed
+                // when the policy denies an action or a read becomes stale.
+                let keys = self.ready_keys()?;
+                let action = ActionRequest::flask(slot, keys[slot]);
+                let mut paused = false;
+                let dispatched = dispatch(process, action, || {
+                    // Keep the proven PoE1 pre-send checks: live player
+                    // identity/vitals, chat, Quicksilver animation and
+                    // re-running the current flask decision/active effects.
+                    let new_vitals = session.poe1_verify_vitals(process)?;
                     let chat = session.poe1_chat_active(process)?;
-                    Ok((v, chat))
-                });
-                match revalidated {
-                    Ok((new_vitals, false))
-                        if is_process_foreground(process.pid())
-                            && new_vitals.health.current > 0 =>
+                    if chat || new_vitals.health.current <= 0 {
+                        paused = true;
+                        return Ok(None);
+                    }
+
+                    let quicksilver_motion_ok = if moving_ms > 0
+                        && flasks.slots[slot]
+                            .as_ref()
+                            .is_some_and(|flask| flask.flask_type == FlaskType::Quicksilver)
                     {
-                        let quicksilver_motion_ok = if moving_ms > 0
-                            && flasks.slots[slot]
-                                .as_ref()
-                                .is_some_and(|flask| flask.flask_type == FlaskType::Quicksilver)
-                        {
-                            quicksilver_ready
-                                && session.poe1_verify_animation(process).ok()
-                                    == Some(RUN_ANIMATION_ID)
-                        } else {
-                            true
-                        };
-                        if !quicksilver_motion_ok {
-                            self.run_tracker.reset();
-                        }
-                        let mut effects = session.poe1_effects(process)?.clone();
-                        self.activation_guard
-                            .apply_to(started, new_vitals, &flasks, &mut effects);
-                        if quicksilver_motion_ok
-                            && choose_action_rotating_guarded(
-                                config,
+                        quicksilver_ready
+                            && session.poe1_verify_animation(process).ok()
+                                == Some(RUN_ANIMATION_ID)
+                    } else {
+                        true
+                    };
+                    if !quicksilver_motion_ok {
+                        self.run_tracker.reset();
+                    }
+                    let mut effects = session.poe1_effects(process)?.clone();
+                    self.activation_guard
+                        .apply_to(started, new_vitals, &flasks, &mut effects);
+                    let still_selected = choose_action_rotating_guarded(
+                        config,
+                        new_vitals,
+                        &flasks,
+                        &effects,
+                        quicksilver_ready,
+                        proximity.as_ref(),
+                        &self.rotation,
+                        !self.activation_guard.life_input_pending(),
+                    ) == Some(slot);
+                    if quicksilver_motion_ok
+                        && still_selected
+                        && !blocks_grace_period(&effects)
+                    {
+                        Ok(Some(new_vitals))
+                    } else {
+                        Ok(None)
+                    }
+                });
+
+                match dispatched {
+                    Ok(Dispatch::Sent { validated: new_vitals, sent_at }) => {
+                        if let Some(flask) = &flasks.slots[slot] {
+                            self.activation_guard.mark(
+                                slot,
+                                flask.flask_type,
+                                sent_at,
                                 new_vitals,
                                 &flasks,
-                                &effects,
-                                quicksilver_ready,
-                                proximity.as_ref(),
-                                &self.rotation,
-                                !self.activation_guard.life_input_pending(),
-                            ) == Some(slot)
-                            && !blocks_grace_period(&effects)
-                        {
-                            if let Some(flask) = &flasks.slots[slot] {
-                                send_flask_key(self.ready_keys()?[slot])?;
-                                let sent_at = Instant::now();
-                                self.activation_guard.mark(
-                                    slot,
-                                    flask.flask_type,
-                                    sent_at,
-                                    new_vitals,
-                                    &flasks,
-                                );
-                                self.rotation.record(slot, flask.flask_type);
-                                println!(
-                                    "{} flask (slot {}) -> {} | charges {} | effective cost {}",
-                                    flask.flask_type.name(),
-                                    slot + 1,
-                                    self.ready_keys()?[slot].label(),
-                                    flask.current_charges,
-                                    flask.effective_per_use.unwrap_or_default()
-                                );
-                            }
+                            );
+                            self.rotation.record(slot, flask.flask_type);
+                            println!(
+                                "{} flask (slot {}) -> {} | charges {} | effective cost {}",
+                                flask.flask_type.name(),
+                                slot + 1,
+                                keys[slot].label(),
+                                flask.current_charges,
+                                flask.effective_per_use.unwrap_or_default()
+                            );
                         }
                     }
-                    Ok(_) => return Ok(TickOutcome::Status("PAUSED (chat or focus)")),
-                    Err(_) => return Ok(TickOutcome::Refresh),
+                    Ok(Dispatch::Skipped) if paused || !is_process_foreground(process.pid()) => {
+                        return Ok(TickOutcome::Status("PAUSED (chat or focus)"));
+                    }
+                    Ok(Dispatch::Skipped) => {}
+                    Err(DispatchError::Validation(_)) => return Ok(TickOutcome::Refresh),
+                    Err(DispatchError::Input(error)) => return Err(error),
                 }
             }
             Ok(None) => {}

@@ -3,6 +3,7 @@
 use std::io;
 use std::time::{Duration, Instant};
 
+use crate::action::{dispatch, ActionRequest, Dispatch, DispatchError};
 use crate::area::{resolve_area_info, AreaInfo};
 use crate::bindings::{BindingManager, BindingReload, GameBindings};
 use crate::buffs::{resolve_flask_lock_probe, sample_flask_locks, FlaskLockProbe, FlaskLocks};
@@ -12,7 +13,7 @@ use crate::flask_inventory::{
     resolve_flask_inventory_probe, sample_flask_charges_fast, FlaskChargeCache,
     FlaskChargeSnapshot, FlaskChargeState, FlaskInventoryProbe,
 };
-use crate::input::{send_flask_key, KeyBinding};
+use crate::input::KeyBinding;
 use crate::poe2::VitalPool;
 use crate::process::Process;
 use crate::session::GameSession;
@@ -267,6 +268,7 @@ impl GameAutomationPolicy for Policy {
 
                 if !ci_like_defense(vitals.health, vitals.energy_shield) {
                     maybe_fire(
+                        process,
                         "Life",
                         LIFE_FLASK_SLOT,
                         vitals.health,
@@ -282,6 +284,7 @@ impl GameAutomationPolicy for Policy {
 
                 if let Some(mana) = vitals.mana {
                     maybe_fire(
+                        process,
                         "Mana",
                         MANA_FLASK_SLOT,
                         mana,
@@ -319,6 +322,7 @@ fn ci_like_defense(health: VitalPool, energy_shield: Option<VitalPool>) -> bool 
 
 #[allow(clippy::too_many_arguments)]
 fn maybe_fire(
+    process: &Process,
     label: &str,
     slot: usize,
     pool: VitalPool,
@@ -350,15 +354,21 @@ fn maybe_fire(
     }
     let charge_state = charge_state.expect("usable charge state must exist");
 
-    send_flask_key(binding)?;
-    println!(
-        "{label} flask: {:.1}% -> {} (charges {}/{})",
-        percent,
-        binding.label(),
-        charge_state.current,
-        charge_state.per_use
-    );
-    state.mark_fired();
+    // All game policies send through the shared action executor. PoE2's
+    // preexisting checks above remain its decision policy; the executor
+    // additionally refuses input if the selected game lost focus.
+    let outcome = dispatch(process, ActionRequest::flask(slot, binding), || Ok(Some(())))
+        .map_err(DispatchError::into_io)?;
+    if let Dispatch::Sent { .. } = outcome {
+        println!(
+            "{label} flask: {:.1}% -> {} (charges {}/{})",
+            percent,
+            binding.label(),
+            charge_state.current,
+            charge_state.per_use
+        );
+        state.mark_fired();
+    }
     Ok(())
 }
 
