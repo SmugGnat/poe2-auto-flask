@@ -70,7 +70,7 @@ The gate only affects Quicksilver; it never prevents Life, Mana or another utili
 ## Safety, validation, and limitations
 
 - Starts **DISARMED**; F11 only arms/disarms while the selected game is focused.
-- Game state, focus, town/hideout permission, chat/UI visibility, death status, grace period, charges, active effects, modifier validity and a one-second post-use guard gate input. Invalid observations fail closed. The launcher does not invent a missing Proton prefix.
+- Game state, focus, town/hideout permission, chat/UI visibility, death status, grace period, charges, active effects, modifier validity and a **350 ms per-slot input settling guard** gate input. This is not a flask cooldown. A Quicksilver use never delays a Life/Mana response. Invalid observations fail closed. The launcher does not invent a missing Proton prefix.
 - `--game poe1 --debug` reads state only. It reports Life/Mana/ES, area, chat open/closed, base flask type, charges, raw/effective charge cost, active effects and Actor movement.
 - **Live-tested successfully on a user's Steam Proton setup:** Life/Mana/ES and unreserved totals, area changes, five flask slots, matching player buffs, active Utility Flask effects, 26%-reduced Life flask cost (raw 15 → effective 11), chat detection, automatic PoE1 keybindings, Quicksilver and Life automation, F11 arming, focus and town/hideout protection, config reload, and optional ~750 ms Run gate.
 - **Still needing broader live testing:** all 18 utility types, duplicate Life/Mana/utility selection, unusual/unique flask modifier behavior, gamepad input, other movement skills, and PoE2 end-to-end regression. Automated CI tests cannot prove future game versions preserve memory offsets.

@@ -1,4 +1,5 @@
 //! Validated read-only PoE1 memory reader. No input, injection or memory writes.
+pub mod activation;
 pub mod area;
 pub mod automation;
 pub mod bindings;

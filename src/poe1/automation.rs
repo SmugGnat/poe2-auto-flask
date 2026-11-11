@@ -9,6 +9,7 @@ use crate::input::{is_process_foreground, master_toggle_down, send_flask_key};
 use crate::process::Process;
 use crate::session::GameSession;
 
+use super::activation::ActivationGuard;
 use super::bindings::{BindingManager, BindingState};
 use super::decision::{blocks_grace_period, choose_action, enabled_demand};
 use super::movement::{RunTracker, RUN_ANIMATION_ID};
@@ -18,7 +19,6 @@ const POLL: Duration = Duration::from_millis(100);
 const RELOAD_INTERVAL: Duration = Duration::from_secs(1);
 const BINDING_INTERVAL: Duration = Duration::from_secs(2);
 const REFRESH_INTERVAL: Duration = Duration::from_millis(250);
-const POST_USE_GUARD: Duration = Duration::from_millis(1000);
 
 pub fn run(
     process: &Process,
@@ -28,7 +28,7 @@ pub fn run(
     let mut bindings = BindingManager::load()?;
     let mut armed = false;
     let mut was_down = false;
-    let mut last_fire: Option<Instant> = None;
+    let mut activation_guard = ActivationGuard::default();
     let mut run_tracker = RunTracker::default();
     let mut next_refresh = Instant::now();
     let mut next_config_reload = Instant::now() + RELOAD_INTERVAL;
@@ -72,7 +72,7 @@ pub fn run(
         if down && !was_down && focus {
             run_tracker.reset();
             armed = !armed;
-            last_fire = None;
+            activation_guard.reset();
             needs_refresh = armed;
             next_refresh = started;
             show(
@@ -119,7 +119,7 @@ pub fn run(
             match session.refresh(process) {
                 Ok(()) => {
                     needs_refresh = false;
-                    last_fire = None;
+                    activation_guard.reset();
                     run_tracker.reset();
                 }
                 Err(_) => {
@@ -181,24 +181,17 @@ pub fn run(
             true
         };
 
-        // Don't spend cross-process reads on charges/effects while the input
-        // guard is active, but still validate vitals/area every 100ms.
-        if last_fire.is_some_and(|when| when.elapsed() < POST_USE_GUARD) {
-            show(&mut status, "ARMED");
-            nap(started);
-            continue;
-        }
-
         let state = (|| {
             let chat = session.poe1_chat_active(process)?;
             if chat {
                 return Ok::<_, io::Error>(None);
             }
-            let effects = session.poe1_effects(process)?.clone();
+            let mut effects = session.poe1_effects(process)?.clone();
             if blocks_grace_period(&effects) {
                 return Ok(None);
             }
             let flasks = session.poe1_flasks(process)?.clone();
+            activation_guard.apply_to(started, &flasks, &mut effects);
             let chosen = choose_action(
                 manager.current(),
                 vitals,
@@ -238,19 +231,20 @@ pub fn run(
                         if !quicksilver_motion_ok {
                             run_tracker.reset();
                         }
-                        let effects = session.poe1_effects(process)?;
+                        let mut effects = session.poe1_effects(process)?.clone();
+                        activation_guard.apply_to(started, &flasks, &mut effects);
                         if quicksilver_motion_ok
                             && choose_action(
                                 manager.current(),
                                 new_vitals,
                                 &flasks,
-                                effects,
+                                &effects,
                                 quicksilver_ready,
                             ) == Some(slot)
-                            && !blocks_grace_period(effects)
+                            && !blocks_grace_period(&effects)
                         {
                             send_flask_key(keys[slot])?;
-                            last_fire = Some(Instant::now());
+                            activation_guard.mark(slot, Instant::now());
                             if let Some(flask) = &flasks.slots[slot] {
                                 println!(
                                     "{} flask (slot {}) -> {} | charges {} | effective cost {}",
