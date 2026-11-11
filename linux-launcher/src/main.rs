@@ -537,8 +537,8 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        contains_bytes, detected_game, env_value, files_match, find_proton,
-        host_path_to_wine_z, select_game, Game,
+        contains_bytes, detected_game, env_value, files_match, find_proton, host_path_to_wine_z,
+        select_game, Game,
     };
     use std::env;
     use std::fs;
