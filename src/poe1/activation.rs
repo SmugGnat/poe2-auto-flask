@@ -179,10 +179,10 @@ fn resource_current(vitals: LiveVitals, kind: FlaskType) -> Option<i32> {
 mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::game_state::VitalPool;
     use crate::poe1::decision::choose_action;
     use crate::poe1::flasks::FlaskSlot;
     use crate::poe1::recovery::RecoveryKind;
-    use crate::game_state::VitalPool;
 
     fn slot(kind: FlaskType, charges: i32) -> Option<FlaskSlot> {
         Some(FlaskSlot {

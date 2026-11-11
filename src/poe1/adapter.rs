@@ -6,11 +6,11 @@ use crate::area::AreaInfo;
 use crate::game_state::{GameStateReader, LiveVitals};
 use crate::process::Process;
 
-use super::{self as poe1, Probe};
 use super::buffs::{EffectCache, EffectsSnapshot};
 use super::flasks::{FlaskCache, FlaskSnapshot};
 use super::movement::MotionCache;
 use super::nearby::{NearbyCache, NearbySnapshot};
+use super::Probe;
 
 #[derive(Default)]
 struct TickSnapshot {
@@ -32,7 +32,7 @@ pub struct Adapter {
 impl Adapter {
     pub fn probe(process: &Process) -> io::Result<Self> {
         Ok(Self {
-            probe: poe1::probe(process)?,
+            probe: super::probe(process)?,
             tick: TickSnapshot::default(),
             flask_cache: FlaskCache::default(),
             effect_cache: EffectCache::default(),
@@ -50,7 +50,7 @@ impl Adapter {
     }
 
     pub fn verify_vitals(&self, process: &Process) -> io::Result<LiveVitals> {
-        poe1::sample_vitals(process, &self.probe)
+        super::sample_vitals(process, &self.probe)
     }
 
     pub fn chat_active(&self, process: &Process) -> io::Result<bool> {
@@ -83,18 +83,28 @@ impl Adapter {
 
     pub fn flasks(&mut self, process: &Process) -> io::Result<&FlaskSnapshot> {
         if self.tick.flasks.is_none() {
-            self.tick.flasks =
-                Some(super::flasks::sample(process, &self.probe, &mut self.flask_cache)?);
+            self.tick.flasks = Some(super::flasks::sample(
+                process,
+                &self.probe,
+                &mut self.flask_cache,
+            )?);
         }
         Ok(self.tick.flasks.as_ref().expect("PoE1 flasks just sampled"))
     }
 
     pub fn effects(&mut self, process: &Process) -> io::Result<&EffectsSnapshot> {
         if self.tick.effects.is_none() {
-            self.tick.effects =
-                Some(super::buffs::sample(process, &self.probe, &mut self.effect_cache)?);
+            self.tick.effects = Some(super::buffs::sample(
+                process,
+                &self.probe,
+                &mut self.effect_cache,
+            )?);
         }
-        Ok(self.tick.effects.as_ref().expect("PoE1 effects just sampled"))
+        Ok(self
+            .tick
+            .effects
+            .as_ref()
+            .expect("PoE1 effects just sampled"))
     }
 }
 
@@ -107,11 +117,11 @@ impl GameStateReader for Adapter {
         self.effect_cache.clear();
         self.motion_cache.clear();
         self.nearby_cache.clear();
-        self.probe = poe1::refresh(process, &self.probe)?;
+        self.probe = super::refresh(process, &self.probe)?;
         Ok(())
     }
 
     fn read_vitals(&self, process: &Process) -> io::Result<LiveVitals> {
-        poe1::sample_vitals(process, &self.probe)
+        super::sample_vitals(process, &self.probe)
     }
 }

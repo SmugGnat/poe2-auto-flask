@@ -26,7 +26,10 @@ impl GameSession {
             Game::Poe1 => Reader::Poe1(poe1::adapter::Adapter::probe(process)?),
             Game::Poe2 => Reader::Poe2(poe2::adapter::Adapter::probe(process)?),
         };
-        Ok(Self { reader, snapshot: GameSnapshot::default() })
+        Ok(Self {
+            reader,
+            snapshot: GameSnapshot::default(),
+        })
     }
 
     /// Drop only this tick's values. Adapter pointer caches remain valid until
@@ -144,7 +147,10 @@ impl GameSession {
 }
 
 fn unsupported() -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, "reader does not support this game")
+    io::Error::new(
+        io::ErrorKind::InvalidInput,
+        "reader does not support this game",
+    )
 }
 
 #[cfg(test)]

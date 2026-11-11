@@ -1,8 +1,8 @@
 //! Cross-game, read-only values. These represent what automation needs,
 //! not the in-process memory layout of either Path of Exile client.
 //! Each game adapter independently validates and constructs these values.
-use std::io;
 use crate::process::Process;
+use std::io;
 
 const MAX_VITAL_TOTAL: i32 = 10_000_000;
 
@@ -88,7 +88,10 @@ mod tests {
         let mut snap = GameSnapshot {
             vitals: Some(LiveVitals {
                 health: VitalPool {
-                    current: 20, total: 100, reserved_flat: 0, reserved_fraction: 0
+                    current: 20,
+                    total: 100,
+                    reserved_flat: 0,
+                    reserved_fraction: 0,
                 },
                 mana: None,
                 energy_shield: None,
@@ -102,7 +105,10 @@ mod tests {
     #[test]
     fn shared_percentages_use_unreserved_pool() {
         let life = VitalPool {
-            current: 300, total: 1000, reserved_flat: 200, reserved_fraction: 1000
+            current: 300,
+            total: 1000,
+            reserved_flat: 200,
+            reserved_fraction: 1000,
         };
         assert_eq!(life.usable_max(), 700);
         assert_eq!(life.percentage(), Some(300.0 / 700.0 * 100.0));

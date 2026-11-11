@@ -334,9 +334,9 @@ pub fn blocks_grace_period(effects: &EffectsSnapshot) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game_state::VitalPool;
     use crate::poe1::flasks::FlaskSlot;
     use crate::poe1::recovery::RecoveryKind;
-    use crate::game_state::VitalPool;
 
     fn slot(kind: FlaskType, charges: i32, cost: Option<i32>) -> Option<FlaskSlot> {
         Some(FlaskSlot {

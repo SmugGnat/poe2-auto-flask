@@ -13,7 +13,9 @@ pub struct Adapter {
 
 impl Adapter {
     pub fn probe(process: &Process) -> io::Result<Self> {
-        Ok(Self { probe: super::probe_vitals(process)? })
+        Ok(Self {
+            probe: super::probe_vitals(process)?,
+        })
     }
 
     pub fn vitals_probe(&self) -> &VitalsProbe {
