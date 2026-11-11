@@ -62,8 +62,10 @@ Selected offsets transcribed from a GameHelper C# snapshot (comments for the 202
   process memory or scan unknown entity/component types.
 - A candidate must contain a plausible ServerData/local-player pair,
   actual `Metadata/Characters/` metadata, a valid player entity ID,
-  a resolved Life component with valid health/mana/ES pools, and an
-  independently decoded WorldArea.dat row (name, ID, flags and act).
+  a resolved Life component with valid health/mana/ES pools and **positive
+  current Life** during heuristic discovery, and an independently decoded
+  WorldArea.dat row (name, ID, flags and act). Known-offset reads still
+  support a dead character without requiring positive current Life.
   The full player and area chains are checked again before acceptance.
   **Ambiguous or absent matches fail closed**, without authorizing input.
 - The accepted offsets stay in the PoE1 session probe and are used for

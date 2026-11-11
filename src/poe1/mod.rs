@@ -225,7 +225,14 @@ fn recover_layout(
                 continue;
             };
             for vital_delta in layout::vital_deltas() {
-                if read_vital_pools(process, life_component, vital_delta).is_err() {
+                let Ok(vitals) = read_vital_pools(process, life_component, vital_delta) else {
+                    continue;
+                };
+                // Misaligned views can turn an actual Current into a plausible
+                // Total while reading zero as Current. Require the living
+                // character's health for *heuristic* recovery; the known layout
+                // continues to support dead characters.
+                if !recovery_vitals_valid(&vitals) {
                     continue;
                 }
                 for world_offset in layout::world_offsets() {
@@ -306,9 +313,21 @@ fn read_vital_pools(
         .ok_or_else(|| invalid("invalid PoE1 shifted vital offset"))?;
     let len = LIFE_ES + VITAL_CURRENT + 4 - (LIFE_HEALTH + VITAL_FLAT);
     let bytes = process.read_bytes(life_component + base, len)?;
-    let health = pool_at(&bytes, 0);
-    let mana = pool_at(&bytes, LIFE_MANA - LIFE_HEALTH);
-    let es = pool_at(&bytes, LIFE_ES - LIFE_HEALTH);
+    decode_vital_pools(&bytes)
+}
+
+fn recovery_vitals_valid(vitals: &LiveVitals) -> bool {
+    vitals.health.current > 0
+}
+
+fn decode_vital_pools(bytes: &[u8]) -> io::Result<LiveVitals> {
+    const POOL_SPAN: usize = LIFE_ES + VITAL_CURRENT + 4 - (LIFE_HEALTH + VITAL_FLAT);
+    if bytes.len() != POOL_SPAN {
+        return Err(invalid("invalid PoE1 combined vital span"));
+    }
+    let health = pool_at(bytes, 0);
+    let mana = pool_at(bytes, LIFE_MANA - LIFE_HEALTH);
+    let es = pool_at(bytes, LIFE_ES - LIFE_HEALTH);
     if !valid_pool(health, false) || !valid_pool(mana, true) || !valid_pool(es, true) {
         return Err(invalid("PoE1 vital fields failed range validation"));
     }
@@ -434,6 +453,33 @@ mod tests {
             },
             true
         ));
+    }
+
+    #[test]
+    fn shifted_vital_fallback_rejects_misaligned_zero_life() {
+        let span = LIFE_ES + VITAL_CURRENT + 4 - (LIFE_HEALTH + VITAL_FLAT);
+        let mut bytes = vec![0u8; span + 16];
+        let offset = 8usize;
+        for (pool, total, current) in [
+            (0, 1000i32, 350i32),
+            (LIFE_MANA - LIFE_HEALTH, 500, 200),
+            (LIFE_ES - LIFE_HEALTH, 0, 0),
+        ] {
+            let base = offset + pool;
+            bytes[base + 0x1c..base + 0x20].copy_from_slice(&total.to_le_bytes());
+            bytes[base + 0x20..base + 0x24].copy_from_slice(&current.to_le_bytes());
+        }
+
+        let correct = decode_vital_pools(&bytes[offset..offset + span]).unwrap();
+        assert_eq!(correct.health.current, 350);
+        assert!(recovery_vitals_valid(&correct));
+
+        // Reading four bytes late sees original Current as Total, and zero
+        // as Current. It can pass basic bounds but is NOT a safe fallback.
+        let misleading = decode_vital_pools(&bytes[offset + 4..offset + 4 + span]).unwrap();
+        assert_eq!(misleading.health.current, 0);
+        assert!(!recovery_vitals_valid(&misleading));
+        assert!(decode_vital_pools(&bytes[..span - 1]).is_err());
     }
 
     #[test]
