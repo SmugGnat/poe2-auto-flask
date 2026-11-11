@@ -73,6 +73,9 @@ pub struct NearbySnapshot {
     pub awake_nodes: usize,
     pub candidate_monsters: usize,
     pub nearby: Vec<NearbyMonster>,
+    /// Wall time for the most recent full scan (not CPU time). Includes
+    /// Wine/ReadProcessMemory latency; no sampling when --nearby is absent.
+    pub scan_wall: Duration,
 }
 
 impl NearbySnapshot {
@@ -133,8 +136,13 @@ impl NearbyCache {
             }
         }
         self.last_poll = Some(now);
+        let scan_started = Instant::now();
         let read = self
             .read_fresh(process, probe)
+            .map(|mut result| {
+                result.scan_wall = scan_started.elapsed();
+                result
+            })
             .map_err(|error| error.to_string());
         self.last_result = Some(read.clone());
         read.map_err(invalid)
@@ -380,6 +388,7 @@ mod tests {
         let snapshot = NearbySnapshot {
             awake_nodes: 4,
             candidate_monsters: 4,
+            scan_wall: Duration::ZERO,
             nearby: vec![
                 NearbyMonster {
                     rarity: Rarity::Normal,

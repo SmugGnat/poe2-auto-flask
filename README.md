@@ -199,7 +199,7 @@ PoE2 remains the default with its original automation behavior. PoE1 uses `[heal
 
 The **[PoE1 support guide](docs/POE1_SUPPORT.md)** documents memory architecture, configuration, duplicate-flask choices, safety checks, validation, and known limitations.
 
-A new **experimental, read-only** nearby-monster census is available with `--game poe1 --debug --nearby`. It reports rarity counts at 60 and 100 grid units, with strict scan-size/time limits; **no automation uses this unverified reader yet**. The external GameHelper C# reference tree is deliberately not bundled in this branch pending verification of its source license and provenance.
+A new **experimental, read-only** nearby-monster census is available with `--game poe1 --debug --nearby`. It reports rarity counts at 60 and 100 grid units, with strict scan-size/time limits; **no automation uses this unverified reader yet**. PoE1 debug mode now reports the helper's own **5-second CPU usage average**; with `--nearby` it also reports wall time spent on the last full entity scan, making baseline comparisons possible. The external GameHelper C# reference tree is deliberately not bundled in this branch pending verification of its source license and provenance.
 
 ---
 

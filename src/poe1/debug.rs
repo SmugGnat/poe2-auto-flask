@@ -4,11 +4,14 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::movement::RUN_ANIMATION_ID;
+use windows_sys::Win32::Foundation::FILETIME;
+use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
 use crate::process::Process;
 use crate::session::GameSession;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const REPORT_INTERVAL: Duration = Duration::from_secs(1);
+const CPU_REPORT_INTERVAL: Duration = Duration::from_secs(5);
 
 pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> io::Result<()> {
     println!("Connected to Path of Exile 1 (read-only diagnostic mode).");
@@ -26,6 +29,9 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
     let mut report_at = Instant::now();
     let mut refresh_at = Instant::now();
     let mut waiting = false;
+    // Diagnostic-only Win32 process CPU timer. Reads the current helper's CPU
+    // time, not game CPU or Wine server CPU, and never runs in --auto.
+    let mut cpu_meter = CpuMeter::new();
     loop {
         let started = Instant::now();
         if !process.is_alive().unwrap_or(false) {
@@ -70,6 +76,10 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                                     census.candidate_monsters,
                                     census.counts_at(60.0),
                                     census.counts_at(100.0)
+                                );
+                                println!(
+                                    "  Nearby last full scan: {:.2} ms wall (includes cross-process read latency)",
+                                    census.scan_wall.as_secs_f64() * 1000.0
                                 );
                             }
                             Err(error) => {
@@ -120,6 +130,9 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                             .collect::<Vec<_>>()
                             .join(", "),
                     );
+                    if let Some(line) = cpu_meter.report() {
+                        println!("  {line}");
+                    }
                     report_at = started + REPORT_INTERVAL;
                 }
             }
@@ -151,5 +164,99 @@ fn format_pool(pool: Option<crate::poe2::VitalPool>) -> String {
     match pool {
         Some(value) => format!("{}/{}", value.current, value.usable_max()),
         None => "N/A".into(),
+    }
+}
+
+
+#[derive(Debug, Clone, Copy)]
+struct CpuSample {
+    instant: Instant,
+    process_ticks_100ns: u64,
+}
+
+/// Samples the helper's whole-process CPU usage, not a tight-loop cycle counter.
+/// Five-second windows make low fractions of a CPU core easier to compare.
+struct CpuMeter {
+    previous: Option<CpuSample>,
+    failed: bool,
+}
+
+impl CpuMeter {
+    fn new() -> Self {
+        Self {
+            previous: read_process_cpu_ticks().ok().map(|process_ticks_100ns| CpuSample {
+                instant: Instant::now(),
+                process_ticks_100ns,
+            }),
+            failed: false,
+        }
+    }
+
+    fn report(&mut self) -> Option<String> {
+        if self.failed {
+            return None;
+        }
+        let Some(previous) = self.previous else {
+            self.failed = true;
+            return Some("Helper CPU: unavailable (GetProcessTimes failed under Wine)".into());
+        };
+        let now = Instant::now();
+        let wall = now.saturating_duration_since(previous.instant);
+        if wall < CPU_REPORT_INTERVAL {
+            return None;
+        }
+        match read_process_cpu_ticks() {
+            Ok(current) => {
+                self.previous = Some(CpuSample {
+                    instant: now,
+                    process_ticks_100ns: current,
+                });
+                let ticks = current.saturating_sub(previous.process_ticks_100ns);
+                let cpu_seconds = ticks as f64 / 10_000_000.0;
+                let core_percent = cpu_seconds / wall.as_secs_f64() * 100.0;
+                Some(format!(
+                    "Helper CPU: {:.2}% of one core ({:.1} ms CPU / {:.1} s wall; 5s average)",
+                    core_percent,
+                    cpu_seconds * 1000.0,
+                    wall.as_secs_f64()
+                ))
+            }
+            Err(_) => {
+                self.failed = true;
+                Some("Helper CPU: unavailable (GetProcessTimes failed under Wine)".into())
+            }
+        }
+    }
+}
+
+fn read_process_cpu_ticks() -> io::Result<u64> {
+    let mut created: FILETIME = unsafe { std::mem::zeroed() };
+    let mut exited: FILETIME = unsafe { std::mem::zeroed() };
+    let mut kernel: FILETIME = unsafe { std::mem::zeroed() };
+    let mut user: FILETIME = unsafe { std::mem::zeroed() };
+    let ok = unsafe {
+        GetProcessTimes(GetCurrentProcess(), &mut created, &mut exited, &mut kernel, &mut user)
+    };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(filetime_ticks(kernel).saturating_add(filetime_ticks(user)))
+}
+
+fn filetime_ticks(time: FILETIME) -> u64 {
+    (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime)
+}
+
+#[cfg(test)]
+mod cpu_tests {
+    use super::*;
+
+    #[test]
+    fn filetime_high_and_low_halves_are_combined_without_sign_loss() {
+        let time = FILETIME {
+            dwLowDateTime: 0x1122_3344,
+            dwHighDateTime: 0x5566_7788,
+        };
+        assert_eq!(filetime_ticks(time), 0x5566_7788_1122_3344);
     }
 }
