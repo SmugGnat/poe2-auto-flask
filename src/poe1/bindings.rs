@@ -71,14 +71,16 @@ fn parse_reader<R: BufRead>(input: R, path: &Path) -> io::Result<[KeyBinding; SL
     let mut mode = "mouse_and_keyboard".to_string();
     for line in input.lines() {
         let line = line?;
-        let line = line.trim();
+        // PoE1's Windows INI may begin with a UTF-8 BOM. Rust's trim()
+        // does not remove U+FEFF, causing "[ACTION_KEYS]" to go unrecognized.
+        let line = line.trim().trim_start_matches('\u{feff}').trim();
         if line.starts_with('#') || line.starts_with(';') || line.is_empty() {
             continue;
         }
         if line.starts_with('[') && line.ends_with(']') {
-            section = if line == "[ACTION_KEYS]" {
+            section = if line.eq_ignore_ascii_case("[ACTION_KEYS]") {
                 "action"
-            } else if line == "[WASD_ACTION_KEYS]" {
+            } else if line.eq_ignore_ascii_case("[WASD_ACTION_KEYS]") {
                 "wasd"
             } else {
                 "other"
@@ -103,10 +105,18 @@ fn parse_reader<R: BufRead>(input: R, path: &Path) -> io::Result<[KeyBinding; SL
         if !(1..=SLOTS).contains(&n) {
             continue;
         }
-        match section {
-            "action" => action[n - 1] = Some(value.into()),
-            "wasd" => wasd[n - 1] = Some(value.into()),
-            _ => (),
+        let destination = match section {
+            "action" => Some(&mut action[n - 1]),
+            "wasd" => Some(&mut wasd[n - 1]),
+            _ => None,
+        };
+        if let Some(destination) = destination {
+            // Ambiguous or duplicated input keys must never authorize input.
+            if destination.replace(value.into()).is_some() {
+                return Err(invalid(format!(
+                    "duplicate use_flask_in_slot{n} in [{section}]"
+                )));
+            }
         }
     }
     let input = match mode.as_str() {
@@ -128,9 +138,11 @@ fn parse_reader<R: BufRead>(input: R, path: &Path) -> io::Result<[KeyBinding; SL
     let mut result = Vec::with_capacity(SLOTS);
     for (index, raw) in input.iter().enumerate() {
         let label = format!("use_flask_in_slot{}", index + 1);
-        let value = raw
-            .as_deref()
-            .ok_or_else(|| invalid(format!("{label} missing")))?;
+        let value = raw.as_deref().ok_or_else(|| {
+            invalid(format!(
+                "{label} missing from the selected [ACTION_KEYS] / [WASD_ACTION_KEYS] section"
+            ))
+        })?;
         let binding = parse_binding(path, &label, value)?;
         if binding.vk == 0x7A || result.contains(&binding) {
             return Err(invalid(format!(
@@ -173,6 +185,29 @@ mod tests {
         assert!(parse_reader(Cursor::new(duplicate), Path::new("test")).is_err());
         let mouse = EXAMPLE.replace("use_flask_in_slot5=53", "use_flask_in_slot5=1");
         assert!(parse_reader(Cursor::new(mouse), Path::new("test")).is_err());
+    }
+
+    #[test]
+    fn poe1_real_world_order_with_utf8_bom_and_unrelated_actions() {
+        // Reported PoE1 ordering: key lines are interleaved, and Windows
+        // config files may put a BOM before the first section header.
+        let ini = "\u{feff}[ACTION_KEYS]\nuse_flask_in_slot1=49\nuse_flask_in_slot2=50\nzoom_in=33\nuse_flask_in_slot3=51\ngeneric_league_panel_key=222\nuse_flask_in_slot4=52\nuse_temporary_skill1=54\nuse_bound_skill1=1\nuse_flask_in_slot5=53\n";
+        let keys = parse_reader(Cursor::new(ini), Path::new("production_Config.ini")).unwrap();
+        for (index, key) in keys.iter().enumerate() {
+            assert_eq!(*key, KeyBinding::new(49 + index as u16, KeyModifier::None));
+        }
+    }
+
+    #[test]
+    fn rejects_flask_keys_under_an_unrelated_section() {
+        let unknown = EXAMPLE.replace("[ACTION_KEYS]", "[UNRELATED]");
+        assert!(parse_reader(Cursor::new(unknown), Path::new("test")).is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_flask_slots_inside_action_keys() {
+        let duplicate = format!("{EXAMPLE}use_flask_in_slot4=88\n");
+        assert!(parse_reader(Cursor::new(duplicate), Path::new("test")).is_err());
     }
 
     #[test]
