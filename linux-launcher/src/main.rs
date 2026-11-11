@@ -72,8 +72,10 @@ fn run() -> Result<(), String> {
         return Ok(());
     };
 
-    if args.game == Game::Poe1 && !args.helper_args.iter().any(|arg| arg == "--debug") {
-        return Err("PoE1 is read-only in milestone 1; use --game poe1 --debug".into());
+    if args.game == Game::Poe1
+        && !args.helper_args.iter().any(|arg| arg == "--debug" || arg == "--auto")
+    {
+        return Err("PoE1 requires explicit --auto or --debug".into());
     }
     let launch = discover_launch_environment(args.game)?;
     let helper = resolve_helper_path(args.helper)?;
@@ -325,7 +327,7 @@ fn print_help() {
     );
     println!();
     println!("The selected Path of Exile game must already be running through Steam Proton.");
-    println!("PoE1 currently supports --debug only. Default game remains poe2.");
+    println!("PoE1 supports explicit --auto or --debug. Default game remains poe2.");
 }
 
 fn discover_launch_environment(game: Game) -> Result<LaunchEnvironment, String> {

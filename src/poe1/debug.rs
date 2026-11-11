@@ -14,7 +14,7 @@ pub fn run(process: &Process, mut session: GameSession) -> io::Result<()> {
     if let Some(metadata) = session.poe1_player_metadata() {
         println!("Player metadata: {metadata}");
     }
-    println!("Memory offsets and raw charges require verification against the live game.");
+    println!("Effective flask costs and chat UI state require live verification before auto input.");
     println!("Press Ctrl+C to exit. No automation or keyboard input is enabled.\n");
 
     let mut report_at = Instant::now();
@@ -32,11 +32,16 @@ pub fn run(process: &Process, mut session: GameSession) -> io::Result<()> {
             let area = session.poe1_area(process)?.clone();
             let flasks = session.poe1_flasks(process)?.clone();
             let buffs = session.poe1_effects(process)?.clone();
-            Ok::<_, io::Error>((vitals, area, flasks, buffs))
+            let chat = match session.poe1_chat_active(process) {
+                Ok(true) => "OPEN",
+                Ok(false) => "closed",
+                Err(_) => "unavailable (automation blocked)",
+            };
+            Ok::<_, io::Error>((vitals, area, flasks, buffs, chat))
         })();
 
         match sampled {
-            Ok((vitals, area, flasks, buffs)) => {
+            Ok((vitals, area, flasks, buffs, chat)) => {
                 waiting = false;
                 if started >= report_at {
                     println!(
@@ -48,14 +53,17 @@ pub fn run(process: &Process, mut session: GameSession) -> io::Result<()> {
                         format_pool(vitals.mana),
                         format_pool(vitals.energy_shield),
                     );
+                    println!("  Chat: {chat}");
                     for (index, slot) in flasks.slots.iter().enumerate() {
                         match slot {
                             Some(flask) => println!(
-                                "  Flask {}: {} | charges {} | raw cost {} | effect {}",
+                                "  Flask {}: {} ({}) | charges {} | raw cost {} | effective cost {} | effect {}",
                                 index + 1,
                                 flask.item_path,
+                                flask.flask_type.name(),
                                 flask.current_charges,
                                 flask.raw_per_use,
+                                flask.effective_per_use.map_or_else(|| "unavailable".into(), |v| v.to_string()),
                                 if buffs.slots_active[index] {
                                     "active"
                                 } else {

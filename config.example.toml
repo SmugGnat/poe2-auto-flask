@@ -11,6 +11,14 @@ threshold_percent = 60.0
 enabled = true
 threshold_percent = 30.0
 
-# Auto mode uses a fixed 100 ms (10 Hz) internal poll interval. Flask key bindings are read from
-# PoE2's own production config, while repeat timing and charge availability are read from PoE2
-# itself. PoE2 has exactly two flask inventory slots: life and mana.
+# PoE1 uses the same Life/Mana percentage thresholds above; percentages are based on the
+# unreserved pool. Quicksilver and other supported utility-flask types are opt-in.
+# No per-slot keys are needed: both games read their own production_Config.ini.
+# Unknown utility bases and hybrid flasks remain manual-only in this milestone.
+[poe1.utility]
+quicksilver = false
+granite = false
+quartz = false
+diamond = false
+
+# Existing PoE2 operation is unchanged: two slots, F11, 100 ms polling.

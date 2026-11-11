@@ -86,6 +86,22 @@ impl GameSession {
         }
     }
 
+    /// Directly verify identity and reread vitals immediately before sending input.
+    pub fn poe1_verify_vitals(&self, process: &Process) -> io::Result<LiveVitals> {
+        match &self.reader {
+            Reader::Poe1(probe) => poe1::sample_vitals(process, probe),
+            Reader::Poe2(_) => Err(unsupported()),
+        }
+    }
+
+    /// Chat safety gate; unreadable UI state is an error, not "chat closed".
+    pub fn poe1_chat_active(&self, process: &Process) -> io::Result<bool> {
+        match &self.reader {
+            Reader::Poe1(probe) => poe1::chat::is_chat_active(process, probe),
+            Reader::Poe2(_) => Err(unsupported()),
+        }
+    }
+
     /// Resolve PoE1 area metadata only when the caller requests it.
     pub fn poe1_area(&mut self, process: &Process) -> io::Result<&AreaInfo> {
         if self.snapshot.area.is_none() {

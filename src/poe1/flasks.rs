@@ -2,7 +2,9 @@
 //! until verified in-game with charge-usage modifiers; NO automation uses them.
 use std::io;
 
+use super::charge_cost;
 use super::offsets::*;
+use super::types::FlaskType;
 use super::{invalid, plausible_ptr, read_metadata, read_ptr, Probe};
 use crate::entity::resolve_component;
 use crate::process::Process;
@@ -15,8 +17,17 @@ const MAX_CHARGES: i32 = 100_000;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FlaskSlot {
     pub item_path: String,
+    pub flask_type: FlaskType,
     pub current_charges: i32,
     pub raw_per_use: i32,
+    pub effective_per_use: Option<i32>,
+}
+
+impl FlaskSlot {
+    pub fn remaining_uses(&self) -> Option<i32> {
+        let cost = self.effective_per_use?;
+        (cost > 0).then_some(self.current_charges / cost)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,6 +41,7 @@ struct CachedItem {
     entity: usize,
     charges_component: usize,
     item_path: String,
+    local_charge_multiplier: Option<f64>,
 }
 
 #[derive(Debug, Default)]
@@ -111,6 +123,9 @@ pub fn sample(
         ));
     }
     let raw_slots = process.read_bytes(items_first, SLOT_COUNT * 8)?;
+    // If Stats are temporarily unreadable, raw flask data remains available for
+    // diagnostics but automation will not consider any cost to be trustworthy.
+    let player_modifier = charge_cost::player_charge_modifier(process, probe.local_player).ok();
     let mut result = FlaskSnapshot {
         slots: std::array::from_fn(|_| None),
     };
@@ -140,11 +155,13 @@ pub fn sample(
             }
             let component = resolve_component(process, entity, "Charges")
                 .ok_or_else(|| invalid(format!("PoE1 slot {} is missing Charges", slot + 1)))?;
+            let local_charge_multiplier = charge_cost::local_charge_multiplier(process, entity).ok();
             cache.slots[slot] = Some(CachedItem {
                 inventory_item,
                 entity,
                 charges_component: component,
                 item_path,
+                local_charge_multiplier,
             });
         }
         let cached = cache.slots[slot].as_ref().expect("item cached above");
@@ -166,10 +183,15 @@ pub fn sample(
                 slot + 1
             )));
         }
+        let effective_per_use = player_modifier
+            .zip(cached.local_charge_multiplier)
+            .and_then(|(player, local)| charge_cost::effective_cost(per_use, player, local).ok());
         result.slots[slot] = Some(FlaskSlot {
+            flask_type: FlaskType::from_metadata(&cached.item_path),
             item_path: cached.item_path.clone(),
             current_charges: current,
             raw_per_use: per_use,
+            effective_per_use,
         });
     }
     Ok(result)
@@ -235,9 +257,24 @@ mod tests {
             entity: 0x30000,
             charges_component: 0x40000,
             item_path: "Metadata/Items/Flasks/Flask".into(),
+            local_charge_multiplier: Some(1.0),
         });
         cache.clear();
         assert!(cache.inventory.is_none());
         assert!(cache.slots.iter().all(Option::is_none));
     }
+    #[test]
+    fn remaining_uses_requires_verified_effective_cost() {
+        let mut slot = FlaskSlot {
+            item_path: "Metadata/Items/Flasks/FlaskLife11".into(),
+            flask_type: FlaskType::Life,
+            current_charges: 50,
+            raw_per_use: 15,
+            effective_per_use: None,
+        };
+        assert_eq!(slot.remaining_uses(), None);
+        slot.effective_per_use = Some(11);
+        assert_eq!(slot.remaining_uses(), Some(4));
+    }
+
 }

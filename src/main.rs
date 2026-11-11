@@ -83,9 +83,9 @@ fn parse_options() -> Options {
 fn print_help_and_exit() -> ! {
     println!("Usage: poe2-auto-flask.exe [--auto | --debug] [--game poe1|poe2]");
     println!("  --game   Select game (default: poe2)");
-    println!("  --auto   Run PoE2 automation (default; starts disarmed)");
+    println!("  --auto   Run selected game's automation (default; starts disarmed)");
     println!("  --debug  Read-only diagnostics for the selected game");
-    println!("  PoE1 automation is not available in milestone 1.");
+    println!("  PoE1 uses type-aware flask rules and starts disarmed.");
     std::process::exit(0);
 }
 
@@ -102,12 +102,6 @@ fn run(options: Options) -> io::Result<()> {
         game.name(),
         game.steam_app_id()
     );
-    if game == Game::Poe1 && mode == Mode::Auto {
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "PoE1 is read-only in milestone 1; run --game poe1 --debug",
-        ));
-    }
     let mut config_manager = ConfigManager::load_default()?;
     print_config_startup(config_manager.startup());
     let under_wine = running_under_wine();
@@ -148,7 +142,7 @@ fn run(options: Options) -> io::Result<()> {
                 config_manager.current_from_file(),
             )?,
             (Mode::Debug, Game::Poe1) => poe1::debug::run(&process, probe)?,
-            (Mode::Auto, Game::Poe1) => unreachable!("PoE1 auto blocked at startup"),
+            (Mode::Auto, Game::Poe1) => poe1::automation::run(&process, probe, &mut config_manager)?,
         }
 
         // Native Windows can attach to a restarted game process. Under Proton/Wine the helper must

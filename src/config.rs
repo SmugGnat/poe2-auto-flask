@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::file_watch::{file_stamp, FileStamp};
+use crate::poe1::types::FlaskType;
 
 const DEFAULT_CONFIG_TEXT: &str = include_str!("../config.example.toml");
 const CONFIG_PATH_ENV: &str = "POE2_AUTO_FLASK_CONFIG";
@@ -15,6 +16,34 @@ pub struct Config {
     pub general: GeneralConfig,
     pub health: FlaskConfig,
     pub mana: FlaskConfig,
+    pub poe1: Poe1Config,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct Poe1Config {
+    pub utility: Poe1UtilityConfig,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct Poe1UtilityConfig {
+    pub quicksilver: bool,
+    pub granite: bool,
+    pub quartz: bool,
+    pub diamond: bool,
+}
+
+impl Poe1UtilityConfig {
+    pub fn enabled(&self, kind: FlaskType) -> bool {
+        match kind {
+            FlaskType::Quicksilver => self.quicksilver,
+            FlaskType::Granite => self.granite,
+            FlaskType::Quartz => self.quartz,
+            FlaskType::Diamond => self.diamond,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -67,6 +96,7 @@ impl Default for Config {
                 enabled: true,
                 threshold_percent: 30.0,
             },
+            poe1: Poe1Config::default(),
         }
     }
 }
@@ -91,6 +121,19 @@ impl Config {
             } else {
                 "OFF"
             }
+        )
+    }
+
+    pub fn poe1_summary(&self) -> String {
+        format!(
+            "{} | {} | Quicksilver {} | Granite {} | Quartz {} | Diamond {} | Hideout {}",
+            flask_summary("Life", &self.health),
+            flask_summary("Mana", &self.mana),
+            if self.poe1.utility.quicksilver { "ON" } else { "OFF" },
+            if self.poe1.utility.granite { "ON" } else { "OFF" },
+            if self.poe1.utility.quartz { "ON" } else { "OFF" },
+            if self.poe1.utility.diamond { "ON" } else { "OFF" },
+            if self.general.enable_in_hideout { "ON" } else { "OFF" },
         )
     }
 
@@ -393,6 +436,17 @@ key = "2"
         assert!(config.general.enable_in_hideout);
         assert_eq!(config.health.threshold_percent, 55.0);
         assert_eq!(config.mana.threshold_percent, 25.0);
+    }
+
+    #[test]
+    fn poe1_utility_is_opt_in_and_keeps_old_config_compatible() {
+        let config = Config::parse(
+            Path::new("config.toml"),
+            "[poe1.utility]\nquicksilver=true\n",
+        ).unwrap();
+        assert!(config.poe1.utility.quicksilver);
+        assert!(!config.poe1.utility.granite);
+        assert!(!Config::default().poe1.utility.quicksilver);
     }
 
     #[test]

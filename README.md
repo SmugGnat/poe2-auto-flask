@@ -179,9 +179,9 @@ Release AppImages are assembled by GitHub Actions.
 
 ---
 
-## 🧪 PoE1 Milestone 1 (development branch only)
+## 🧪 PoE1 development support
 
-The `feature/poe1-readonly-session` branch includes an experimental **read-only Path of Exile 1 diagnostic reader**. It is not part of the current public release and **does not automate PoE1 flasks**.
+The `feature/poe1-auto-flask` branch builds on the validated read-only PoE1 backend. It provides **experimental PoE1 auto-flask** as well as read-only diagnostics. This is development-only functionality, **not part of the public release**.
 
 Start PoE1 through Steam and, using a development build of the Linux launcher:
 
@@ -195,9 +195,17 @@ For a development Windows helper build:
 poe2-auto-flask.exe --game poe1 --debug
 ```
 
-The original PoE2 commands remain unchanged and default to PoE2. PoE1 `--auto` intentionally fails closed. PoE1 diagnostics read player vitals, area, five flask slots, **raw** charge-cost values, and active player status effects.
+The original PoE2 commands remain unchanged and default to PoE2. PoE1 diagnostics read player vitals, area, five flask slots, **raw and effective** charge-cost values, and active player status effects.
 
-See [PoE1 Milestone 1 validation](docs/POE1_MILESTONE1.md) for offsets, cautions, and live-test instructions. The imported GameHelper reference source is not built or distributed with the executable.
+To start experimental PoE1 automation (always starts **DISARMED**, press **F11** to arm while PoE1 is focused):
+
+```bash
+poe2-auto-flask-linux-launcher --game poe1 --auto
+```
+
+PoE1 binds keys from its own `production_Config.ini`. Existing `[health]` and `[mana]` settings apply to its recovery flasks; specific utility flasks may be enabled in `[poe1.utility]` (see `config.example.toml`). PoE1 checks focus, chat, area, charges, buffs, and game state before any input.
+
+See [PoE1 Milestone 1 validation](docs/POE1_MILESTONE1.md) and [PoE1 Milestone 2 details](docs/POE1_MILESTONE2.md). The imported GameHelper reference source is not built or distributed with the executable.
 
 ---
 
