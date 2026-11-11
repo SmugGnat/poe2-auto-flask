@@ -65,9 +65,11 @@ Selected offsets transcribed from a GameHelper C# snapshot (comments for the 202
   the historical PoE2 fallback remains the selected default but the launcher
   cannot start without a real PoE2 Proton environment.
 - An explicit `--game` always selects that game and requires its matching
-  Proton environment; it never silently falls back to the other. PoE1 still
-  requires explicit `--auto` or `--debug` even when auto-detected; the
-  shared engine still starts **DISARMED**. `--nearby` remains PoE1 debug-only.
+  Proton environment; it never silently falls back to the other. Without
+  mode flags, **both games default to normal automation**, and the shared
+  engine still starts **DISARMED** until F11 is pressed while the selected
+  game is focused. `--debug` selects read-only diagnostics; `--auto` stays
+  an optional backwards-compatible alias. `--nearby` remains PoE1 debug-only.
 - The launcher forwards the resolved game explicitly as `--game` to the Wine
   helper. On **Windows**, the helper retains explicit selection and its
   historical PoE2 default; no fragile cross-platform heuristic is added.
