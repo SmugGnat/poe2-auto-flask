@@ -36,6 +36,11 @@ impl ActivationGuard {
         self.life = None;
         self.mana = None;
     }
+    /// Queried after apply_to() has consumed any acknowledged recovery.
+    /// An unacknowledged input cannot use the active-Life emergency bypass.
+    pub fn life_input_pending(&self) -> bool {
+        self.life.is_some()
+    }
 
     /// Record exactly the sampled, pre-send charges and most recently verified
     /// vitals. Only called after SendInput succeeded.

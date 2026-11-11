@@ -28,15 +28,7 @@ pub fn choose_action_with_nearby(
     quicksilver_ready: bool,
     nearby: Option<&NearbySnapshot>,
 ) -> Option<usize> {
-    choose_action_internal(
-        config,
-        vitals,
-        flasks,
-        effects,
-        quicksilver_ready,
-        nearby,
-        None,
-    )
+    choose_action_internal(config, vitals, flasks, effects, quicksilver_ready, nearby, None, true)
 }
 
 /// Stateful variant used only in PoE1 auto mode. No additional memory reads.
@@ -50,13 +42,25 @@ pub fn choose_action_rotating_with_nearby(
     rotation: &FlaskRotation,
 ) -> Option<usize> {
     choose_action_internal(
-        config,
-        vitals,
-        flasks,
-        effects,
-        quicksilver_ready,
-        nearby,
-        Some(rotation),
+        config, vitals, flasks, effects, quicksilver_ready, nearby, Some(rotation), true,
+    )
+}
+
+/// Automation version: an outstanding unacknowledged Life input may not
+/// bypass even a genuine ongoing recovery buff.
+pub fn choose_action_rotating_guarded(
+    config: &Config,
+    vitals: LiveVitals,
+    flasks: &FlaskSnapshot,
+    effects: &EffectsSnapshot,
+    quicksilver_ready: bool,
+    nearby: Option<&NearbySnapshot>,
+    rotation: &FlaskRotation,
+    life_emergency_ready: bool,
+) -> Option<usize> {
+    choose_action_internal(
+        config, vitals, flasks, effects, quicksilver_ready, nearby,
+        Some(rotation), life_emergency_ready,
     )
 }
 
@@ -68,6 +72,7 @@ fn choose_action_internal(
     quicksilver_ready: bool,
     nearby: Option<&NearbySnapshot>,
     rotation: Option<&FlaskRotation>,
+    life_emergency_ready: bool,
 ) -> Option<usize> {
     // Life and mana have priority over optional utility maintenance.
     let health = vitals.health;
@@ -79,7 +84,10 @@ fn choose_action_internal(
             .percentage()
             .is_some_and(|percent| percent <= config.health.threshold_percent)
     {
-        if let Some(slot) = best_slot(FlaskType::Life, flasks, effects, rotation) {
+        if let Some(slot) = best_life_slot(
+            flasks, effects, rotation, health,
+            config.health.threshold_percent, life_emergency_ready,
+        ) {
             return Some(slot);
         }
     }
@@ -153,6 +161,45 @@ pub fn needs_nearby(
     })
 }
 
+/// Rotate all eligible Life flasks normally, but when a genuine gradual
+/// recovery is already active reserve fully instant recovery for emergencies.
+/// Virtual settling flags cannot authorize emergency bypass.
+fn best_life_slot(
+    flasks: &FlaskSnapshot,
+    effects: &EffectsSnapshot,
+    rotation: Option<&FlaskRotation>,
+    health: crate::poe2::VitalPool,
+    threshold: f32,
+    life_emergency_ready: bool,
+) -> Option<usize> {
+    let any_active = flasks.slots.iter().enumerate().any(|(index, flask)| {
+        flask.as_ref().is_some_and(|f| f.flask_type == FlaskType::Life)
+            && effects.slots_active[index]
+    });
+    if !any_active {
+        return best_eligible_slot(FlaskType::Life, flasks, rotation, |_, flask| {
+            flask.recovery.eligible_for_normal_life(health)
+        });
+    }
+    if !life_emergency_ready
+        || health.percentage().is_none_or(|pct| pct > (threshold / 2.0).min(25.0))
+    {
+        return None;
+    }
+    let real_life_active = effects.effects.iter().any(|buff| {
+        buff.flask_slot
+            .and_then(|slot| flasks.slots.get(slot))
+            .and_then(Option::as_ref)
+            .is_some_and(|flask| flask.flask_type == FlaskType::Life)
+    });
+    if !real_life_active {
+        return None;
+    }
+    best_eligible_slot(FlaskType::Life, flasks, rotation, |slot, flask| {
+        !effects.slots_active[slot] && flask.recovery.instant_at_life(health)
+    })
+}
+
 /// When more than one same-type flask has enough charges, prefer the least
 /// recently used physical slot. On first use, prefer the most whole charges
 /// remaining; ties go to the lowest slot. Never override an active effect.
@@ -163,17 +210,23 @@ fn best_slot(
     rotation: Option<&FlaskRotation>,
 ) -> Option<usize> {
     if flasks.slots.iter().enumerate().any(|(slot, state)| {
-        state
-            .as_ref()
-            .is_some_and(|s| s.flask_type == kind && effects.slots_active[slot])
+        state.as_ref().is_some_and(|f| f.flask_type == kind && effects.slots_active[slot])
     }) {
         return None;
     }
+    best_eligible_slot(kind, flasks, rotation, |_, _| true)
+}
 
+fn best_eligible_slot(
+    kind: FlaskType,
+    flasks: &FlaskSnapshot,
+    rotation: Option<&FlaskRotation>,
+    eligible: impl Fn(usize, &super::flasks::FlaskSlot) -> bool,
+) -> Option<usize> {
     (0..SLOT_COUNT)
         .filter_map(|slot| {
             let state = flasks.slots[slot].as_ref()?;
-            if state.flask_type != kind {
+            if state.flask_type != kind || !eligible(slot, state) {
                 return None;
             }
             let uses = state.remaining_uses()?;
@@ -184,12 +237,7 @@ fn best_slot(
             Some((slot, last_used, uses, state.current_charges))
         })
         .max_by_key(|(slot, last_used, uses, charges)| {
-            (
-                std::cmp::Reverse(*last_used),
-                *uses,
-                *charges,
-                std::cmp::Reverse(*slot),
-            )
+            (std::cmp::Reverse(*last_used), *uses, *charges, std::cmp::Reverse(*slot))
         })
         .map(|(slot, _, _, _)| slot)
 }
@@ -547,6 +595,111 @@ mod tests {
             ),
             Some(0)
         );
+    }
+
+    #[test]
+    fn normal_mapping_rotates_regular_and_conditional_life_at_low_life() {
+        let (mut config, mut vitals, mut flasks, effects) = setup();
+        config.health.threshold_percent = 50.0;
+        vitals.health.current = 45;
+        let mut rotation = FlaskRotation::default();
+        flasks.slots[0] = slot(FlaskType::Life, 45, Some(15));
+        flasks.slots[1] = slot(FlaskType::Life, 45, Some(15));
+        flasks.slots[1].as_mut().unwrap().recovery = RecoveryKind::InstantOnLowLife;
+        assert_eq!(choose_action_rotating_with_nearby(
+            &config, vitals, &flasks, &effects, true, None, &rotation,
+        ), Some(0));
+        rotation.record(0, FlaskType::Life);
+        assert_eq!(choose_action_rotating_with_nearby(
+            &config, vitals, &flasks, &effects, true, None, &rotation,
+        ), Some(1));
+        rotation.record(1, FlaskType::Life);
+        assert_eq!(choose_action_rotating_with_nearby(
+            &config, vitals, &flasks, &effects, true, None, &rotation,
+        ), Some(0));
+    }
+
+    #[test]
+    fn instant_on_low_life_does_not_fire_at_55_percent_even_if_config_is_60() {
+        let (mut config, mut vitals, mut flasks, effects) = setup();
+        config.health.threshold_percent = 60.0;
+        vitals.health.current = 55;
+        flasks.slots[1] = slot(FlaskType::Life, 45, Some(15));
+        flasks.slots[1].as_mut().unwrap().recovery = RecoveryKind::InstantOnLowLife;
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+        flasks.slots[0] = slot(FlaskType::Life, 45, Some(15));
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(0));
+        flasks.slots[0] = None;
+        vitals.health.current = 50;
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(1));
+    }
+
+    #[test]
+    fn emergency_bypasses_real_gradual_life_recovery_only_below_floor() {
+        use crate::poe1::buffs::Effect;
+        let (mut config, mut vitals, mut flasks, mut effects) = setup();
+        config.health.threshold_percent = 50.0;
+        flasks.slots[0] = slot(FlaskType::Life, 45, Some(15));
+        flasks.slots[1] = slot(FlaskType::Life, 45, Some(15));
+        flasks.slots[1].as_mut().unwrap().recovery = RecoveryKind::InstantOnLowLife;
+        effects.slots_active[0] = true;
+        effects.effects.push(Effect {
+            name: "flask_life".into(), flask_slot: Some(0),
+            buff_type: 4, time_left: 2.0,
+        });
+        vitals.health.current = 40;
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+        vitals.health.current = 26;
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+        vitals.health.current = 25;
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(1));
+        assert_eq!(choose_action_rotating_guarded(
+            &config, vitals, &flasks, &effects, true, None,
+            &FlaskRotation::default(), false,
+        ), None);
+        effects.slots_active[1] = true;
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+    }
+
+    #[test]
+    fn emergency_requires_true_instant_not_partial_or_unverified_flask() {
+        use crate::poe1::buffs::Effect;
+        let (config, mut vitals, mut flasks, mut effects) = setup();
+        flasks.slots[0] = slot(FlaskType::Life, 45, Some(15));
+        flasks.slots[1] = slot(FlaskType::Life, 45, Some(15));
+        effects.slots_active[0] = true;
+        effects.effects.push(Effect {
+            name: "flask_life".into(), flask_slot: Some(0),
+            buff_type: 4, time_left: 2.0,
+        });
+        vitals.health.current = 20;
+        for kind in [RecoveryKind::Gradual, RecoveryKind::PartialInstant] {
+            flasks.slots[1].as_mut().unwrap().recovery = kind;
+            assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+        }
+        flasks.slots[1].as_mut().unwrap().recovery = RecoveryKind::Instant;
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(1));
+        // Virtual effects from key settling never count as a real active
+        // recovery effect and cannot authorize a bypass on their own.
+        effects.effects.clear();
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+    }
+
+    #[test]
+    fn mana_does_not_gain_life_emergency_bypass() {
+        use crate::poe1::buffs::Effect;
+        let (mut config, mut vitals, mut flasks, mut effects) = setup();
+        config.health.enabled = false;
+        vitals.mana.as_mut().unwrap().current = 10;
+        flasks.slots[0] = slot(FlaskType::Mana, 45, Some(15));
+        flasks.slots[1] = slot(FlaskType::Mana, 45, Some(15));
+        flasks.slots[1].as_mut().unwrap().recovery = RecoveryKind::Instant;
+        effects.slots_active[0] = true;
+        effects.effects.push(Effect {
+            name: "flask_mana".into(), flask_slot: Some(0),
+            buff_type: 4, time_left: 2.0,
+        });
+        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
     }
 
     #[test]

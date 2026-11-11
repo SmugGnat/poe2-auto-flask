@@ -4,6 +4,7 @@ use std::io;
 
 use super::charge_cost;
 use super::offsets::*;
+use super::recovery::RecoveryKind;
 use super::types::FlaskType;
 use super::{invalid, plausible_ptr, read_metadata, read_ptr, Probe};
 use crate::entity::resolve_component;
@@ -21,6 +22,8 @@ pub struct FlaskSlot {
     pub current_charges: i32,
     pub raw_per_use: i32,
     pub effective_per_use: Option<i32>,
+    /// Cached local recovery modifier classification; no per-tick mod reads.
+    pub recovery: RecoveryKind,
 }
 
 impl FlaskSlot {
@@ -42,6 +45,7 @@ struct CachedItem {
     charges_component: usize,
     item_path: String,
     local_charge_multiplier: Option<f64>,
+    recovery: RecoveryKind,
 }
 
 #[derive(Debug, Default)]
@@ -155,14 +159,16 @@ pub fn sample(
             }
             let component = resolve_component(process, entity, "Charges")
                 .ok_or_else(|| invalid(format!("PoE1 slot {} is missing Charges", slot + 1)))?;
-            let local_charge_multiplier =
-                charge_cost::local_charge_multiplier(process, entity).ok();
+            let mods = charge_cost::inspect_flask_modifiers(process, entity).ok();
+            let local_charge_multiplier = mods.map(|value| value.charge_multiplier);
+            let recovery = mods.map_or(RecoveryKind::Gradual, |value| value.recovery);
             cache.slots[slot] = Some(CachedItem {
                 inventory_item,
                 entity,
                 charges_component: component,
                 item_path,
                 local_charge_multiplier,
+                recovery,
             });
         }
         let cached = cache.slots[slot].as_ref().expect("item cached above");
@@ -193,6 +199,7 @@ pub fn sample(
             current_charges: current,
             raw_per_use: per_use,
             effective_per_use,
+            recovery: cached.recovery,
         });
     }
     Ok(result)
@@ -259,6 +266,7 @@ mod tests {
             charges_component: 0x40000,
             item_path: "Metadata/Items/Flasks/Flask".into(),
             local_charge_multiplier: Some(1.0),
+            recovery: RecoveryKind::Gradual,
         });
         cache.clear();
         assert!(cache.inventory.is_none());
@@ -272,6 +280,7 @@ mod tests {
             current_charges: 50,
             raw_per_use: 15,
             effective_per_use: None,
+            recovery: RecoveryKind::Gradual,
         };
         assert_eq!(slot.remaining_uses(), None);
         slot.effective_per_use = Some(11);

@@ -12,7 +12,7 @@ use crate::session::GameSession;
 use super::activation::ActivationGuard;
 use super::bindings::{BindingManager, BindingState};
 use super::decision::{
-    blocks_grace_period, choose_action_rotating_with_nearby, enabled_demand, needs_nearby,
+    blocks_grace_period, choose_action_rotating_guarded, enabled_demand, needs_nearby,
 };
 use super::movement::{RunTracker, RUN_ANIMATION_ID};
 use super::rotation::FlaskRotation;
@@ -213,7 +213,7 @@ pub fn run(
             } else {
                 None
             };
-            let chosen = choose_action_rotating_with_nearby(
+            let chosen = choose_action_rotating_guarded(
                 manager.current(),
                 vitals,
                 &flasks,
@@ -221,6 +221,7 @@ pub fn run(
                 quicksilver_ready,
                 proximity.as_ref(),
                 &rotation,
+                !activation_guard.life_input_pending(),
             );
             Ok(chosen.map(|slot| (slot, flasks, proximity)))
         })();
@@ -257,7 +258,7 @@ pub fn run(
                         let mut effects = session.poe1_effects(process)?.clone();
                         activation_guard.apply_to(started, new_vitals, &flasks, &mut effects);
                         if quicksilver_motion_ok
-                            && choose_action_rotating_with_nearby(
+                            && choose_action_rotating_guarded(
                                 manager.current(),
                                 new_vitals,
                                 &flasks,
@@ -265,6 +266,7 @@ pub fn run(
                                 quicksilver_ready,
                                 proximity.as_ref(),
                                 &rotation,
+                                !activation_guard.life_input_pending(),
                             ) == Some(slot)
                             && !blocks_grace_period(&effects)
                         {

@@ -104,7 +104,7 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                     for (index, slot) in flasks.slots.iter().enumerate() {
                         match slot {
                             Some(flask) => println!(
-                                "  Flask {}: {} ({}) | charges {} | raw cost {} | effective cost {} | effect {}",
+                                "  Flask {}: {} ({}) | charges {} | raw cost {} | effective cost {} | effect {} | recovery {}",
                                 index + 1,
                                 flask.item_path,
                                 flask.flask_type.name(),
@@ -115,6 +115,11 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                                     "active"
                                 } else {
                                     "inactive"
+                                },
+                                match flask.flask_type {
+                                    crate::poe1::types::FlaskType::Life
+                                    | crate::poe1::types::FlaskType::Mana => flask.recovery.label(),
+                                    _ => "n/a",
                                 },
                             ),
                             None => println!("  Flask {}: empty", index + 1),

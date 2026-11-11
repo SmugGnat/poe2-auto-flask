@@ -5,6 +5,7 @@ use std::io;
 use crate::entity::resolve_component;
 use crate::process::Process;
 
+use super::recovery::RecoveryKind;
 use super::{invalid, plausible_ptr, read_ptr};
 
 const FLASK_CHARGES_USED_STAT: i32 = 0x2E5;
@@ -39,13 +40,20 @@ pub fn player_charge_modifier(process: &Process, player: usize) -> io::Result<i3
     Ok(0)
 }
 
-/// Reads a flask's local charge modifier multiplier once per item change.
-/// Not detecting a component isn't proof there are no modifiers: fail closed.
-pub fn local_charge_multiplier(process: &Process, item: usize) -> io::Result<f64> {
+/// Flask charge-cost and recovery type are classified from the same existing
+/// bounded Mods.dat walk, only when a new flask is equipped/area refreshed.
+#[derive(Debug, Clone, Copy)]
+pub struct LocalFlaskMods {
+    pub charge_multiplier: f64,
+    pub recovery: RecoveryKind,
+}
+
+pub fn inspect_flask_modifiers(process: &Process, item: usize) -> io::Result<LocalFlaskMods> {
     let mods = resolve_component(process, item, "Mods")
         .ok_or_else(|| invalid("PoE1 flask Mods component unavailable"))?;
     let (first, count) = read_vector(process, mods + EXPLICIT_MODS_VECTOR, MOD_STRIDE, MAX_MODS)?;
     let mut multiplier = 1.0;
+    let mut recovery = RecoveryKind::Gradual;
     for idx in 0..count {
         let entry = process.read_bytes(first + idx * MOD_STRIDE, MOD_STRIDE)?;
         let dat_row = u64_at(&entry, MOD_DATA_PTR) as usize;
@@ -57,6 +65,12 @@ pub fn local_charge_multiplier(process: &Process, item: usize) -> io::Result<f64
         }
         let name_ptr = read_ptr(process, dat_row)?;
         let name = read_utf16_z(process, name_ptr, MAX_NAME_UNITS)?;
+        if let Some(found) = RecoveryKind::from_mod_name(&name) {
+            if recovery != RecoveryKind::Gradual && recovery != found {
+                return Err(invalid("conflicting PoE1 flask recovery modifiers"));
+            }
+            recovery = found;
+        }
         if !name.to_ascii_lowercase().contains("flaskchargesused") {
             continue;
         }
@@ -72,7 +86,10 @@ pub fn local_charge_multiplier(process: &Process, item: usize) -> io::Result<f64
     if !multiplier.is_finite() || multiplier <= 0.0 {
         return Err(invalid("invalid local flask charge multiplier"));
     }
-    Ok(multiplier)
+    Ok(LocalFlaskMods {
+        charge_multiplier: multiplier,
+        recovery,
+    })
 }
 
 pub fn effective_cost(raw: i32, player_modifier: i32, local_multiplier: f64) -> io::Result<i32> {
