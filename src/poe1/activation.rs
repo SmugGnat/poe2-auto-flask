@@ -159,7 +159,10 @@ mod tests {
 
     #[test]
     fn instant_life_use_blocks_both_life_slots_until_vitals_can_settle() {
-        let (config, vitals, mut flasks, mut effects) = setup();
+        let (mut config, vitals, mut flasks, mut effects) = setup();
+        // This test isolates Life; an enabled Quicksilver remains intentionally
+        // eligible while Life is settling.
+        config.poe1.utility.quicksilver = false;
         flasks.slots[4] = slot(FlaskType::Life);
         let mut guard = ActivationGuard::default();
         let now = Instant::now();
