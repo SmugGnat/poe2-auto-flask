@@ -2,10 +2,10 @@
 //! until verified in-game with charge-usage modifiers; NO automation uses them.
 use std::io;
 
+use super::offsets::*;
+use super::{invalid, plausible_ptr, read_metadata, read_ptr, Probe};
 use crate::entity::resolve_component;
 use crate::process::Process;
-use super::{invalid, plausible_ptr, read_metadata, read_ptr, Probe};
-use super::offsets::*;
 
 pub const SLOT_COUNT: usize = 5;
 const MAX_INVENTORIES: usize = 256;
@@ -45,7 +45,11 @@ impl FlaskCache {
     }
 }
 
-pub fn sample(process: &Process, probe: &Probe, cache: &mut FlaskCache) -> io::Result<FlaskSnapshot> {
+pub fn sample(
+    process: &Process,
+    probe: &Probe,
+    cache: &mut FlaskCache,
+) -> io::Result<FlaskSnapshot> {
     // Validate that the player/ServerData chain still belongs to this session.
     let player_info = probe.area_instance + AREA_PLAYER_INFO;
     let pointers = process.read_bytes(player_info, 16)?;
@@ -53,7 +57,10 @@ pub fn sample(process: &Process, probe: &Probe, cache: &mut FlaskCache) -> io::R
         || u64_at(&pointers, 8) as usize != probe.local_player
     {
         cache.clear();
-        return Err(io::Error::new(io::ErrorKind::Interrupted, "PoE1 PlayerInfo changed"));
+        return Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "PoE1 PlayerInfo changed",
+        ));
     }
 
     let (first, count) = read_vector(
@@ -76,7 +83,8 @@ pub fn sample(process: &Process, probe: &Probe, cache: &mut FlaskCache) -> io::R
             break;
         }
     }
-    let inventory = flask_inventory.ok_or_else(|| invalid("PoE1 flask inventory ID 12 not found"))?;
+    let inventory =
+        flask_inventory.ok_or_else(|| invalid("PoE1 flask inventory ID 12 not found"))?;
     if cache.inventory != Some(inventory) {
         cache.clear();
         cache.inventory = Some(inventory);
@@ -98,7 +106,9 @@ pub fn sample(process: &Process, probe: &Probe, cache: &mut FlaskCache) -> io::R
     let (items_first, item_count) =
         read_vector(process, inventory + INVENTORY_ITEMS, 8, MAX_CELLS)?;
     if item_count != cells {
-        return Err(invalid("PoE1 flask inventory dimensions and ItemList disagree"));
+        return Err(invalid(
+            "PoE1 flask inventory dimensions and ItemList disagree",
+        ));
     }
     let raw_slots = process.read_bytes(items_first, SLOT_COUNT * 8)?;
     let mut result = FlaskSnapshot {
@@ -111,7 +121,10 @@ pub fn sample(process: &Process, probe: &Probe, cache: &mut FlaskCache) -> io::R
             continue;
         }
         if !plausible_ptr(inventory_item) {
-            return Err(invalid(format!("invalid inventory item at PoE1 slot {}", slot + 1)));
+            return Err(invalid(format!(
+                "invalid inventory item at PoE1 slot {}",
+                slot + 1
+            )));
         }
         let entity = read_ptr(process, inventory_item)?;
         let existing = cache.slots[slot]
@@ -125,9 +138,8 @@ pub fn sample(process: &Process, probe: &Probe, cache: &mut FlaskCache) -> io::R
                     slot + 1
                 )));
             }
-            let component = resolve_component(process, entity, "Charges").ok_or_else(|| {
-                invalid(format!("PoE1 slot {} is missing Charges", slot + 1))
-            })?;
+            let component = resolve_component(process, entity, "Charges")
+                .ok_or_else(|| invalid(format!("PoE1 slot {} is missing Charges", slot + 1)))?;
             cache.slots[slot] = Some(CachedItem {
                 inventory_item,
                 entity,
@@ -142,9 +154,11 @@ pub fn sample(process: &Process, probe: &Probe, cache: &mut FlaskCache) -> io::R
         if !plausible_ptr(internal) {
             return Err(invalid("PoE1 Charges internal pointer invalid"));
         }
-        let current = i32::from_le_bytes(charge_data[
-            CHARGES_CURRENT - CHARGES_INTERNAL..CHARGES_CURRENT - CHARGES_INTERNAL + 4
-        ].try_into().expect("charges field"));
+        let current = i32::from_le_bytes(
+            charge_data[CHARGES_CURRENT - CHARGES_INTERNAL..CHARGES_CURRENT - CHARGES_INTERNAL + 4]
+                .try_into()
+                .expect("charges field"),
+        );
         let per_use = process.read_i32(internal + CHARGES_PER_USE)?;
         if !(0..=MAX_CHARGES).contains(&current) || !(1..=MAX_CHARGES).contains(&per_use) {
             return Err(invalid(format!(
@@ -189,7 +203,11 @@ fn bounded_vector(first: usize, last: usize, stride: usize, limit: usize) -> io:
 }
 
 fn u64_at(bytes: &[u8], offset: usize) -> u64 {
-    u64::from_le_bytes(bytes[offset..offset + 8].try_into().expect("bounded pointer field"))
+    u64::from_le_bytes(
+        bytes[offset..offset + 8]
+            .try_into()
+            .expect("bounded pointer field"),
+    )
 }
 
 #[cfg(test)]

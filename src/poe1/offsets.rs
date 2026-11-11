@@ -1,10 +1,22 @@
 //! PoE1 offsets transcribed from references/GameHelper/GameOffsets.
 //! Source comments identify the 2026-09-05 executable; live verification is required.
 pub const GAME_STATE_PATTERN: [Option<u8>; 16] = [
-    Some(0x48), Some(0x83), Some(0xEC), None,
-    Some(0x48), Some(0x8B), Some(0xF1), Some(0x33),
-    Some(0xED), Some(0x48), Some(0x39), Some(0x2D),
-    None, None, None, None,
+    Some(0x48),
+    Some(0x83),
+    Some(0xEC),
+    None,
+    Some(0x48),
+    Some(0x8B),
+    Some(0xF1),
+    Some(0x33),
+    Some(0xED),
+    Some(0x48),
+    Some(0x39),
+    Some(0x2D),
+    None,
+    None,
+    None,
+    None,
 ];
 pub const GAME_STATE_DISPLACEMENT: usize = 12;
 pub const GAME_STATE_CURRENT_VECTOR: usize = 0x08;

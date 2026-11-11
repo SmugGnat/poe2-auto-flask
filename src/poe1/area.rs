@@ -1,17 +1,20 @@
 //! PoE1 WorldData → WorldArea.dat lookup. Does not enumerate game entities.
 use std::io;
 
+use super::offsets::*;
+use super::{invalid, read_ptr, Probe};
 use crate::area::AreaInfo;
 use crate::process::Process;
-use super::{invalid, read_ptr, Probe};
-use super::offsets::*;
 
 const MAX_ID_UNITS: usize = 128;
 const MAX_NAME_UNITS: usize = 192;
 
 pub fn read(process: &Process, probe: &Probe) -> io::Result<AreaInfo> {
     if read_ptr(process, probe.in_game_state + IN_GAME_WORLD)? != probe.world_data {
-        return Err(io::Error::new(io::ErrorKind::Interrupted, "PoE1 WorldData changed"));
+        return Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "PoE1 WorldData changed",
+        ));
     }
     let details = read_ptr(process, probe.world_data + WORLD_AREA_DETAILS)?;
     let row = read_ptr(process, details + WORLD_DETAILS_ROW)?;
@@ -25,7 +28,8 @@ pub fn read(process: &Process, probe: &Probe) -> io::Result<AreaInfo> {
     }
     let id = read_utf16_z(process, id_ptr, MAX_ID_UNITS)?;
     let name = read_utf16_z(process, name_ptr, MAX_NAME_UNITS)?;
-    if id.is_empty() || name.is_empty()
+    if id.is_empty()
+        || name.is_empty()
         || id.chars().any(char::is_control)
         || name.chars().any(char::is_control)
     {
@@ -45,7 +49,11 @@ pub fn read(process: &Process, probe: &Probe) -> io::Result<AreaInfo> {
 }
 
 fn u64_at(bytes: &[u8], offset: usize) -> u64 {
-    u64::from_le_bytes(bytes[offset..offset + 8].try_into().expect("bounded pointer"))
+    u64::from_le_bytes(
+        bytes[offset..offset + 8]
+            .try_into()
+            .expect("bounded pointer"),
+    )
 }
 
 fn read_utf16_z(process: &Process, ptr: usize, max_units: usize) -> io::Result<String> {

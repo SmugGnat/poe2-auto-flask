@@ -12,8 +12,8 @@ use crate::flask_inventory::{
 };
 use crate::input::{is_process_foreground, master_toggle_down, send_flask_key, KeyBinding};
 use crate::poe2::VitalPool;
-use crate::session::GameSession;
 use crate::process::Process;
+use crate::session::GameSession;
 
 const LIFE_FLASK_SLOT: usize = 0;
 const MANA_FLASK_SLOT: usize = 1;
@@ -60,9 +60,8 @@ impl RuntimeState {
 
     fn area_instance_is_current(&self, process: &Process) -> io::Result<bool> {
         let vitals = self.session.poe2_probe()?;
-        let current = process
-            .read_u64(vitals.in_game_state + vitals.area_instance_offset)?
-            as usize;
+        let current =
+            process.read_u64(vitals.in_game_state + vitals.area_instance_offset)? as usize;
         Ok(current == vitals.area_instance)
     }
 }

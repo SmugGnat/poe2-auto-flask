@@ -31,11 +31,7 @@ pub struct Probe {
 
 pub fn probe(process: &Process) -> io::Result<Probe> {
     let section = process.find_pe_section(".text")?;
-    let matches = process.scan_pattern(
-        section.address,
-        section.size,
-        &GAME_STATE_PATTERN,
-    )?;
+    let matches = process.scan_pattern(section.address, section.size, &GAME_STATE_PATTERN)?;
     if matches.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
@@ -46,11 +42,9 @@ pub fn probe(process: &Process) -> io::Result<Probe> {
     let mut failure = None;
     for instruction in matches {
         let attempt = (|| {
-            let displacement =
-                process.read_i32(instruction + GAME_STATE_DISPLACEMENT)? as i64;
-            let address = (instruction as i128)
-                + (GAME_STATE_PATTERN.len() as i128)
-                + (displacement as i128);
+            let displacement = process.read_i32(instruction + GAME_STATE_DISPLACEMENT)? as i64;
+            let address =
+                (instruction as i128) + (GAME_STATE_PATTERN.len() as i128) + (displacement as i128);
             if !(0x1_0000..=usize::MAX as i128).contains(&address) {
                 return Err(invalid("invalid RIP-relative GameState address"));
             }
@@ -165,7 +159,11 @@ fn pool_at(bytes: &[u8], offset: usize) -> VitalPool {
 }
 
 fn i32_at(bytes: &[u8], offset: usize) -> i32 {
-    i32::from_le_bytes(bytes[offset..offset + 4].try_into().expect("bounded vital field"))
+    i32::from_le_bytes(
+        bytes[offset..offset + 4]
+            .try_into()
+            .expect("bounded vital field"),
+    )
 }
 
 fn valid_pool(pool: VitalPool, allow_zero: bool) -> bool {
@@ -243,10 +241,29 @@ mod tests {
             reserved_fraction: 0,
         };
         assert!(valid_pool(normal, false));
-        assert!(!valid_pool(VitalPool { current: 102, ..normal }, false));
-        assert!(!valid_pool(VitalPool { reserved_fraction: 10001, ..normal }, false));
+        assert!(!valid_pool(
+            VitalPool {
+                current: 102,
+                ..normal
+            },
+            false
+        ));
+        assert!(!valid_pool(
+            VitalPool {
+                reserved_fraction: 10001,
+                ..normal
+            },
+            false
+        ));
         assert!(!valid_pool(VitalPool { total: 0, ..normal }, false));
-        assert!(valid_pool(VitalPool { current: 0, total: 0, ..normal }, true));
+        assert!(valid_pool(
+            VitalPool {
+                current: 0,
+                total: 0,
+                ..normal
+            },
+            true
+        ));
     }
 
     #[test]

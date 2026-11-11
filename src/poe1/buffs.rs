@@ -2,10 +2,10 @@
 use std::collections::HashMap;
 use std::io;
 
+use super::offsets::*;
+use super::{invalid, plausible_ptr, read_player_id, Probe};
 use crate::entity::resolve_component;
 use crate::process::Process;
-use super::{invalid, plausible_ptr, read_player_id, Probe};
-use super::offsets::*;
 
 const MAX_EFFECTS: usize = 512;
 const MAX_DEFINITIONS: usize = 2048;
@@ -45,10 +45,17 @@ impl EffectCache {
     }
 }
 
-pub fn sample(process: &Process, probe: &Probe, cache: &mut EffectCache) -> io::Result<EffectsSnapshot> {
+pub fn sample(
+    process: &Process,
+    probe: &Probe,
+    cache: &mut EffectCache,
+) -> io::Result<EffectsSnapshot> {
     if read_player_id(process, probe.local_player)? != probe.player_id {
         cache.clear();
-        return Err(io::Error::new(io::ErrorKind::Interrupted, "PoE1 player identity changed"));
+        return Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "PoE1 player identity changed",
+        ));
     }
     let component = match cache.component {
         Some(value) => value,
@@ -78,7 +85,10 @@ pub fn sample(process: &Process, probe: &Probe, cache: &mut EffectCache) -> io::
         if !plausible_ptr(at) {
             return Err(invalid("PoE1 effect vector contains invalid entry"));
         }
-        let fields = process.read_bytes(at + STATUS_DEFINITION, STATUS_FLASK_SLOT + 2 - STATUS_DEFINITION)?;
+        let fields = process.read_bytes(
+            at + STATUS_DEFINITION,
+            STATUS_FLASK_SLOT + 2 - STATUS_DEFINITION,
+        )?;
         let definition = u64_at(&fields, 0) as usize;
         if definition == 0 {
             continue;
@@ -90,17 +100,22 @@ pub fn sample(process: &Process, probe: &Probe, cache: &mut EffectCache) -> io::
         let total_time = f32_at(&fields, STATUS_TOTAL_TIME - STATUS_DEFINITION);
         let source_id = u32::from_le_bytes(
             fields[STATUS_SOURCE_ID - STATUS_DEFINITION..STATUS_SOURCE_ID - STATUS_DEFINITION + 4]
-                .try_into().expect("effect source"),
+                .try_into()
+                .expect("effect source"),
         );
         let slot = i16::from_le_bytes(
-            fields[STATUS_FLASK_SLOT - STATUS_DEFINITION..STATUS_FLASK_SLOT - STATUS_DEFINITION + 2]
-                .try_into().expect("effect slot"),
+            fields
+                [STATUS_FLASK_SLOT - STATUS_DEFINITION..STATUS_FLASK_SLOT - STATUS_DEFINITION + 2]
+                .try_into()
+                .expect("effect slot"),
         );
         if cache.definitions.len() >= MAX_DEFINITIONS {
             cache.definitions.clear();
         }
         if !cache.definitions.contains_key(&definition) {
-            cache.definitions.insert(definition, read_definition(process, definition)?);
+            cache
+                .definitions
+                .insert(definition, read_definition(process, definition)?);
         }
         let detail = &cache.definitions[&definition];
         let active_slot = flask_slot(

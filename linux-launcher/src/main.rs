@@ -99,7 +99,10 @@ fn run() -> Result<(), String> {
         .arg(&helper)
         .args(&args.helper_args)
         .arg("--game")
-        .arg(match args.game { Game::Poe1 => "poe1", Game::Poe2 => "poe2" })
+        .arg(match args.game {
+            Game::Poe1 => "poe1",
+            Game::Poe2 => "poe2",
+        })
         .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &launch.steam_client)
         .env("STEAM_COMPAT_DATA_PATH", &launch.compat_data)
         .env(HELPER_CONFIG_ENV, wine_config)
@@ -317,7 +320,9 @@ fn print_help() {
     println!("poe2-auto-flask Linux launcher");
     println!();
     println!("Usage:");
-    println!("  poe2-auto-flask-linux-launcher [--auto | --debug] [--game poe1|poe2] [--helper PATH]");
+    println!(
+        "  poe2-auto-flask-linux-launcher [--auto | --debug] [--game poe1|poe2] [--helper PATH]"
+    );
     println!();
     println!("The selected Path of Exile game must already be running through Steam Proton.");
     println!("PoE1 currently supports --debug only. Default game remains poe2.");
@@ -340,7 +345,11 @@ fn discover_launch_environment(game: Game) -> Result<LaunchEnvironment, String> 
         let Ok(cmdline) = fs::read(process_dir.join("cmdline")) else {
             continue;
         };
-        if !game.exe_names().iter().any(|name| contains_bytes(&cmdline, name)) {
+        if !game
+            .exe_names()
+            .iter()
+            .any(|name| contains_bytes(&cmdline, name))
+        {
             continue;
         }
 
@@ -448,18 +457,30 @@ mod tests {
     #[test]
     fn recognizes_poe2_app_id() {
         assert!(environment_matches_app(
-            b"STEAM_COMPAT_APP_ID=2694490\0OTHER=value\0", Game::Poe2,
+            b"STEAM_COMPAT_APP_ID=2694490\0OTHER=value\0",
+            Game::Poe2,
         ));
         assert!(environment_matches_app(b"SteamAppId=2694490\0", Game::Poe2));
-        assert!(!environment_matches_app(b"STEAM_COMPAT_APP_ID=1234\0", Game::Poe2));
-        assert!(!environment_matches_app(b"STEAM_COMPAT_APP_ID=238960\0", Game::Poe2));
+        assert!(!environment_matches_app(
+            b"STEAM_COMPAT_APP_ID=1234\0",
+            Game::Poe2
+        ));
+        assert!(!environment_matches_app(
+            b"STEAM_COMPAT_APP_ID=238960\0",
+            Game::Poe2
+        ));
     }
 
     #[test]
     fn recognizes_poe1_app_id_without_matching_poe2() {
         assert!(environment_matches_app(b"SteamAppId=238960\0", Game::Poe1));
-        assert!(!environment_matches_app(b"SteamAppId=2694490\0", Game::Poe1));
-        assert!(Game::Poe1.exe_names().contains(&b"PathOfExile_x64.exe".as_slice()));
+        assert!(!environment_matches_app(
+            b"SteamAppId=2694490\0",
+            Game::Poe1
+        ));
+        assert!(Game::Poe1
+            .exe_names()
+            .contains(&b"PathOfExile_x64.exe".as_slice()));
     }
 
     #[test]

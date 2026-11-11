@@ -369,10 +369,12 @@ fn find_process_id(target_names: &[&str]) -> io::Result<u32> {
         }
     }
 
-    selected.ok_or_else(|| io::Error::new(
-        io::ErrorKind::NotFound,
-        "selected Path of Exile game process was not found",
-    ))
+    selected.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "selected Path of Exile game process was not found",
+        )
+    })
 }
 
 fn find_main_module(pid: u32, target_names: &[&str]) -> io::Result<ModuleInfo> {

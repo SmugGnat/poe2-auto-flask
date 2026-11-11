@@ -102,7 +102,8 @@ impl GameSession {
             let Reader::Poe1(probe) = &self.reader else {
                 return Err(unsupported());
             };
-            self.snapshot.flasks = Some(poe1::flasks::sample(process, probe, &mut self.flask_cache)?);
+            self.snapshot.flasks =
+                Some(poe1::flasks::sample(process, probe, &mut self.flask_cache)?);
         }
         Ok(self.snapshot.flasks.as_ref().expect("flasks just sampled"))
     }
@@ -112,9 +113,14 @@ impl GameSession {
             let Reader::Poe1(probe) = &self.reader else {
                 return Err(unsupported());
             };
-            self.snapshot.effects = Some(poe1::buffs::sample(process, probe, &mut self.effect_cache)?);
+            self.snapshot.effects =
+                Some(poe1::buffs::sample(process, probe, &mut self.effect_cache)?);
         }
-        Ok(self.snapshot.effects.as_ref().expect("effects just sampled"))
+        Ok(self
+            .snapshot
+            .effects
+            .as_ref()
+            .expect("effects just sampled"))
     }
 
     /// Existing PoE2-specific subsystems retain their proven probes during migration.
@@ -134,7 +140,10 @@ impl GameSession {
 }
 
 fn unsupported() -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, "reader does not support this game")
+    io::Error::new(
+        io::ErrorKind::InvalidInput,
+        "reader does not support this game",
+    )
 }
 
 #[cfg(test)]

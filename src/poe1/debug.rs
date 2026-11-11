@@ -56,7 +56,11 @@ pub fn run(process: &Process, mut session: GameSession) -> io::Result<()> {
                                 flask.item_path,
                                 flask.current_charges,
                                 flask.raw_per_use,
-                                if buffs.slots_active[index] { "active" } else { "inactive" },
+                                if buffs.slots_active[index] {
+                                    "active"
+                                } else {
+                                    "inactive"
+                                },
                             ),
                             None => println!("  Flask {}: empty", index + 1),
                         }
@@ -64,7 +68,12 @@ pub fn run(process: &Process, mut session: GameSession) -> io::Result<()> {
                     println!(
                         "  Effects ({}): {}",
                         buffs.effects.len(),
-                        buffs.effects.iter().map(|e| e.name.as_str()).collect::<Vec<_>>().join(", "),
+                        buffs
+                            .effects
+                            .iter()
+                            .map(|e| e.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "),
                     );
                     report_at = started + REPORT_INTERVAL;
                 }

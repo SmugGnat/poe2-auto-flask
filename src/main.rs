@@ -6,14 +6,14 @@ mod config;
 mod debug;
 mod entity;
 mod file_watch;
-mod game;
-mod poe1;
-mod session;
 mod flask_inventory;
+mod game;
 mod input;
 mod platform;
+mod poe1;
 mod poe2;
 mod process;
+mod session;
 
 use std::io;
 use std::thread;
@@ -22,10 +22,10 @@ use std::time::Duration;
 use automation::run_auto;
 use config::{Config, ConfigManager, ConfigStartup};
 use debug::run_debug;
-use platform::running_under_wine;
 use game::Game;
-use session::GameSession;
+use platform::running_under_wine;
 use process::Process;
+use session::GameSession;
 
 const PROCESS_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 const GAME_STATE_RETRY_INTERVAL: Duration = Duration::from_secs(1);
@@ -62,7 +62,11 @@ fn parse_options() -> Options {
         match arg.as_str() {
             "--auto" | "--debug" if !mode_seen => {
                 mode_seen = true;
-                mode = if arg == "--debug" { Mode::Debug } else { Mode::Auto };
+                mode = if arg == "--debug" {
+                    Mode::Debug
+                } else {
+                    Mode::Auto
+                };
             }
             "--game" if !game_seen => {
                 game_seen = true;
@@ -93,7 +97,11 @@ fn fail_usage() -> ! {
 
 fn run(options: Options) -> io::Result<()> {
     let Options { mode, game } = options;
-    println!("Selected {} (Steam AppID {}).", game.name(), game.steam_app_id());
+    println!(
+        "Selected {} (Steam AppID {}).",
+        game.name(),
+        game.steam_app_id()
+    );
     if game == Game::Poe1 && mode == Mode::Auto {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
@@ -158,10 +166,19 @@ fn wait_for_process(under_wine: bool, game: Game) -> io::Result<Option<Process>>
     loop {
         match Process::attach_to_game(game) {
             Ok(process) => return Ok(Some(process)),
-            Err(error) if matches!(error.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AlreadyExists) => return Err(error),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::PermissionDenied | io::ErrorKind::AlreadyExists
+                ) =>
+            {
+                return Err(error)
+            }
             Err(error) if under_wine && error.kind() == io::ErrorKind::NotFound => {
                 println!("{} is not running.", game.name());
-                println!("On Proton/Wine, start the selected game first, then relaunch poe2-auto-flask.");
+                println!(
+                    "On Proton/Wine, start the selected game first, then relaunch poe2-auto-flask."
+                );
                 return Ok(None);
             }
             Err(_) => {
