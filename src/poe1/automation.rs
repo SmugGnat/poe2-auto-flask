@@ -18,7 +18,11 @@ const BINDING_INTERVAL: Duration = Duration::from_secs(2);
 const REFRESH_INTERVAL: Duration = Duration::from_millis(250);
 const POST_USE_GUARD: Duration = Duration::from_millis(1000);
 
-pub fn run(process: &Process, mut session: GameSession, manager: &mut ConfigManager) -> io::Result<()> {
+pub fn run(
+    process: &Process,
+    mut session: GameSession,
+    manager: &mut ConfigManager,
+) -> io::Result<()> {
     let mut bindings = BindingManager::load()?;
     let mut armed = false;
     let mut was_down = false;
@@ -43,9 +47,12 @@ pub fn run(process: &Process, mut session: GameSession, manager: &mut ConfigMana
         if started >= next_config_reload {
             next_config_reload = started + RELOAD_INTERVAL;
             match manager.check_for_reload() {
-                ConfigReload::Reloaded => println!("PoE1 config reloaded: {}", manager.current().poe1_summary()),
-                ConfigReload::Invalid(error) | ConfigReload::ReadError(error) =>
-                    eprintln!("PoE1 config read failed, keeping last valid config: {error}"),
+                ConfigReload::Reloaded => {
+                    println!("PoE1 config reloaded: {}", manager.current().poe1_summary())
+                }
+                ConfigReload::Invalid(error) | ConfigReload::ReadError(error) => {
+                    eprintln!("PoE1 config read failed, keeping last valid config: {error}")
+                }
                 ConfigReload::Unchanged | ConfigReload::Removed => (),
             }
         }
@@ -63,7 +70,14 @@ pub fn run(process: &Process, mut session: GameSession, manager: &mut ConfigMana
             last_fire = None;
             needs_refresh = armed;
             next_refresh = started;
-            show(&mut status, if armed { "WAITING FOR POE1 GAME STATE" } else { "DISARMED" });
+            show(
+                &mut status,
+                if armed {
+                    "WAITING FOR POE1 GAME STATE"
+                } else {
+                    "DISARMED"
+                },
+            );
         }
         was_down = down;
 
@@ -112,7 +126,10 @@ pub fn run(process: &Process, mut session: GameSession, manager: &mut ConfigMana
         let sampled = (|| {
             let vitals = session.vitals(process)?;
             let area = session.poe1_area(process)?;
-            Ok::<_, io::Error>((vitals, area.allows_auto_flask(manager.current().general.enable_in_hideout)))
+            Ok::<_, io::Error>((
+                vitals,
+                area.allows_auto_flask(manager.current().general.enable_in_hideout),
+            ))
         })();
         let (vitals, area_allowed) = match sampled {
             Ok(values) => values,
@@ -166,17 +183,18 @@ pub fn run(process: &Process, mut session: GameSession, manager: &mut ConfigMana
             Ok(Some((slot, flasks))) => {
                 // Validate again immediately before any input: game state,
                 // threshold, focus and chat may have changed during reading.
-                let revalidated = session.poe1_verify_vitals(process)
-                    .and_then(|v| {
-                        let chat = session.poe1_chat_active(process)?;
-                        Ok((v, chat))
-                    });
+                let revalidated = session.poe1_verify_vitals(process).and_then(|v| {
+                    let chat = session.poe1_chat_active(process)?;
+                    Ok((v, chat))
+                });
                 match revalidated {
                     Ok((new_vitals, false))
-                        if is_process_foreground(process.pid()) && new_vitals.health.current > 0 =>
+                        if is_process_foreground(process.pid())
+                            && new_vitals.health.current > 0 =>
                     {
                         let effects = session.poe1_effects(process)?;
-                        if choose_action(manager.current(), new_vitals, &flasks, effects) == Some(slot)
+                        if choose_action(manager.current(), new_vitals, &flasks, effects)
+                            == Some(slot)
                             && !blocks_grace_period(effects)
                         {
                             send_flask_key(keys[slot])?;
@@ -230,9 +248,11 @@ fn binding_label(state: &BindingState) -> String {
     match state {
         BindingState::Ready(keys) => format!(
             "PoE1 flask keys: {}",
-            keys.iter().enumerate()
-                .map(|(i,k)| format!("{}={}",i+1,k.label()))
-                .collect::<Vec<_>>().join(", ")
+            keys.iter()
+                .enumerate()
+                .map(|(i, k)| format!("{}={}", i + 1, k.label()))
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
         BindingState::Unavailable(error) => format!("PoE1 bindings unavailable: {error}"),
     }

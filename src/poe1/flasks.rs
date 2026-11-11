@@ -155,7 +155,8 @@ pub fn sample(
             }
             let component = resolve_component(process, entity, "Charges")
                 .ok_or_else(|| invalid(format!("PoE1 slot {} is missing Charges", slot + 1)))?;
-            let local_charge_multiplier = charge_cost::local_charge_multiplier(process, entity).ok();
+            let local_charge_multiplier =
+                charge_cost::local_charge_multiplier(process, entity).ok();
             cache.slots[slot] = Some(CachedItem {
                 inventory_item,
                 entity,
@@ -276,5 +277,4 @@ mod tests {
         slot.effective_per_use = Some(11);
         assert_eq!(slot.remaining_uses(), Some(4));
     }
-
 }

@@ -73,7 +73,10 @@ fn run() -> Result<(), String> {
     };
 
     if args.game == Game::Poe1
-        && !args.helper_args.iter().any(|arg| arg == "--debug" || arg == "--auto")
+        && !args
+            .helper_args
+            .iter()
+            .any(|arg| arg == "--debug" || arg == "--auto")
     {
         return Err("PoE1 requires explicit --auto or --debug".into());
     }

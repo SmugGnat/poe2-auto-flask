@@ -142,7 +142,9 @@ fn run(options: Options) -> io::Result<()> {
                 config_manager.current_from_file(),
             )?,
             (Mode::Debug, Game::Poe1) => poe1::debug::run(&process, probe)?,
-            (Mode::Auto, Game::Poe1) => poe1::automation::run(&process, probe, &mut config_manager)?,
+            (Mode::Auto, Game::Poe1) => {
+                poe1::automation::run(&process, probe, &mut config_manager)?
+            }
         }
 
         // Native Windows can attach to a restarted game process. Under Proton/Wine the helper must

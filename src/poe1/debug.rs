@@ -14,7 +14,9 @@ pub fn run(process: &Process, mut session: GameSession) -> io::Result<()> {
     if let Some(metadata) = session.poe1_player_metadata() {
         println!("Player metadata: {metadata}");
     }
-    println!("Effective flask costs and chat UI state require live verification before auto input.");
+    println!(
+        "Effective flask costs and chat UI state require live verification before auto input."
+    );
     println!("Press Ctrl+C to exit. No automation or keyboard input is enabled.\n");
 
     let mut report_at = Instant::now();

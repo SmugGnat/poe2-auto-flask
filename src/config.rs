@@ -129,11 +129,31 @@ impl Config {
             "{} | {} | Quicksilver {} | Granite {} | Quartz {} | Diamond {} | Hideout {}",
             flask_summary("Life", &self.health),
             flask_summary("Mana", &self.mana),
-            if self.poe1.utility.quicksilver { "ON" } else { "OFF" },
-            if self.poe1.utility.granite { "ON" } else { "OFF" },
-            if self.poe1.utility.quartz { "ON" } else { "OFF" },
-            if self.poe1.utility.diamond { "ON" } else { "OFF" },
-            if self.general.enable_in_hideout { "ON" } else { "OFF" },
+            if self.poe1.utility.quicksilver {
+                "ON"
+            } else {
+                "OFF"
+            },
+            if self.poe1.utility.granite {
+                "ON"
+            } else {
+                "OFF"
+            },
+            if self.poe1.utility.quartz {
+                "ON"
+            } else {
+                "OFF"
+            },
+            if self.poe1.utility.diamond {
+                "ON"
+            } else {
+                "OFF"
+            },
+            if self.general.enable_in_hideout {
+                "ON"
+            } else {
+                "OFF"
+            },
         )
     }
 
@@ -443,7 +463,8 @@ key = "2"
         let config = Config::parse(
             Path::new("config.toml"),
             "[poe1.utility]\nquicksilver=true\n",
-        ).unwrap();
+        )
+        .unwrap();
         assert!(config.poe1.utility.quicksilver);
         assert!(!config.poe1.utility.granite);
         assert!(!Config::default().poe1.utility.quicksilver);
