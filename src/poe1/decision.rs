@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::poe2::LiveVitals;
 
 use super::buffs::EffectsSnapshot;
-use super::flasks::{FlaskSlot, FlaskSnapshot, SLOT_COUNT};
+use super::flasks::{FlaskSnapshot, SLOT_COUNT};
 use super::types::FlaskType;
 
 pub fn choose_action(
