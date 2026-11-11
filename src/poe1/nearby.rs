@@ -1,6 +1,7 @@
 //! EXPERIMENTAL read-only PoE1 awake-monster census.
-//! No automation currently consumes this reader. An explicit diagnostic flag
-//! enables it so the candidate filters and cost can be verified in-game.
+//! Only explicitly enabled, proximity-gated PoE1 utility-flask policies
+//! consume this reader in automation. --debug --nearby also enables it for
+//! read-only diagnostics; normal policies without proximity rules never scan.
 //! Bounded std::map walk; cache entity component pointers within an area.
 use std::collections::{HashMap, HashSet};
 use std::io;
