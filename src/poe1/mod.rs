@@ -1,11 +1,15 @@
 //! Validated read-only PoE1 memory reader. No input, injection or memory writes.
 pub mod area;
 pub mod automation;
+pub mod bindings;
 pub mod buffs;
+pub mod charge_cost;
+pub mod chat;
 pub mod debug;
 pub mod decision;
 pub mod flasks;
 mod offsets;
+pub mod types;
 
 use std::io;
 
