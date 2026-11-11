@@ -48,6 +48,35 @@ Selected offsets transcribed from a GameHelper C# snapshot (comments for the 202
 
 **Provenance:** The originally supplied GameHelper source snapshot had no verified original repository commit, upstream URL, or license. To avoid redistributing unverified third-party source, the consolidated branch **does not include** its approximately 3.6 MB C# reference tree. This project does not compile or link GameHelper. Relevant observations are independently implemented in Rust and documented here. Verify provenance and any attribution/licensing obligations before redistributing that original C# source.
 
+## PoE1 bounded offset recovery — architecture milestone 2
+
+- The PoE1 adapter first validates **previously resolved** offsets (on refresh) or
+  the known 2026-09 layout (initial attach). This unchanged path does no
+  heuristic scanning and keeps the normal 100 ms vitals read compact.
+- If those fail *after* the GameStates signature and active InGameState have
+  been validated, it searches only small, aligned windows: InGameState →
+  AreaInstance **±0x20 (8-byte steps)**; InGameState → WorldData **±0x20
+  (8-byte steps)**; AreaInstance → PlayerInfo **±0x20 (8-byte steps)**; and
+  the common offset of the three adjacent Life/Mana/ES pools **±0x20
+  (4-byte steps)**. It does **not** guess offsets throughout arbitrary
+  process memory or scan unknown entity/component types.
+- A candidate must contain a plausible ServerData/local-player pair,
+  actual `Metadata/Characters/` metadata, a valid player entity ID,
+  a resolved Life component with valid health/mana/ES pools, and an
+  independently decoded WorldArea.dat row (name, ID, flags and act).
+  The full player and area chains are checked again before acceptance.
+  **Ambiguous or absent matches fail closed**, without authorizing input.
+- The accepted offsets stay in the PoE1 session probe and are used for
+  normal polling, Flask PlayerInfo verification and WorldData checks.
+  Cache/offset discovery occurs only on attach or session refresh. A
+  changed validated layout prints one `PoE1 validated recovered offsets`
+  terminal line with the chosen offsets, to aid troubleshooting.
+- **Limits:** this does not automatically repair the GameStates byte
+  signature, arbitrary Life pool stride changes, player/buff/flask/chat/
+  inventory/entity structure offsets, or a substantial executable update.
+  These still require a manually verified offset update. Any failed
+  mandatory reader blocks automation, even if partial state looks plausible.
+
 ## Configuration
 
 The existing `~/.config/poe2-auto-flask/config.toml` is shared and backwards-compatible. PoE1 Life and Mana use the same threshold percentage settings (calculated using the unreserved available pool). For example:

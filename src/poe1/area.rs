@@ -10,7 +10,7 @@ const MAX_ID_UNITS: usize = 128;
 const MAX_NAME_UNITS: usize = 192;
 
 pub fn read(process: &Process, probe: &Probe) -> io::Result<AreaInfo> {
-    if read_ptr(process, probe.in_game_state + IN_GAME_WORLD)? != probe.world_data {
+    if read_ptr(process, probe.in_game_state + probe.layout.world)? != probe.world_data {
         return Err(io::Error::new(
             io::ErrorKind::Interrupted,
             "PoE1 WorldData changed",
@@ -42,7 +42,7 @@ pub fn read(process: &Process, probe: &Probe) -> io::Result<AreaInfo> {
         id,
         name,
         act,
-        world_data_offset: IN_GAME_WORLD,
+        world_data_offset: probe.layout.world,
         world_data: probe.world_data,
         area_row: row,
     })

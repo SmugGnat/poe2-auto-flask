@@ -67,7 +67,7 @@ pub fn sample(
     cache: &mut FlaskCache,
 ) -> io::Result<FlaskSnapshot> {
     // Validate that the player/ServerData chain still belongs to this session.
-    let player_info = probe.area_instance + AREA_PLAYER_INFO;
+    let player_info = probe.area_instance + probe.layout.player_info;
     let pointers = process.read_bytes(player_info, 16)?;
     if u64_at(&pointers, 0) as usize != probe.server_data
         || u64_at(&pointers, 8) as usize != probe.local_player
