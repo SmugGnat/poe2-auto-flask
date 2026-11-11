@@ -198,7 +198,7 @@ pub fn run(
                 return Ok(None);
             }
             let flasks = session.poe1_flasks(process)?.clone();
-            activation_guard.apply_to(started, &flasks, &mut effects);
+            activation_guard.apply_to(started, vitals, &flasks, &mut effects);
             // Only scan monsters if an enabled, usable utility needs it.
             // One cached census is shared across every equipped utility type.
             // Failed scans disable nearby-gated utilities, never Life/Mana.
@@ -255,7 +255,7 @@ pub fn run(
                             run_tracker.reset();
                         }
                         let mut effects = session.poe1_effects(process)?.clone();
-                        activation_guard.apply_to(started, &flasks, &mut effects);
+                        activation_guard.apply_to(started, new_vitals, &flasks, &mut effects);
                         if quicksilver_motion_ok
                             && choose_action_rotating_with_nearby(
                                 manager.current(),
@@ -271,7 +271,7 @@ pub fn run(
                             if let Some(flask) = &flasks.slots[slot] {
                                 send_flask_key(keys[slot])?;
                                 let sent_at = Instant::now();
-                                activation_guard.mark(slot, flask.flask_type, sent_at);
+                                activation_guard.mark(slot, flask.flask_type, sent_at, new_vitals, &flasks);
                                 rotation.record(slot, flask.flask_type);
                                 println!(
                                     "{} flask (slot {}) -> {} | charges {} | effective cost {}",
