@@ -52,7 +52,11 @@ impl RuntimeState {
         Ok(())
     }
 
-    fn area_instance_is_current(&self, process: &Process, session: &GameSession) -> io::Result<bool> {
+    fn area_instance_is_current(
+        &self,
+        process: &Process,
+        session: &GameSession,
+    ) -> io::Result<bool> {
         let vitals = session.poe2_probe()?;
         let current =
             process.read_u64(vitals.in_game_state + vitals.area_instance_offset)? as usize;
@@ -87,7 +91,6 @@ impl FlaskState {
         self.charge_block_reported = false;
     }
 }
-
 
 struct Policy {
     bindings: BindingManager,
@@ -218,10 +221,12 @@ impl GameAutomationPolicy for Policy {
             .allows_auto_flask(config.general.enable_in_hideout)
         {
             let status = area_status(&self.runtime.area, config);
-            return Ok(match self.runtime.area_instance_is_current(process, session) {
-                Ok(true) => TickOutcome::Status(status),
-                Ok(false) | Err(_) => TickOutcome::Refresh,
-            });
+            return Ok(
+                match self.runtime.area_instance_is_current(process, session) {
+                    Ok(true) => TickOutcome::Status(status),
+                    Ok(false) | Err(_) => TickOutcome::Refresh,
+                },
+            );
         }
 
         let vitals = match session.vitals(process) {
@@ -253,7 +258,11 @@ impl GameAutomationPolicy for Policy {
                 self.bad_samples = 0;
                 let (life_binding, mana_binding) = match self.bindings.current() {
                     GameBindings::Keyboard { life, mana, .. } => (*life, *mana),
-                    _ => return Ok(TickOutcome::Status("PAUSED (PoE2 input bindings unavailable)")),
+                    _ => {
+                        return Ok(TickOutcome::Status(
+                            "PAUSED (PoE2 input bindings unavailable)",
+                        ))
+                    }
                 };
 
                 if !ci_like_defense(vitals.health, vitals.energy_shield) {
@@ -387,7 +396,6 @@ fn flask_has_usable_charges(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::{ci_like_defense, player_is_dead};
@@ -422,4 +430,3 @@ mod tests {
         assert!(ci_like_defense(pool(1, 1), Some(pool(0, 3000))));
     }
 }
-

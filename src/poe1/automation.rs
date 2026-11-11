@@ -19,11 +19,7 @@ use super::movement::{RunTracker, RUN_ANIMATION_ID};
 use super::rotation::FlaskRotation;
 use super::types::FlaskType;
 
-pub fn run(
-    process: &Process,
-    session: GameSession,
-    manager: &mut ConfigManager,
-) -> io::Result<()> {
+pub fn run(process: &Process, session: GameSession, manager: &mut ConfigManager) -> io::Result<()> {
     let policy = Policy::new()?;
     crate::engine::run(process, session, manager, policy)
 }
@@ -153,11 +149,8 @@ impl GameAutomationPolicy for Policy {
         let moving_ms = config.poe1.quicksilver_min_run_ms;
         let quicksilver_ready = if moving_ms > 0 && config.poe1.utility.quicksilver {
             let animation_id = session.poe1_animation(process).ok();
-            self.run_tracker.observe(
-                animation_id,
-                started,
-                Duration::from_millis(moving_ms),
-            )
+            self.run_tracker
+                .observe(animation_id, started, Duration::from_millis(moving_ms))
         } else {
             self.run_tracker.reset();
             true
@@ -231,12 +224,8 @@ impl GameAutomationPolicy for Policy {
                             self.run_tracker.reset();
                         }
                         let mut effects = session.poe1_effects(process)?.clone();
-                        self.activation_guard.apply_to(
-                            started,
-                            new_vitals,
-                            &flasks,
-                            &mut effects,
-                        );
+                        self.activation_guard
+                            .apply_to(started, new_vitals, &flasks, &mut effects);
                         if quicksilver_motion_ok
                             && choose_action_rotating_guarded(
                                 config,
