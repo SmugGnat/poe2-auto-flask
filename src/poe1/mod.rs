@@ -134,7 +134,7 @@ pub fn sample_vitals(process: &Process, probe: &Probe) -> io::Result<LiveVitals>
     let first = LIFE_HEALTH + VITAL_FLAT;
     let last = LIFE_ES + VITAL_CURRENT + 4;
     let bytes = process.read_bytes(probe.life_component + first, last - first)?;
-    let health = pool_at(&bytes, LIFE_HEALTH - LIFE_HEALTH);
+    let health = pool_at(&bytes, 0);
     let mana = pool_at(&bytes, LIFE_MANA - LIFE_HEALTH);
     let es = pool_at(&bytes, LIFE_ES - LIFE_HEALTH);
 

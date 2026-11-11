@@ -153,8 +153,8 @@ mod tests {
 
     #[test]
     fn new_tick_cannot_reuse_stale_vitals() {
-        let mut snapshot = GameSnapshot::default();
-        snapshot.vitals = Some(LiveVitals {
+        let mut snapshot = GameSnapshot {
+            vitals: Some(LiveVitals {
             health: VitalPool {
                 current: 20,
                 total: 100,
@@ -163,7 +163,9 @@ mod tests {
             },
             mana: None,
             energy_shield: None,
-        });
+            }),
+            ..GameSnapshot::default()
+        };
         assert_eq!(snapshot.vitals.unwrap().health.current, 20);
         snapshot.invalidate();
         assert!(snapshot.vitals.is_none());

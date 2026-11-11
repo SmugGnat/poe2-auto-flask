@@ -226,8 +226,10 @@ mod tests {
 
     #[test]
     fn cached_item_addresses_are_reset_on_area_change() {
-        let mut cache = FlaskCache::default();
-        cache.inventory = Some(0x10000);
+        let mut cache = FlaskCache {
+            inventory: Some(0x10000),
+            ..FlaskCache::default()
+        };
         cache.slots[0] = Some(CachedItem {
             inventory_item: 0x20000,
             entity: 0x30000,

@@ -112,10 +112,10 @@ pub fn sample(
         if cache.definitions.len() >= MAX_DEFINITIONS {
             cache.definitions.clear();
         }
-        if !cache.definitions.contains_key(&definition) {
-            cache
-                .definitions
-                .insert(definition, read_definition(process, definition)?);
+        if let std::collections::hash_map::Entry::Vacant(entry) =
+            cache.definitions.entry(definition)
+        {
+            entry.insert(read_definition(process, definition)?);
         }
         let detail = &cache.definitions[&definition];
         let active_slot = flask_slot(
