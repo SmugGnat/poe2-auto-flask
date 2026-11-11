@@ -294,7 +294,7 @@ fn find_monster_components(process: &Process, entity: usize) -> io::Result<Optio
             }
         }
     }
-    if selected.iter().any(|ptr| *ptr == 0) {
+    if selected.contains(&0) {
         return Ok(None);
     }
     Ok(Some(Components {
