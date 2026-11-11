@@ -21,12 +21,13 @@ unsupported readers. The PoE2 adapter retains the proven PoE2 vitals probe;
 its specialized charge and buff probes remain in the PoE2 policy pending
 a later, independently verifiable adapter migration.
 
-The adapters do not couple the games' raw structures. Step 3 has now
-consolidated the lifecycle loop while intentionally preserving separate
-game policies. CLI game selection remains explicit; future interface
-expansion must remain demand-driven and fail-closed.
+The adapters do not couple the games' raw structures. Step 3 consolidated
+the lifecycle loop while preserving separate game policies. Linux game
+selection now happens at launcher startup from validated Steam AppIDs
+(Step 5), never in the shared engine. Game-specific state remains
+demand-driven and fail-closed.
 
-- PoE1 Steam AppID **238960**; PoE2 Steam AppID **2694490**. The Linux launcher attaches to the selected Steam process and uses its active Proton prefix through `proton runinprefix`.
+- PoE1 Steam AppID **238960**; PoE2 Steam AppID **2694490**. The Linux launcher auto-selects the one running recognized game, validates its active Proton prefix, and starts the matching helper policy through `proton runinprefix`. Explicit `--game` overrides remain available.
 - The shared read-only `GameSession` owns one current-tick snapshot, pointer resolution, read caching, and refreshes on transitions. The PoE1 sampler requests vitals, area, flask inventory, effects, chat, and animation only as needed. The PoE2 policy retains its established charge/buff readers and rules.
 - The PoE1 memory reader checks the Game States signature, in-game state, local-player identity, and character metadata. It reads usable (unreserved) Life/Mana, ES, the five equipped flask paths and charges, player effects, chat state and optionally Actor animation.
 - Starting milestone 1 was **diagnostics-only**. The same backend now powers opt-in automated normal key input. Memory access remains read-only, without injection, kernel drivers or memory writes.
@@ -46,6 +47,34 @@ Selected offsets transcribed from a GameHelper C# snapshot (comments for the 202
 | Actor → animation ID | 0x248, Run = 4 |
 
 **Provenance:** The originally supplied GameHelper source snapshot had no verified original repository commit, upstream URL, or license. To avoid redistributing unverified third-party source, the consolidated branch **does not include** its approximately 3.6 MB C# reference tree. This project does not compile or link GameHelper. Relevant observations are independently implemented in Rust and documented here. Verify provenance and any attribution/licensing obligations before redistributing that original C# source.
+
+## Automatic game selection — architecture milestone 5
+
+- **Linux only:** The native launcher inspects candidate running Path of Exile
+  processes in `/proc` once at startup, using their Steam AppID
+  (`STEAM_COMPAT_APP_ID` and/or `SteamAppId`). Both IDs must agree when
+  present. An unknown or conflicting ID is rejected, rather than guessing
+  from executable names shared by PoE1 and PoE2.
+- Candidates must also supply the actual Steam client path, a valid existing
+  Proton `pfx` directory, and an executable Proton tool. The launcher uses
+  that candidate's prefix rather than constructing a new one. This adds no
+  polling or memory reads to the game automation loop.
+- If **exactly one** recognized environment is running, omit `--game` to
+  select it. If **both** games are running, implicit selection fails with an
+  instruction to pass `--game poe1` or `--game poe2`. If neither qualifies,
+  the historical PoE2 fallback remains the selected default but the launcher
+  cannot start without a real PoE2 Proton environment.
+- An explicit `--game` always selects that game and requires its matching
+  Proton environment; it never silently falls back to the other. PoE1 still
+  requires explicit `--auto` or `--debug` even when auto-detected; the
+  shared engine still starts **DISARMED**. `--nearby` remains PoE1 debug-only.
+- The launcher forwards the resolved game explicitly as `--game` to the Wine
+  helper. On **Windows**, the helper retains explicit selection and its
+  historical PoE2 default; no fragile cross-platform heuristic is added.
+- Covered by launcher unit tests for each recognized AppID, conflicting or
+  unknown values, no-game fallback, both-game ambiguity, and explicit
+  overrides. Cross-game memory reads and flask-policy changes are outside
+  this milestone.
 
 ## Shared action interface and executor — architecture milestone 4
 
