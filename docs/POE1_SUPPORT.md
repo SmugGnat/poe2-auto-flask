@@ -48,6 +48,60 @@ Selected offsets transcribed from a GameHelper C# snapshot (comments for the 202
 
 **Provenance:** The originally supplied GameHelper source snapshot had no verified original repository commit, upstream URL, or license. To avoid redistributing unverified third-party source, the consolidated branch **does not include** its approximately 3.6 MB C# reference tree. This project does not compile or link GameHelper. Relevant observations are independently implemented in Rust and documented here. Verify provenance and any attribution/licensing obligations before redistributing that original C# source.
 
+## Final regression and performance review — architecture milestone 6
+
+The final review leaves the shared lifecycle, game-specific flask policies, and
+input dispatcher unchanged. The tests added here are regression-only:
+
+- **Shared engine:** startup remains DISARMED; an F11 press while unfocused
+  cannot be replayed when focus returns; a held key never toggles repeatedly;
+  only a new foreground rising edge changes the armed state.
+- **Shared action dispatcher:** existing tests cover focus immediately before
+  and after policy validation, denial/error handling, malformed slot rejection
+  and successful-only input bookkeeping.
+- **PoE1:** existing tests cover offset/vital validation, cache reset, recovery
+  and duplicate rotation, effect/charge safety, Low Life rules, optional
+  movement/proximity gates and fail-closed census results.
+- **PoE2:** the new regression asserts that successful flask input starts the
+  existing post-send guard and clears the one-shot charge warning. Existing
+  tests check death/CI-like resource handling. The 1000ms guard, 2-slot
+  rules and three-bad-sample tolerance have not been changed.
+- **Linux:** launcher tests cover no-flag automatic selection, `--debug`,
+  backwards-compatible `--auto`, explicit game overrides, mixed/unknown
+  Steam AppIDs and ambiguous simultaneous-game discovery.
+- **Build:** the feature branch's CI checks Rust formatting, Clippy and unit
+  tests for both the Windows helper and Linux launcher, Rust 1.85 MSRV,
+  release binaries and AppImage packaging.
+
+**Performance/code-path review:** the common engine uses one 100ms scheduling
+loop, one-second process-exit/config checks and two-second binding checks. It
+does not parse game memory, scan for entities or allocate a game-wide state
+on every tick. The shared `GameSession` caches validated vitals per decision
+tick. PoE1 retries offset recovery only at attach/session refresh; its
+bounded proximity scanner runs only for explicitly configured eligible
+utility rules or the `--debug --nearby` diagnostic and is throttled to
+one scan per 750ms. PoE2 continues to use its established lock/charge probes
+and guard, avoiding a second behavioral migration during this refactor.
+
+**Remaining quantitative validation:** GitHub-hosted CI cannot measure the
+helper's actual Wine/Proton CPU utilization, resident memory, game-process
+latency or key-send timing on the player's PC. These must be observed live
+in each game at comparable scene density, with normal automation armed and
+proximity rules off for the baseline. A lightweight host-side sample is:
+
+```bash
+pgrep -af 'poe2-auto-flask.exe'
+# Choose the Wine helper's host PID from the list above:
+top -b -d 5 -n 4 -p PID
+```
+
+Compare the helper's sampled `%CPU` and `RES` while disarmed, armed and
+actively using flasks. Recheck PoE1 with an opt-in nearby rule separately if
+that feature is used. The PoE1 `--debug` CPU measure is useful diagnostics
+but is **not** a direct substitute for measuring the default auto loop.
+No numerical performance claim or release-readiness claim is made without
+these measurements and in-game checks. CI cannot validate future game offsets.
+
 ## Automatic game selection — architecture milestone 5
 
 - **Linux only:** The native launcher inspects candidate running Path of Exile
