@@ -8,6 +8,7 @@ use super::nearby::NearbySnapshot;
 use super::rotation::FlaskRotation;
 use super::types::{FlaskType, UTILITY_TYPES};
 
+#[cfg(test)]
 pub fn choose_action(
     config: &Config,
     vitals: LiveVitals,
@@ -20,6 +21,7 @@ pub fn choose_action(
 
 /// Any enabled proximity rule requires a valid sampled census. Other utility
 /// types and emergency recovery never depend on nearby data.
+#[cfg(test)]
 pub fn choose_action_with_nearby(
     config: &Config,
     vitals: LiveVitals,
