@@ -155,14 +155,14 @@ mod tests {
     fn new_tick_cannot_reuse_stale_vitals() {
         let mut snapshot = GameSnapshot {
             vitals: Some(LiveVitals {
-            health: VitalPool {
-                current: 20,
-                total: 100,
-                reserved_flat: 0,
-                reserved_fraction: 0,
-            },
-            mana: None,
-            energy_shield: None,
+                health: VitalPool {
+                    current: 20,
+                    total: 100,
+                    reserved_flat: 0,
+                    reserved_fraction: 0,
+                },
+                mana: None,
+                energy_shield: None,
             }),
             ..GameSnapshot::default()
         };
