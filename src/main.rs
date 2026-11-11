@@ -8,6 +8,7 @@ mod entity;
 mod file_watch;
 mod flask_inventory;
 mod game;
+mod game_state;
 mod input;
 mod platform;
 mod poe1;

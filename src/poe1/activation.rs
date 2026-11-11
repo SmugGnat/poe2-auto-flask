@@ -5,7 +5,7 @@
 //! 900ms cooldown. No additional process memory reads are performed here.
 use std::time::{Duration, Instant};
 
-use crate::poe2::LiveVitals;
+use crate::game_state::LiveVitals;
 
 use super::buffs::EffectsSnapshot;
 use super::flasks::{FlaskSnapshot, SLOT_COUNT};
@@ -182,7 +182,7 @@ mod tests {
     use crate::poe1::decision::choose_action;
     use crate::poe1::flasks::FlaskSlot;
     use crate::poe1::recovery::RecoveryKind;
-    use crate::poe2::VitalPool;
+    use crate::game_state::VitalPool;
 
     fn slot(kind: FlaskType, charges: i32) -> Option<FlaskSlot> {
         Some(FlaskSlot {

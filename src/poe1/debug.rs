@@ -165,7 +165,7 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
     }
 }
 
-fn format_pool(pool: Option<crate::poe2::VitalPool>) -> String {
+fn format_pool(pool: Option<crate::game_state::VitalPool>) -> String {
     match pool {
         Some(value) => format!("{}/{}", value.current, value.usable_max()),
         None => "N/A".into(),

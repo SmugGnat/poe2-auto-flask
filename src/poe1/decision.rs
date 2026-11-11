@@ -1,6 +1,6 @@
 //! Pure decision logic: no memory reads and no keyboard input.
 use crate::config::Config;
-use crate::poe2::LiveVitals;
+use crate::game_state::LiveVitals;
 
 use super::buffs::EffectsSnapshot;
 use super::flasks::{FlaskSnapshot, SLOT_COUNT};
@@ -221,7 +221,7 @@ fn best_life_slot(
     flasks: &FlaskSnapshot,
     effects: &EffectsSnapshot,
     rotation: Option<&FlaskRotation>,
-    health: crate::poe2::VitalPool,
+    health: crate::game_state::VitalPool,
     threshold: f32,
     life_emergency_ready: bool,
 ) -> Option<usize> {
@@ -336,7 +336,7 @@ mod tests {
     use super::*;
     use crate::poe1::flasks::FlaskSlot;
     use crate::poe1::recovery::RecoveryKind;
-    use crate::poe2::VitalPool;
+    use crate::game_state::VitalPool;
 
     fn slot(kind: FlaskType, charges: i32, cost: Option<i32>) -> Option<FlaskSlot> {
         Some(FlaskSlot {

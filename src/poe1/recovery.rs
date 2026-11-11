@@ -1,7 +1,7 @@
 //! PoE1 flask recovery classification, cached when the equipped item changes.
 //! Only well-defined Mod.dat identifiers may authorize emergency bypass.
 //! Unknown/unsupported mod IDs are treated as gradual, never instant.
-use crate::poe2::VitalPool;
+use crate::game_state::VitalPool;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum RecoveryKind {

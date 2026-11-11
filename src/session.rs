@@ -1,230 +1,159 @@
-//! One read-only game session owns pointer resolution, freshness and sampling.
-//! Accessing stored state never implicitly issues a process-memory read.
-//! A caller begins a decision tick, then explicitly requests the data it needs.
+//! Shared, demand-driven session façade. It owns only the cross-game
+//! decision-tick snapshot. Memory-layout knowledge and game-specific caches
+//! belong exclusively to the individual adapters.
 use std::io;
 
 use crate::area::AreaInfo;
 use crate::game::Game;
+use crate::game_state::{GameSnapshot, GameStateReader, LiveVitals};
 use crate::poe1::{self, buffs::EffectsSnapshot, flasks::FlaskSnapshot};
-use crate::poe2::{self, LiveVitals, VitalsProbe};
+use crate::poe2::{self, VitalsProbe};
 use crate::process::Process;
 
 enum Reader {
-    Poe1(poe1::Probe),
-    Poe2(VitalsProbe),
-}
-
-/// Cheap, consistent values sampled during the current tick only.
-#[derive(Debug, Default)]
-pub struct GameSnapshot {
-    pub vitals: Option<LiveVitals>,
-    pub area: Option<AreaInfo>,
-    pub flasks: Option<FlaskSnapshot>,
-    pub effects: Option<EffectsSnapshot>,
-    pub animation: Option<i32>,
-}
-
-impl GameSnapshot {
-    fn invalidate(&mut self) {
-        *self = Self::default();
-    }
+    Poe1(poe1::adapter::Adapter),
+    Poe2(poe2::adapter::Adapter),
 }
 
 pub struct GameSession {
     reader: Reader,
     snapshot: GameSnapshot,
-    flask_cache: poe1::flasks::FlaskCache,
-    effect_cache: poe1::buffs::EffectCache,
-    motion_cache: poe1::movement::MotionCache,
-    nearby_cache: poe1::nearby::NearbyCache,
 }
 
 impl GameSession {
     pub fn probe(process: &Process, game: Game) -> io::Result<Self> {
         let reader = match game {
-            Game::Poe1 => Reader::Poe1(poe1::probe(process)?),
-            Game::Poe2 => Reader::Poe2(poe2::probe_vitals(process)?),
+            Game::Poe1 => Reader::Poe1(poe1::adapter::Adapter::probe(process)?),
+            Game::Poe2 => Reader::Poe2(poe2::adapter::Adapter::probe(process)?),
         };
-        Ok(Self {
-            reader,
-            snapshot: GameSnapshot::default(),
-            flask_cache: poe1::flasks::FlaskCache::default(),
-            effect_cache: poe1::buffs::EffectCache::default(),
-            motion_cache: poe1::movement::MotionCache::default(),
-            nearby_cache: poe1::nearby::NearbyCache::default(),
-        })
+        Ok(Self { reader, snapshot: GameSnapshot::default() })
     }
 
-    /// Mark all previously sampled values stale, without discarding stable pointer caches.
+    /// Drop only this tick's values. Adapter pointer caches remain valid until
+    /// a refresh, and no optional state is read unless explicitly requested.
     pub fn begin_tick(&mut self) {
-        self.snapshot.invalidate();
+        self.snapshot.begin_tick();
+        if let Reader::Poe1(adapter) = &mut self.reader {
+            adapter.begin_tick();
+        }
     }
 
-    /// Invalidate everything that can change with a zone, player, or game-state transition.
+    /// Invalidate all cached state before retrying game-specific reconnection.
     pub fn refresh(&mut self, process: &Process) -> io::Result<()> {
         self.begin_tick();
-        self.flask_cache.clear();
-        self.effect_cache.clear();
-        self.motion_cache.clear();
-        self.nearby_cache.clear();
-        self.reader = match &self.reader {
-            Reader::Poe1(previous) => Reader::Poe1(poe1::refresh(process, previous)?),
-            Reader::Poe2(previous) => Reader::Poe2(poe2::refresh_vitals(process, previous)?),
-        };
-        Ok(())
-    }
-
-    pub fn vitals(&mut self, process: &Process) -> io::Result<LiveVitals> {
-        if let Some(vitals) = self.snapshot.vitals {
-            return Ok(vitals);
+        match &mut self.reader {
+            Reader::Poe1(adapter) => adapter.refresh(process),
+            Reader::Poe2(adapter) => adapter.refresh(process),
         }
-        let sampled = match &self.reader {
-            Reader::Poe1(probe) => poe1::sample_vitals(process, probe)?,
-            Reader::Poe2(probe) => poe2::sample_vitals(process, probe)?,
-        };
-        self.snapshot.vitals = Some(sampled);
-        Ok(sampled)
     }
 
+    /// Shared, validated vitals are read at most once per decision tick.
+    pub fn vitals(&mut self, process: &Process) -> io::Result<LiveVitals> {
+        if let Some(value) = self.snapshot.vitals {
+            return Ok(value);
+        }
+        let value = match &self.reader {
+            Reader::Poe1(adapter) => adapter.read_vitals(process)?,
+            Reader::Poe2(adapter) => adapter.read_vitals(process)?,
+        };
+        self.snapshot.vitals = Some(value);
+        Ok(value)
+    }
+
+    /// Optional game-specific capabilities remain available without forcing
+    /// one game's raw state or memory layout onto the other adapter.
     pub fn poe1_player_metadata(&self) -> Option<&str> {
         match &self.reader {
-            Reader::Poe1(probe) => Some(&probe.metadata),
+            Reader::Poe1(adapter) => Some(adapter.player_metadata()),
             Reader::Poe2(_) => None,
         }
     }
 
-    /// Directly verify identity and reread vitals immediately before sending input.
+    /// Directly verify current identity and vitals before a PoE1 key press.
     pub fn poe1_verify_vitals(&self, process: &Process) -> io::Result<LiveVitals> {
         match &self.reader {
-            Reader::Poe1(probe) => poe1::sample_vitals(process, probe),
+            Reader::Poe1(adapter) => adapter.verify_vitals(process),
             Reader::Poe2(_) => Err(unsupported()),
         }
     }
 
-    /// Chat safety gate; unreadable UI state is an error, not "chat closed".
     pub fn poe1_chat_active(&self, process: &Process) -> io::Result<bool> {
         match &self.reader {
-            Reader::Poe1(probe) => poe1::chat::is_chat_active(process, probe),
+            Reader::Poe1(adapter) => adapter.chat_active(process),
             Reader::Poe2(_) => Err(unsupported()),
         }
     }
 
-    /// Sample animation only on request, once per decision tick.
     pub fn poe1_animation(&mut self, process: &Process) -> io::Result<i32> {
-        if let Some(animation) = self.snapshot.animation {
-            return Ok(animation);
+        match &mut self.reader {
+            Reader::Poe1(adapter) => adapter.animation(process),
+            Reader::Poe2(_) => Err(unsupported()),
         }
-        let Reader::Poe1(probe) = &self.reader else {
-            return Err(unsupported());
-        };
-        let animation = self.motion_cache.sample(process, probe)?;
-        self.snapshot.animation = Some(animation);
-        Ok(animation)
     }
 
-    /// Recheck animation immediately before sending an optional movement-gated input.
     pub fn poe1_verify_animation(&mut self, process: &Process) -> io::Result<i32> {
-        let Reader::Poe1(probe) = &self.reader else {
-            return Err(unsupported());
-        };
-        self.motion_cache.sample(process, probe)
-    }
-
-    /// EXPERIMENTAL read-only entity census; only called on explicit diagnostic
-    /// request. Throttled and bounded independently from the main 100ms loop.
-    pub fn poe1_nearby(&mut self, process: &Process) -> io::Result<poe1::nearby::NearbySnapshot> {
-        let Reader::Poe1(probe) = &self.reader else {
-            return Err(unsupported());
-        };
-        self.nearby_cache.sample(process, probe)
-    }
-
-    /// Resolve PoE1 area metadata only when the caller requests it.
-    pub fn poe1_area(&mut self, process: &Process) -> io::Result<&AreaInfo> {
-        if self.snapshot.area.is_none() {
-            let Reader::Poe1(probe) = &self.reader else {
-                return Err(unsupported());
-            };
-            self.snapshot.area = Some(poe1::area::read(process, probe)?);
+        match &mut self.reader {
+            Reader::Poe1(adapter) => adapter.verify_animation(process),
+            Reader::Poe2(_) => Err(unsupported()),
         }
-        Ok(self.snapshot.area.as_ref().expect("area just sampled"))
+    }
+
+    pub fn poe1_nearby(&mut self, process: &Process) -> io::Result<poe1::nearby::NearbySnapshot> {
+        match &mut self.reader {
+            Reader::Poe1(adapter) => adapter.nearby(process),
+            Reader::Poe2(_) => Err(unsupported()),
+        }
+    }
+
+    pub fn poe1_area(&mut self, process: &Process) -> io::Result<&AreaInfo> {
+        match &mut self.reader {
+            Reader::Poe1(adapter) => adapter.area(process),
+            Reader::Poe2(_) => Err(unsupported()),
+        }
     }
 
     pub fn poe1_flasks(&mut self, process: &Process) -> io::Result<&FlaskSnapshot> {
-        if self.snapshot.flasks.is_none() {
-            let Reader::Poe1(probe) = &self.reader else {
-                return Err(unsupported());
-            };
-            self.snapshot.flasks =
-                Some(poe1::flasks::sample(process, probe, &mut self.flask_cache)?);
+        match &mut self.reader {
+            Reader::Poe1(adapter) => adapter.flasks(process),
+            Reader::Poe2(_) => Err(unsupported()),
         }
-        Ok(self.snapshot.flasks.as_ref().expect("flasks just sampled"))
     }
 
     pub fn poe1_effects(&mut self, process: &Process) -> io::Result<&EffectsSnapshot> {
-        if self.snapshot.effects.is_none() {
-            let Reader::Poe1(probe) = &self.reader else {
-                return Err(unsupported());
-            };
-            self.snapshot.effects =
-                Some(poe1::buffs::sample(process, probe, &mut self.effect_cache)?);
+        match &mut self.reader {
+            Reader::Poe1(adapter) => adapter.effects(process),
+            Reader::Poe2(_) => Err(unsupported()),
         }
-        Ok(self
-            .snapshot
-            .effects
-            .as_ref()
-            .expect("effects just sampled"))
     }
 
-    /// Existing PoE2-specific subsystems retain their proven probes during migration.
+    /// Existing PoE2-specialized probes remain accessible for its proven
+    /// automation policy; they migrate during the later engine stage.
     pub fn poe2_probe(&self) -> io::Result<&VitalsProbe> {
         match &self.reader {
-            Reader::Poe2(probe) => Ok(probe),
+            Reader::Poe2(adapter) => Ok(adapter.vitals_probe()),
             Reader::Poe1(_) => Err(unsupported()),
         }
     }
 
     pub fn into_poe2_probe(self) -> io::Result<VitalsProbe> {
         match self.reader {
-            Reader::Poe2(probe) => Ok(probe),
+            Reader::Poe2(adapter) => Ok(adapter.into_vitals_probe()),
             Reader::Poe1(_) => Err(unsupported()),
         }
     }
 }
 
 fn unsupported() -> io::Error {
-    io::Error::new(
-        io::ErrorKind::InvalidInput,
-        "reader does not support this game",
-    )
+    io::Error::new(io::ErrorKind::InvalidInput, "reader does not support this game")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::GameSnapshot;
-    use crate::poe2::{LiveVitals, VitalPool};
+    use super::unsupported;
+    use std::io;
 
     #[test]
-    fn new_tick_cannot_reuse_stale_vitals() {
-        let mut snapshot = GameSnapshot {
-            vitals: Some(LiveVitals {
-                health: VitalPool {
-                    current: 20,
-                    total: 100,
-                    reserved_flat: 0,
-                    reserved_fraction: 0,
-                },
-                mana: None,
-                energy_shield: None,
-            }),
-            ..GameSnapshot::default()
-        };
-        assert_eq!(snapshot.vitals.unwrap().health.current, 20);
-        snapshot.invalidate();
-        assert!(snapshot.vitals.is_none());
-        assert!(snapshot.area.is_none());
-        assert!(snapshot.flasks.is_none());
-        assert!(snapshot.effects.is_none());
-        assert!(snapshot.animation.is_none());
+    fn unsupported_capability_is_an_explicit_error() {
+        assert_eq!(unsupported().kind(), io::ErrorKind::InvalidInput);
     }
 }

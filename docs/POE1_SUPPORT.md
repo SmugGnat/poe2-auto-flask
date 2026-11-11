@@ -4,6 +4,29 @@ Canonical development branch: `feature/poe1-support`. This branch incorporates t
 
 ## Scope and architecture
 
+### Adapter separation — architecture milestone 1
+
+The shared `GameSession` now dispatches to independent `poe1::adapter::Adapter` and
+`poe2::adapter::Adapter` implementations of a small `GameStateReader` contract:
+`refresh` and `read_vitals`. `game_state.rs` owns the common `VitalPool`,
+`LiveVitals`, and per-tick `GameSnapshot` types; neither game is required
+to use the other's raw offsets or in-process component layouts.
+
+The PoE1 adapter owns the PoE1 player probe, charge/buff/motion/nearby caches
+and PoE1-only area/flask/effect/animation snapshots. These are read only on
+request and invalidated on each tick or session refresh as appropriate.
+The shared snapshot caches **only common vitals**. Optional PoE1 capabilities
+are accessed through explicitly game-specific session methods, which refuse
+unsupported readers. The PoE2 adapter retains the proven PoE2 vitals probe;
+its existing specialized flask/buff runtime remains unchanged until the
+later engine-consolidation milestone.
+
+This stage **does not** unify policies or automation loops, change the input
+logic, introduce a per-tick scan, or automatically choose the game. PoE1 and
+PoE2 continue using their existing loop/CLI selection. The next architecture
+stages may extend the common interface only when there is a real shared
+consumer, preserving demand-driven sampling and fail-closed behavior.
+
 - PoE1 Steam AppID **238960**; PoE2 Steam AppID **2694490**. The Linux launcher attaches to the selected Steam process and uses its active Proton prefix through `proton runinprefix`.
 - The shared read-only `GameSession` owns one current-tick snapshot, pointer resolution, read caching, and refreshes on transitions. The PoE1 sampler requests vitals, area, flask inventory, effects, chat, and animation only as needed. The PoE2 automation loop retains its established charge/buff readers and rules.
 - The PoE1 memory reader checks the Game States signature, in-game state, local-player identity, and character metadata. It reads usable (unreserved) Life/Mana, ES, the five equipped flask paths and charges, player effects, chat state and optionally Actor animation.

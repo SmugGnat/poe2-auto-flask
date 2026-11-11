@@ -1,5 +1,6 @@
 //! Validated read-only PoE1 memory reader. No input, injection or memory writes.
 pub mod activation;
+pub mod adapter;
 pub mod area;
 pub mod automation;
 pub mod bindings;
@@ -19,7 +20,7 @@ pub mod types;
 use std::io;
 
 use crate::entity::resolve_component;
-use crate::poe2::{LiveVitals, VitalPool};
+use crate::game_state::{LiveVitals, VitalPool};
 use crate::process::Process;
 use offsets::*;
 
