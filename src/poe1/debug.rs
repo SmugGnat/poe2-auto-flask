@@ -4,10 +4,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::movement::RUN_ANIMATION_ID;
-use windows_sys::Win32::Foundation::FILETIME;
-use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
 use crate::process::Process;
 use crate::session::GameSession;
+use windows_sys::Win32::Foundation::FILETIME;
+use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const REPORT_INTERVAL: Duration = Duration::from_secs(1);
@@ -167,7 +167,6 @@ fn format_pool(pool: Option<crate::poe2::VitalPool>) -> String {
     }
 }
 
-
 #[derive(Debug, Clone, Copy)]
 struct CpuSample {
     instant: Instant,
@@ -184,10 +183,12 @@ struct CpuMeter {
 impl CpuMeter {
     fn new() -> Self {
         Self {
-            previous: read_process_cpu_ticks().ok().map(|process_ticks_100ns| CpuSample {
-                instant: Instant::now(),
-                process_ticks_100ns,
-            }),
+            previous: read_process_cpu_ticks()
+                .ok()
+                .map(|process_ticks_100ns| CpuSample {
+                    instant: Instant::now(),
+                    process_ticks_100ns,
+                }),
             failed: false,
         }
     }
@@ -235,7 +236,13 @@ fn read_process_cpu_ticks() -> io::Result<u64> {
     let mut kernel: FILETIME = unsafe { std::mem::zeroed() };
     let mut user: FILETIME = unsafe { std::mem::zeroed() };
     let ok = unsafe {
-        GetProcessTimes(GetCurrentProcess(), &mut created, &mut exited, &mut kernel, &mut user)
+        GetProcessTimes(
+            GetCurrentProcess(),
+            &mut created,
+            &mut exited,
+            &mut kernel,
+            &mut user,
+        )
     };
     if ok == 0 {
         return Err(io::Error::last_os_error());
