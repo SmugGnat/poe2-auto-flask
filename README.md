@@ -179,6 +179,29 @@ Release AppImages are assembled by GitHub Actions.
 
 ---
 
+## 🧪 PoE1 support (development branch)
+
+PoE1 support is developed on **[`feature/poe1-support`](https://github.com/SmugGnat/poe2-auto-flask/tree/feature/poe1-support)**. It includes the validated read-only PoE1 memory reader, five-slot flask automation, type-aware flask discovery, modifier-adjusted charge costs, automatic keybinding detection, and an optional movement gate for Quicksilver. This functionality is **not yet part of the public release**.
+
+Start PoE1 through Steam before launching a development AppImage:
+
+```bash
+./poe2-auto-flask-linux-x86_64.AppImage --game poe1 --debug
+```
+
+For PoE1 automation (starts **DISARMED**; press **F11** in the focused game to arm):
+
+```bash
+./poe2-auto-flask-linux-x86_64.AppImage --game poe1 --auto
+```
+
+PoE2 remains the default with its original automation behavior. PoE1 uses `[health]` and `[mana]` thresholds, and individually opt-in utility types under `[poe1.utility]`. All 18 standard PoE1 utility base types are recognized; a `quicksilver_min_run_ms` option under `[poe1]` optionally delays Quicksilver until sustained running. Keybindings are discovered from PoE1's own `production_Config.ini`.
+
+The **[PoE1 support guide](docs/POE1_SUPPORT.md)** documents memory architecture, configuration, duplicate-flask choices, safety checks, validation, and known limitations. The external GameHelper C# reference tree is deliberately not bundled in this branch pending verification of its source license and provenance.
+
+---
+
+
 ## 📄 License
 
 Licensed under the **GNU General Public License v3.0 only** (`GPL-3.0-only`). See [`LICENSE`](LICENSE).

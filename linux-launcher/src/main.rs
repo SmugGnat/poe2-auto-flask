@@ -7,8 +7,40 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-const APP_ID: &str = "2694490";
-const GAME_EXE: &[u8] = b"PathOfExileSteam.exe";
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Game {
+    Poe1,
+    Poe2,
+}
+
+impl Game {
+    fn app_id(self) -> &'static str {
+        match self {
+            Self::Poe1 => "238960",
+            Self::Poe2 => "2694490",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Poe1 => "PoE1",
+            Self::Poe2 => "PoE2",
+        }
+    }
+
+    fn exe_names(self) -> &'static [&'static [u8]] {
+        match self {
+            Self::Poe1 => &[
+                b"PathOfExileSteam.exe",
+                b"PathOfExile.exe",
+                b"PathOfExile_x64.exe",
+                b"PathOfExile_KG.exe",
+            ],
+            Self::Poe2 => &[b"PathOfExileSteam.exe", b"PathOfExile.exe"],
+        }
+    }
+}
+
 const BUNDLED_HELPER_ENV: &str = "POE2_AUTO_FLASK_BUNDLED_HELPER";
 const HELPER_CONFIG_ENV: &str = "POE2_AUTO_FLASK_CONFIG";
 
@@ -21,6 +53,7 @@ struct LaunchEnvironment {
 
 struct Args {
     helper: Option<PathBuf>,
+    game: Game,
     helper_args: Vec<OsString>,
 }
 
@@ -39,7 +72,15 @@ fn run() -> Result<(), String> {
         return Ok(());
     };
 
-    let launch = discover_launch_environment()?;
+    if args.game == Game::Poe1
+        && !args
+            .helper_args
+            .iter()
+            .any(|arg| arg == "--debug" || arg == "--auto")
+    {
+        return Err("PoE1 requires explicit --auto or --debug".into());
+    }
+    let launch = discover_launch_environment(args.game)?;
     let helper = resolve_helper_path(args.helper)?;
     if !helper.is_file() {
         return Err(format!(
@@ -51,7 +92,7 @@ fn run() -> Result<(), String> {
     let config = prepare_config_path()?;
     let wine_config = host_path_to_wine_z(&config)?;
 
-    println!("PoE2 PID    : {}", launch.pid);
+    println!("{} PID    : {}", args.game.label(), launch.pid);
     println!("Steam       : {}", launch.steam_client.display());
     println!("Compat data : {}", launch.compat_data.display());
     println!("Proton      : {}", launch.proton.display());
@@ -62,6 +103,11 @@ fn run() -> Result<(), String> {
         .arg("runinprefix")
         .arg(&helper)
         .args(&args.helper_args)
+        .arg("--game")
+        .arg(match args.game {
+            Game::Poe1 => "poe1",
+            Game::Poe2 => "poe2",
+        })
         .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &launch.steam_client)
         .env("STEAM_COMPAT_DATA_PATH", &launch.compat_data)
         .env(HELPER_CONFIG_ENV, wine_config)
@@ -78,12 +124,26 @@ fn run() -> Result<(), String> {
 fn parse_args() -> Result<Option<Args>, String> {
     let mut helper = None;
     let mut helper_args = Vec::new();
+    let mut game = Game::Poe2;
+    let mut game_seen = false;
     let mut args = env::args_os().skip(1);
 
     while let Some(arg) = args.next() {
         if arg == OsStr::new("--help") || arg == OsStr::new("-h") {
             print_help();
             return Ok(None);
+        }
+        if arg == OsStr::new("--game") {
+            if game_seen {
+                return Err("--game specified more than once".into());
+            }
+            game_seen = true;
+            game = match args.next().as_deref() {
+                Some(value) if value == OsStr::new("poe1") => Game::Poe1,
+                Some(value) if value == OsStr::new("poe2") => Game::Poe2,
+                _ => return Err("--game requires poe1 or poe2".into()),
+            };
+            continue;
         }
         if arg == OsStr::new("--helper") {
             helper = Some(PathBuf::from(
@@ -106,6 +166,7 @@ fn parse_args() -> Result<Option<Args>, String> {
 
     Ok(Some(Args {
         helper,
+        game,
         helper_args,
     }))
 }
@@ -264,12 +325,15 @@ fn print_help() {
     println!("poe2-auto-flask Linux launcher");
     println!();
     println!("Usage:");
-    println!("  poe2-auto-flask-linux-launcher [--auto | --debug] [--helper PATH]");
+    println!(
+        "  poe2-auto-flask-linux-launcher [--auto | --debug] [--game poe1|poe2] [--helper PATH]"
+    );
     println!();
-    println!("Path of Exile 2 must already be running through Steam Proton.");
+    println!("The selected Path of Exile game must already be running through Steam Proton.");
+    println!("PoE1 supports explicit --auto or --debug. Default game remains poe2.");
 }
 
-fn discover_launch_environment() -> Result<LaunchEnvironment, String> {
+fn discover_launch_environment(game: Game) -> Result<LaunchEnvironment, String> {
     let entries =
         fs::read_dir("/proc").map_err(|error| format!("could not read /proc: {error}"))?;
 
@@ -286,14 +350,18 @@ fn discover_launch_environment() -> Result<LaunchEnvironment, String> {
         let Ok(cmdline) = fs::read(process_dir.join("cmdline")) else {
             continue;
         };
-        if !contains_bytes(&cmdline, GAME_EXE) {
+        if !game
+            .exe_names()
+            .iter()
+            .any(|name| contains_bytes(&cmdline, name))
+        {
             continue;
         }
 
         let Ok(environ) = fs::read(process_dir.join("environ")) else {
             continue;
         };
-        if !environment_matches_app(&environ) {
+        if !environment_matches_app(&environ, game) {
             continue;
         }
 
@@ -325,14 +393,17 @@ fn discover_launch_environment() -> Result<LaunchEnvironment, String> {
         });
     }
 
-    Err("could not find a running Path of Exile 2 Proton environment; start Path of Exile 2 through Steam first".to_string())
+    Err(format!(
+        "could not find a running {} Proton environment; start the selected game through Steam first",
+        game.label()
+    ))
 }
 
-fn environment_matches_app(environ: &[u8]) -> bool {
+fn environment_matches_app(environ: &[u8], game: Game) -> bool {
     [b"STEAM_COMPAT_APP_ID".as_slice(), b"SteamAppId".as_slice()]
         .iter()
         .filter_map(|key| env_value(environ, key))
-        .any(|value| value == OsStr::new(APP_ID))
+        .any(|value| value == OsStr::new(game.app_id()))
 }
 
 fn env_value(environ: &[u8], key: &[u8]) -> Option<OsString> {
@@ -369,7 +440,7 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
 mod tests {
     use super::{
         contains_bytes, env_value, environment_matches_app, files_match, find_proton,
-        host_path_to_wine_z,
+        host_path_to_wine_z, Game,
     };
     use std::env;
     use std::fs;
@@ -391,10 +462,30 @@ mod tests {
     #[test]
     fn recognizes_poe2_app_id() {
         assert!(environment_matches_app(
-            b"STEAM_COMPAT_APP_ID=2694490\0OTHER=value\0"
+            b"STEAM_COMPAT_APP_ID=2694490\0OTHER=value\0",
+            Game::Poe2,
         ));
-        assert!(environment_matches_app(b"SteamAppId=2694490\0"));
-        assert!(!environment_matches_app(b"STEAM_COMPAT_APP_ID=1234\0"));
+        assert!(environment_matches_app(b"SteamAppId=2694490\0", Game::Poe2));
+        assert!(!environment_matches_app(
+            b"STEAM_COMPAT_APP_ID=1234\0",
+            Game::Poe2
+        ));
+        assert!(!environment_matches_app(
+            b"STEAM_COMPAT_APP_ID=238960\0",
+            Game::Poe2
+        ));
+    }
+
+    #[test]
+    fn recognizes_poe1_app_id_without_matching_poe2() {
+        assert!(environment_matches_app(b"SteamAppId=238960\0", Game::Poe1));
+        assert!(!environment_matches_app(
+            b"SteamAppId=2694490\0",
+            Game::Poe1
+        ));
+        assert!(Game::Poe1
+            .exe_names()
+            .contains(&b"PathOfExile_x64.exe".as_slice()));
     }
 
     #[test]

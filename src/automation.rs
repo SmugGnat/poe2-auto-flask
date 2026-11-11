@@ -11,8 +11,9 @@ use crate::flask_inventory::{
     FlaskChargeSnapshot, FlaskChargeState, FlaskInventoryProbe,
 };
 use crate::input::{is_process_foreground, master_toggle_down, send_flask_key, KeyBinding};
-use crate::poe2::{refresh_vitals, sample_vitals, VitalPool, VitalsProbe};
+use crate::poe2::VitalPool;
 use crate::process::Process;
+use crate::session::GameSession;
 
 const LIFE_FLASK_SLOT: usize = 0;
 const MANA_FLASK_SLOT: usize = 1;
@@ -25,7 +26,7 @@ const IDLE_PROCESS_CHECK_INTERVAL: Duration = Duration::from_secs(1);
 const BAD_SAMPLE_LIMIT: u32 = 3;
 
 struct RuntimeState {
-    vitals: VitalsProbe,
+    session: GameSession,
     area: AreaInfo,
     flask_probe: FlaskLockProbe,
     charge_probe: FlaskInventoryProbe,
@@ -33,12 +34,13 @@ struct RuntimeState {
 }
 
 impl RuntimeState {
-    fn resolve(process: &Process, vitals: VitalsProbe) -> io::Result<Self> {
-        let area = resolve_area_info(process, &vitals)?;
-        let flask_probe = resolve_flask_lock_probe(process, &vitals)?;
-        let charge_probe = resolve_flask_inventory_probe(process, &vitals)?;
+    fn resolve(process: &Process, session: GameSession) -> io::Result<Self> {
+        let vitals = session.poe2_probe()?;
+        let area = resolve_area_info(process, vitals)?;
+        let flask_probe = resolve_flask_lock_probe(process, vitals)?;
+        let charge_probe = resolve_flask_inventory_probe(process, vitals)?;
         Ok(Self {
-            vitals,
+            session,
             area,
             flask_probe,
             charge_probe,
@@ -48,16 +50,19 @@ impl RuntimeState {
 
     fn refresh(&mut self, process: &Process) -> io::Result<()> {
         self.charge_cache.clear();
-        let vitals = refresh_vitals(process, &self.vitals)?;
-        *self = Self::resolve(process, vitals)?;
+        self.session.refresh(process)?;
+        let vitals = self.session.poe2_probe()?;
+        self.area = resolve_area_info(process, vitals)?;
+        self.flask_probe = resolve_flask_lock_probe(process, vitals)?;
+        self.charge_probe = resolve_flask_inventory_probe(process, vitals)?;
         Ok(())
     }
 
     fn area_instance_is_current(&self, process: &Process) -> io::Result<bool> {
-        let current = process
-            .read_u64(self.vitals.in_game_state + self.vitals.area_instance_offset)?
-            as usize;
-        Ok(current == self.vitals.area_instance)
+        let vitals = self.session.poe2_probe()?;
+        let current =
+            process.read_u64(vitals.in_game_state + vitals.area_instance_offset)? as usize;
+        Ok(current == vitals.area_instance)
     }
 }
 
@@ -122,12 +127,12 @@ impl EngineStatus {
 
 pub fn run_auto(
     process: &Process,
-    probe: VitalsProbe,
+    session: GameSession,
     config_manager: &mut ConfigManager,
 ) -> io::Result<()> {
     let poll_interval = AUTO_POLL_INTERVAL;
     let mut binding_manager = BindingManager::load()?;
-    let mut runtime = RuntimeState::resolve(process, probe)?;
+    let mut runtime = RuntimeState::resolve(process, session)?;
     let mut health_state = FlaskState::new();
     let mut mana_state = FlaskState::new();
     let mut armed = false;
@@ -268,7 +273,8 @@ pub fn run_auto(
             continue;
         }
 
-        let vitals = match sample_vitals(process, &runtime.vitals) {
+        runtime.session.begin_tick();
+        let vitals = match runtime.session.vitals(process) {
             Ok(vitals) => {
                 bad_samples = 0;
                 vitals

@@ -1,0 +1,87 @@
+# PoE1 support — consolidated development notes
+
+Canonical development branch: `feature/poe1-support`. This branch incorporates the read-only session work, automated PoE1 flask support, all 18 standard utility base types, and the optional movement-gated Quicksilver rule. Its starting code matches the last live-tested build from `feature/poe1-utility-movement`, with a single squashed commit on top of `develop`.
+
+## Scope and architecture
+
+- PoE1 Steam AppID **238960**; PoE2 Steam AppID **2694490**. The Linux launcher attaches to the selected Steam process and uses its active Proton prefix through `proton runinprefix`.
+- The shared read-only `GameSession` owns one current-tick snapshot, pointer resolution, read caching, and refreshes on transitions. The PoE1 sampler requests vitals, area, flask inventory, effects, chat, and animation only as needed. The PoE2 automation loop retains its established charge/buff readers and rules.
+- The PoE1 memory reader checks the Game States signature, in-game state, local-player identity, and character metadata. It reads usable (unreserved) Life/Mana, ES, the five equipped flask paths and charges, player effects, chat state and optionally Actor animation.
+- Starting milestone 1 was **diagnostics-only**. The same backend now powers opt-in automated normal key input. Memory access remains read-only, without injection, kernel drivers or memory writes.
+
+Selected offsets transcribed from a GameHelper C# snapshot (comments for the 2026-09-05 PoE1 executable):
+
+| Structure | Offset |
+| --- | --- |
+| InGameState → AreaInstance | 0x218 |
+| InGameState → WorldData | 0x270 |
+| InGameState → in-game UI | 0x978 |
+| AreaInstance → LocalPlayerStruct | 0x968; LocalPlayer +0x08 |
+| Life component → Life / Mana / ES | 0x178 / 0x1C8 / 0x210 |
+| ServerData → player inventories | 0xC9F8 |
+| Inventory → equipped item vector | 0x170 |
+| Buffs → effects vector | 0x160 |
+| Actor → animation ID | 0x248, Run = 4 |
+
+**Provenance:** The originally supplied GameHelper source snapshot had no verified original repository commit, upstream URL, or license. To avoid redistributing unverified third-party source, the consolidated branch **does not include** its approximately 3.6 MB C# reference tree. This project does not compile or link GameHelper. Relevant observations are independently implemented in Rust and documented here. Verify provenance and any attribution/licensing obligations before redistributing that original C# source.
+
+## Configuration
+
+The existing `~/.config/poe2-auto-flask/config.toml` is shared and backwards-compatible. PoE1 Life and Mana use the same threshold percentage settings (calculated using the unreserved available pool). For example:
+
+```toml
+[health]
+enabled = true
+threshold_percent = 50.0
+
+[mana]
+enabled = true
+threshold_percent = 25.0
+
+[poe1]
+# Optional continuous Run animation required for Quicksilver;
+# 0 = off, otherwise 100–5000 milliseconds
+quicksilver_min_run_ms = 750
+
+[poe1.utility]
+quicksilver = true
+jade = false
+silver = false
+```
+
+All optional utility settings default **off**, and the movement requirement defaults to **0**. The full set of 18 utility types is: Diamond, Ruby, Sapphire, Topaz, Granite, Quicksilver, Amethyst, Quartz, Jade, Basalt, Aquamarine, Stibnite, Sulphur, Silver, Bismuth, Gold, Corundum and Iron. Unknown utility bases and Hybrid recovery flasks remain manual-only. Future UI management can list only the equipped types; the TOML remains explicit without any required slot/key fields.
+
+PoE1 flask keys are read from `Documents/My Games/Path of Exile/production_Config.ini`, using all five `use_flask_in_slotN` entries in the selected input section. Keybinding availability is checked again on file changes. Invalid, ambiguous, missing, controller, mouse-button and duplicate bindings prevent input.
+
+## Decisions, duplicate flasks and charge modifiers
+
+- The engine classifies by the base-item path, not by slot or charges. It detects the type of the currently equipped item, so moving Quicksilver to another slot requires no config change.
+- Life and Mana actions take priority over utility flasks. A resource action is eligible below its configured threshold. In a Chaos Inoculation-like configuration, an equipped Life flask is not used automatically.
+- A duplicate-type selection uses maximum **whole remaining uses** (current charges divided by effective per-use cost), then greater charges, then lowest slot. If another flask of the same type is active, the engine avoids activating a second. This initial selection policy is intentionally simple.
+- A flask's raw `Charges.PerUseCharge` may differ from actual charge cost. The reader uses the player's `flask_charges_used_positive_percentage` stat (ID `0x2E5`) and applicable explicit flask charge-use modifiers to calculate an effective, truncated integer cost. Unknown cost data blocks the affected flask rather than guessing.
+- Special Life/Mana recovery effects such as **instant recovery on low life**, partial instant recovery, enchantment auto-use, and optimal flask rotation are **not yet modeled**. Their behavior may need verified modifier parsing and separate preferences.
+
+## Optional Quicksilver movement gate
+
+GameHelper's default Quicksilver rule used `PlayerAnimation.Equals(Animation.Run)` with a `Wait(1)` condition. This implementation samples `Actor.AnimationId` at `Actor+0x248` only if the option is on. Run = 4. It requires uninterrupted observed Run animation for the configured duration. Idle/cast animations, unrecognized animation, stale sample gaps, loss of focus, zone changes, disarming and invalid state reset the timer; the animation is checked again immediately before an input.
+
+The gate only affects Quicksilver; it never prevents Life, Mana or another utility flask from being considered. Continuous movement is more reliable than assuming held left-click means actual character motion. Stutter-step casting builds may need a lower duration (e.g. 250 ms) or may leave the gate disabled.
+
+## Safety, validation, and limitations
+
+- Starts **DISARMED**; F11 only arms/disarms while the selected game is focused.
+- Game state, focus, town/hideout permission, chat/UI visibility, death status, grace period, charges, active effects, modifier validity and a one-second post-use guard gate input. Invalid observations fail closed. The launcher does not invent a missing Proton prefix.
+- `--game poe1 --debug` reads state only. It reports Life/Mana/ES, area, chat open/closed, base flask type, charges, raw/effective charge cost, active effects and Actor movement.
+- **Live-tested successfully on a user's Steam Proton setup:** Life/Mana/ES and unreserved totals, area changes, five flask slots, matching player buffs, active Utility Flask effects, 26%-reduced Life flask cost (raw 15 → effective 11), chat detection, automatic PoE1 keybindings, Quicksilver and Life automation, F11 arming, focus and town/hideout protection, config reload, and optional ~750 ms Run gate.
+- **Still needing broader live testing:** all 18 utility types, duplicate Life/Mana/utility selection, unusual/unique flask modifier behavior, gamepad input, other movement skills, and PoE2 end-to-end regression. Automated CI tests cannot prove future game versions preserve memory offsets.
+- The reference C# snapshot is deliberately excluded from this feature branch and from distributions. Any future inclusion requires licensing/provenance verification.
+
+## Build and test
+
+Windows helper CI (Rust 1.85 MSRV): `cargo fmt --all -- --check`, `cargo clippy --locked --target x86_64-pc-windows-msvc --all-targets -- -D warnings`, `cargo test --locked --target x86_64-pc-windows-msvc`, and a release build.
+
+Linux launcher CI: formatting, Clippy, unit tests, release build and AppImage packaging. The final successful multi-branch development build before consolidation was GitHub Actions run **42961739151** (56 Windows helper tests and 7 Linux launcher tests passed).
+
+## Development workflow
+
+Keep **one** active feature branch, `feature/poe1-support`. Commit subsequent fixes and enhancements to it; no new per-milestone branches or draft PRs. Preserve `main`, `develop`, and local uncommitted GUI work until explicitly asked to merge.
