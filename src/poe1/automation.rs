@@ -200,7 +200,11 @@ pub fn run(
             }
             let flasks = session.poe1_flasks(process)?.clone();
             let chosen = choose_action(
-                manager.current(), vitals, &flasks, &effects, quicksilver_ready
+                manager.current(),
+                vitals,
+                &flasks,
+                &effects,
+                quicksilver_ready,
             );
             Ok(chosen.map(|slot| (slot, flasks)))
         })();
@@ -236,8 +240,13 @@ pub fn run(
                         }
                         let effects = session.poe1_effects(process)?;
                         if quicksilver_motion_ok
-                            && choose_action(manager.current(), new_vitals, &flasks, effects, quicksilver_ready)
-                                == Some(slot)
+                            && choose_action(
+                                manager.current(),
+                                new_vitals,
+                                &flasks,
+                                effects,
+                                quicksilver_ready,
+                            ) == Some(slot)
                             && !blocks_grace_period(effects)
                         {
                             send_flask_key(keys[slot])?;

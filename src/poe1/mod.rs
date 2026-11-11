@@ -8,8 +8,8 @@ pub mod chat;
 pub mod debug;
 pub mod decision;
 pub mod flasks;
-mod offsets;
 pub mod movement;
+mod offsets;
 pub mod types;
 
 use std::io;

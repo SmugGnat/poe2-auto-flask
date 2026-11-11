@@ -174,7 +174,11 @@ impl Config {
             } else {
                 format!("{}ms", self.poe1.quicksilver_min_run_ms)
             },
-            if self.general.enable_in_hideout { "ON" } else { "OFF" },
+            if self.general.enable_in_hideout {
+                "ON"
+            } else {
+                "OFF"
+            },
         )
     }
 
@@ -194,7 +198,9 @@ impl Config {
         validate_flask("mana", &self.mana)?;
         let ms = self.poe1.quicksilver_min_run_ms;
         if ms != 0 && !(100..=5000).contains(&ms) {
-            return Err(invalid("poe1.quicksilver_min_run_ms must be 0 (off) or 100..=5000"));
+            return Err(invalid(
+                "poe1.quicksilver_min_run_ms must be 0 (off) or 100..=5000",
+            ));
         }
         Ok(())
     }
@@ -505,7 +511,11 @@ key = "2"
         assert!(!parsed.poe1.utility.enabled(FlaskType::Quicksilver));
         for kind in crate::poe1::types::UTILITY_TYPES {
             let key = kind.name().to_ascii_lowercase();
-            let cfg = Config::parse(Path::new("test.toml"), &format!("[poe1.utility]\n{key} = true\n")).unwrap();
+            let cfg = Config::parse(
+                Path::new("test.toml"),
+                &format!("[poe1.utility]\n{key} = true\n"),
+            )
+            .unwrap();
             assert!(cfg.poe1.utility.enabled(kind), "{key}");
         }
     }
@@ -513,10 +523,22 @@ key = "2"
     #[test]
     fn quicksilver_movement_gate_defaults_off_and_checks_range() {
         assert_eq!(Config::default().poe1.quicksilver_min_run_ms, 0);
-        let cfg = Config::parse(Path::new("test.toml"), "[poe1]\nquicksilver_min_run_ms = 750\n").unwrap();
+        let cfg = Config::parse(
+            Path::new("test.toml"),
+            "[poe1]\nquicksilver_min_run_ms = 750\n",
+        )
+        .unwrap();
         assert_eq!(cfg.poe1.quicksilver_min_run_ms, 750);
-        assert!(Config::parse(Path::new("test.toml"), "[poe1]\nquicksilver_min_run_ms = 50\n").is_err());
-        assert!(Config::parse(Path::new("test.toml"), "[poe1]\nquicksilver_min_run_ms = 5001\n").is_err());
+        assert!(Config::parse(
+            Path::new("test.toml"),
+            "[poe1]\nquicksilver_min_run_ms = 50\n"
+        )
+        .is_err());
+        assert!(Config::parse(
+            Path::new("test.toml"),
+            "[poe1]\nquicksilver_min_run_ms = 5001\n"
+        )
+        .is_err());
     }
 
     #[test]

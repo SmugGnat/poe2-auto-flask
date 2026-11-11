@@ -3,9 +3,9 @@ use std::io;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use super::movement::RUN_ANIMATION_ID;
 use crate::process::Process;
 use crate::session::GameSession;
-use super::movement::RUN_ANIMATION_ID;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const REPORT_INTERVAL: Duration = Duration::from_secs(1);
@@ -61,10 +61,16 @@ pub fn run(process: &Process, mut session: GameSession) -> io::Result<()> {
                     match animation {
                         Some(id) => println!(
                             "  Movement: {} (Actor animation ID {})",
-                            if id == RUN_ANIMATION_ID { "Run" } else { "not running" },
+                            if id == RUN_ANIMATION_ID {
+                                "Run"
+                            } else {
+                                "not running"
+                            },
                             id
                         ),
-                        None => println!("  Movement: unavailable (optional Quicksilver gate blocked)"),
+                        None => {
+                            println!("  Movement: unavailable (optional Quicksilver gate blocked)")
+                        }
                     }
                     for (index, slot) in flasks.slots.iter().enumerate() {
                         match slot {

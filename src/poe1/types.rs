@@ -53,7 +53,10 @@ impl FlaskType {
         let Some(base) = path.strip_prefix("Metadata/Items/Flasks/") else {
             return Self::Unknown;
         };
-        if let Some(num) = base.strip_prefix("FlaskUtility").filter(|part| numeric(part)) {
+        if let Some(num) = base
+            .strip_prefix("FlaskUtility")
+            .filter(|part| numeric(part))
+        {
             return match num.parse::<u8>() {
                 Ok(1) => Self::Diamond,
                 Ok(2) => Self::Ruby,
@@ -124,9 +127,24 @@ mod tests {
     #[test]
     fn maps_all_18_poe1_utility_base_ids() {
         let expected = [
-            F::Diamond, F::Ruby, F::Sapphire, F::Topaz, F::Granite, F::Quicksilver,
-            F::Amethyst, F::Quartz, F::Jade, F::Basalt, F::Aquamarine, F::Stibnite,
-            F::Sulphur, F::Silver, F::Bismuth, F::Gold, F::Corundum, F::Iron,
+            F::Diamond,
+            F::Ruby,
+            F::Sapphire,
+            F::Topaz,
+            F::Granite,
+            F::Quicksilver,
+            F::Amethyst,
+            F::Quartz,
+            F::Jade,
+            F::Basalt,
+            F::Aquamarine,
+            F::Stibnite,
+            F::Sulphur,
+            F::Silver,
+            F::Bismuth,
+            F::Gold,
+            F::Corundum,
+            F::Iron,
         ];
         for (index, kind) in expected.into_iter().enumerate() {
             let path = format!("Metadata/Items/Flasks/FlaskUtility{}", index + 1);
@@ -140,11 +158,29 @@ mod tests {
 
     #[test]
     fn recovery_and_unrecognized_bases_remain_distinct() {
-        assert_eq!(F::from_metadata("Metadata/Items/Flasks/FlaskLife11"), F::Life);
-        assert_eq!(F::from_metadata("Metadata/Items/Flasks/FlaskMana10"), F::Mana);
-        assert_eq!(F::from_metadata("Metadata/Items/Flasks/FlaskHybrid2"), F::Hybrid);
-        assert_eq!(F::from_metadata("Metadata/Items/Flasks/FlaskUtility19"), F::OtherUtility);
-        assert_eq!(F::from_metadata("Metadata/Items/Other/FlaskUtility6"), F::Unknown);
-        assert_eq!(F::from_metadata("Metadata/Items/Flasks/FlaskManaOops"), F::Unknown);
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Flasks/FlaskLife11"),
+            F::Life
+        );
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Flasks/FlaskMana10"),
+            F::Mana
+        );
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Flasks/FlaskHybrid2"),
+            F::Hybrid
+        );
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Flasks/FlaskUtility19"),
+            F::OtherUtility
+        );
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Other/FlaskUtility6"),
+            F::Unknown
+        );
+        assert_eq!(
+            F::from_metadata("Metadata/Items/Flasks/FlaskManaOops"),
+            F::Unknown
+        );
     }
 }
