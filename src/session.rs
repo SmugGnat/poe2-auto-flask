@@ -11,7 +11,7 @@ use crate::poe2::{self, VitalsProbe};
 use crate::process::Process;
 
 enum Reader {
-    Poe1(poe1::adapter::Adapter),
+    Poe1(Box<poe1::adapter::Adapter>),
     Poe2(poe2::adapter::Adapter),
 }
 
@@ -23,7 +23,7 @@ pub struct GameSession {
 impl GameSession {
     pub fn probe(process: &Process, game: Game) -> io::Result<Self> {
         let reader = match game {
-            Game::Poe1 => Reader::Poe1(poe1::adapter::Adapter::probe(process)?),
+            Game::Poe1 => Reader::Poe1(Box::new(poe1::adapter::Adapter::probe(process)?)),
             Game::Poe2 => Reader::Poe2(poe2::adapter::Adapter::probe(process)?),
         };
         Ok(Self {
