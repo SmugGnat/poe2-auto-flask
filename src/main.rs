@@ -5,6 +5,7 @@ mod buffs;
 mod config;
 mod debug;
 mod entity;
+mod engine;
 mod file_watch;
 mod flask_inventory;
 mod game;

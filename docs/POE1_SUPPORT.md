@@ -18,17 +18,16 @@ request and invalidated on each tick or session refresh as appropriate.
 The shared snapshot caches **only common vitals**. Optional PoE1 capabilities
 are accessed through explicitly game-specific session methods, which refuse
 unsupported readers. The PoE2 adapter retains the proven PoE2 vitals probe;
-its existing specialized flask/buff runtime remains unchanged until the
-later engine-consolidation milestone.
+its specialized charge and buff probes remain in the PoE2 policy pending
+a later, independently verifiable adapter migration.
 
-This stage **does not** unify policies or automation loops, change the input
-logic, introduce a per-tick scan, or automatically choose the game. PoE1 and
-PoE2 continue using their existing loop/CLI selection. The next architecture
-stages may extend the common interface only when there is a real shared
-consumer, preserving demand-driven sampling and fail-closed behavior.
+The adapters do not couple the games' raw structures. Step 3 has now
+consolidated the lifecycle loop while intentionally preserving separate
+game policies. CLI game selection remains explicit; future interface
+expansion must remain demand-driven and fail-closed.
 
 - PoE1 Steam AppID **238960**; PoE2 Steam AppID **2694490**. The Linux launcher attaches to the selected Steam process and uses its active Proton prefix through `proton runinprefix`.
-- The shared read-only `GameSession` owns one current-tick snapshot, pointer resolution, read caching, and refreshes on transitions. The PoE1 sampler requests vitals, area, flask inventory, effects, chat, and animation only as needed. The PoE2 automation loop retains its established charge/buff readers and rules.
+- The shared read-only `GameSession` owns one current-tick snapshot, pointer resolution, read caching, and refreshes on transitions. The PoE1 sampler requests vitals, area, flask inventory, effects, chat, and animation only as needed. The PoE2 policy retains its established charge/buff readers and rules.
 - The PoE1 memory reader checks the Game States signature, in-game state, local-player identity, and character metadata. It reads usable (unreserved) Life/Mana, ES, the five equipped flask paths and charges, player effects, chat state and optionally Actor animation.
 - Starting milestone 1 was **diagnostics-only**. The same backend now powers opt-in automated normal key input. Memory access remains read-only, without injection, kernel drivers or memory writes.
 
@@ -47,6 +46,33 @@ Selected offsets transcribed from a GameHelper C# snapshot (comments for the 202
 | Actor → animation ID | 0x248, Run = 4 |
 
 **Provenance:** The originally supplied GameHelper source snapshot had no verified original repository commit, upstream URL, or license. To avoid redistributing unverified third-party source, the consolidated branch **does not include** its approximately 3.6 MB C# reference tree. This project does not compile or link GameHelper. Relevant observations are independently implemented in Rust and documented here. Verify provenance and any attribution/licensing obligations before redistributing that original C# source.
+
+## Shared automation lifecycle — architecture milestone 3
+
+The auto-mode scheduler is now **one implementation** in `src/engine.rs`,
+used by both PoE1 and PoE2. It owns the fixed 100ms polling rhythm, F11
+foreground-only edge detection, disarm/focus pauses, configuration reload
+(1s), binding reload scheduling (2s), process-exit checking, and failed
+session-refresh retries (250ms). It does not interpret game offsets, read
+flask memory, or decide which flask/slot to use.
+
+The `GameAutomationPolicy` interface owns the game-specific choices:
+- `src/poe1/automation.rs`: five-slot flask inventory, activation settling,
+  duplicate rotation, Low Life emergency instant recovery, conditional
+  utility proximity and movement, pre-send chat/identity/threshold validation.
+- `src/automation.rs`: existing PoE2 two-slot Life/Mana decisions,
+  charge and buff locks, unchanged 1000ms post-send guard and three-sample
+  transient read tolerance, plus PoE2 binding-mode handling.
+
+Both policies request validated shared vitals from `GameSession`. PoE1's
+specialized state is also retrieved via its session adapter; PoE2's existing
+specialized charge/lock probes are retained for now to avoid a separate
+behavioral migration. The common scheduler only invokes the policy after
+focus, bindings and session refresh gates have succeeded. Each game keeps
+its own fail-closed policy and final input validations. No new per-tick
+process-memory scans or config fields are introduced. This stage **does not**
+yet unify all action types or provide automatic game selection; those belong
+to later milestones.
 
 ## PoE1 bounded offset recovery — architecture milestone 2
 
