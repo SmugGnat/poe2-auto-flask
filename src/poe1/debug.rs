@@ -72,7 +72,9 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                                     census.counts_at(100.0)
                                 );
                             }
-                            Err(error) => println!("  Nearby: unavailable ({error}); never authorizes input"),
+                            Err(error) => {
+                                println!("  Nearby: unavailable ({error}); never authorizes input")
+                            }
                         }
                     }
                     match animation {

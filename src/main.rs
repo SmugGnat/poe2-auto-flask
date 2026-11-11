@@ -83,7 +83,11 @@ fn parse_options() -> Options {
     if nearby_debug && (mode != Mode::Debug || game != Game::Poe1) {
         fail_usage();
     }
-    Options { mode, game, nearby_debug }
+    Options {
+        mode,
+        game,
+        nearby_debug,
+    }
 }
 
 fn print_help_and_exit() -> ! {
@@ -103,7 +107,11 @@ fn fail_usage() -> ! {
 }
 
 fn run(options: Options) -> io::Result<()> {
-    let Options { mode, game, nearby_debug } = options;
+    let Options {
+        mode,
+        game,
+        nearby_debug,
+    } = options;
     println!(
         "Selected {} (Steam AppID {}).",
         game.name(),

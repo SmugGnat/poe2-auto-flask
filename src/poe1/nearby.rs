@@ -124,13 +124,18 @@ impl NearbyCache {
 
     pub fn sample(&mut self, process: &Process, probe: &Probe) -> io::Result<NearbySnapshot> {
         let now = Instant::now();
-        if self.last_poll.is_some_and(|previous| now.saturating_duration_since(previous) < REFRESH_DELAY) {
+        if self
+            .last_poll
+            .is_some_and(|previous| now.saturating_duration_since(previous) < REFRESH_DELAY)
+        {
             if let Some(previous) = &self.last_result {
                 return previous.clone().map_err(invalid);
             }
         }
         self.last_poll = Some(now);
-        let read = self.read_fresh(process, probe).map_err(|error| error.to_string());
+        let read = self
+            .read_fresh(process, probe)
+            .map_err(|error| error.to_string());
         self.last_result = Some(read.clone());
         read.map_err(invalid)
     }
@@ -233,9 +238,7 @@ fn classify(process: &Process, entity: usize) -> io::Result<CachedEntity> {
         Ok(path) => path,
         Err(_) => return Ok(CachedEntity::Ignored),
     };
-    if !path.starts_with("Metadata/Monsters/")
-        || is_excluded_monster_path(&path)
-    {
+    if !path.starts_with("Metadata/Monsters/") || is_excluded_monster_path(&path) {
         return Ok(CachedEntity::Ignored);
     }
     let Some(components) = find_monster_components(process, entity)? else {
@@ -342,7 +345,10 @@ fn read_live_monster(
     if !squared.is_finite() || squared > MAX_GRID_DISTANCE * MAX_GRID_DISTANCE {
         return Ok(None);
     }
-    Ok(Some(NearbyMonster { rarity, distance_squared: squared }))
+    Ok(Some(NearbyMonster {
+        rarity,
+        distance_squared: squared,
+    }))
 }
 
 fn read_xy(process: &Process, render: usize) -> io::Result<(f32, f32)> {
@@ -375,10 +381,22 @@ mod tests {
             awake_nodes: 4,
             candidate_monsters: 4,
             nearby: vec![
-                NearbyMonster { rarity: Rarity::Normal, distance_squared: 20.0 * 20.0 },
-                NearbyMonster { rarity: Rarity::Magic, distance_squared: 60.0 * 60.0 },
-                NearbyMonster { rarity: Rarity::Rare, distance_squared: 125.0 * 125.0 },
-                NearbyMonster { rarity: Rarity::Unique, distance_squared: 100.0 * 100.0 },
+                NearbyMonster {
+                    rarity: Rarity::Normal,
+                    distance_squared: 20.0 * 20.0,
+                },
+                NearbyMonster {
+                    rarity: Rarity::Magic,
+                    distance_squared: 60.0 * 60.0,
+                },
+                NearbyMonster {
+                    rarity: Rarity::Rare,
+                    distance_squared: 125.0 * 125.0,
+                },
+                NearbyMonster {
+                    rarity: Rarity::Unique,
+                    distance_squared: 100.0 * 100.0,
+                },
             ],
         };
         assert_eq!(snapshot.counts_at(50.0), [1, 0, 0, 0]);
@@ -396,8 +414,14 @@ mod tests {
 
     #[test]
     fn special_encounter_entities_are_ignored() {
-        assert!(is_excluded_monster_path("Metadata/Monsters/Avatar/Harbinger"));
-        assert!(is_excluded_monster_path("Metadata/Monsters/Spirit/TormentedSomething"));
-        assert!(!is_excluded_monster_path("Metadata/Monsters/Skeletons/Skeleton"));
+        assert!(is_excluded_monster_path(
+            "Metadata/Monsters/Avatar/Harbinger"
+        ));
+        assert!(is_excluded_monster_path(
+            "Metadata/Monsters/Spirit/TormentedSomething"
+        ));
+        assert!(!is_excluded_monster_path(
+            "Metadata/Monsters/Skeletons/Skeleton"
+        ));
     }
 }

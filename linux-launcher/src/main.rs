@@ -157,7 +157,10 @@ fn parse_args() -> Result<Option<Args>, String> {
             ));
             continue;
         }
-        if arg == OsStr::new("--auto") || arg == OsStr::new("--debug") || arg == OsStr::new("--nearby") {
+        if arg == OsStr::new("--auto")
+            || arg == OsStr::new("--debug")
+            || arg == OsStr::new("--nearby")
+        {
             helper_args.push(arg);
             continue;
         }

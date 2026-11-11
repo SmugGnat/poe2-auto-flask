@@ -27,12 +27,7 @@ impl ActivationGuard {
     /// Pretend a just-activated flask's effect is temporarily active until the
     /// game has had time to report its real state. Only blocks the same type;
     /// using Quicksilver never delays an unrelated Life or Mana flask.
-    pub fn apply_to(
-        &self,
-        now: Instant,
-        flasks: &FlaskSnapshot,
-        effects: &mut EffectsSnapshot,
-    ) {
+    pub fn apply_to(&self, now: Instant, flasks: &FlaskSnapshot, effects: &mut EffectsSnapshot) {
         for (index, at) in self.last_sent.iter().enumerate() {
             if at.is_some_and(|when| now.saturating_duration_since(when) < SETTLING_GUARD)
                 && flasks.slots[index].is_some()
@@ -46,11 +41,11 @@ impl ActivationGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
     use crate::poe1::decision::choose_action;
     use crate::poe1::flasks::FlaskSlot;
     use crate::poe1::types::FlaskType;
     use crate::poe2::{LiveVitals, VitalPool};
-    use crate::config::Config;
 
     fn slot(kind: FlaskType) -> Option<FlaskSlot> {
         Some(FlaskSlot {
@@ -65,15 +60,28 @@ mod tests {
         let mut config = Config::default();
         config.poe1.utility.quicksilver = true;
         let mut vitals = LiveVitals {
-            health: VitalPool { current: 100, total: 100, reserved_flat: 0, reserved_fraction: 0 },
+            health: VitalPool {
+                current: 100,
+                total: 100,
+                reserved_flat: 0,
+                reserved_fraction: 0,
+            },
             mana: None,
             energy_shield: None,
         };
-        let mut flasks = FlaskSnapshot { slots: std::array::from_fn(|_| None) };
+        let mut flasks = FlaskSnapshot {
+            slots: std::array::from_fn(|_| None),
+        };
         flasks.slots[1] = slot(FlaskType::Quicksilver);
         flasks.slots[3] = slot(FlaskType::Life);
-        let effects = EffectsSnapshot { slots_active: [false; SLOT_COUNT], effects: Vec::new() };
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(1));
+        let effects = EffectsSnapshot {
+            slots_active: [false; SLOT_COUNT],
+            effects: Vec::new(),
+        };
+        assert_eq!(
+            choose_action(&config, vitals, &flasks, &effects, true),
+            Some(1)
+        );
         vitals.health.current = 25;
         (config, vitals, flasks, effects)
     }
@@ -86,7 +94,10 @@ mod tests {
         guard.mark(1, now);
         guard.apply_to(now + Duration::from_millis(100), &flasks, &mut effects);
         assert!(effects.slots_active[1]);
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(3));
+        assert_eq!(
+            choose_action(&config, vitals, &flasks, &effects, true),
+            Some(3)
+        );
     }
 
     #[test]
@@ -99,10 +110,16 @@ mod tests {
         let now = Instant::now();
         guard.mark(1, now);
         guard.apply_to(now + Duration::from_millis(200), &flasks, &mut effects);
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+        assert_eq!(
+            choose_action(&config, vitals, &flasks, &effects, true),
+            None
+        );
         effects.slots_active.fill(false);
         guard.apply_to(now + Duration::from_millis(351), &flasks, &mut effects);
-        assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(1));
+        assert_eq!(
+            choose_action(&config, vitals, &flasks, &effects, true),
+            Some(1)
+        );
     }
 
     #[test]
