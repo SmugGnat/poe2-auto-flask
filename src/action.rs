@@ -124,7 +124,8 @@ mod tests {
                 sends.set(sends.get() + 1);
                 Ok(())
             },
-        ).unwrap();
+        )
+        .unwrap();
         match result {
             Dispatch::Sent { validated, sent_at } => {
                 assert_eq!(validated, 42);
@@ -146,7 +147,8 @@ mod tests {
                 Ok(Some(()))
             },
             |_| panic!("must not send when game is unfocused"),
-        ).unwrap();
+        )
+        .unwrap();
         assert!(matches!(result, Dispatch::Skipped));
         assert_eq!(checks.get(), 0);
     }
@@ -158,7 +160,8 @@ mod tests {
             || true,
             || Ok::<_, io::Error>(None::<()>),
             |_| panic!("must not send when policy denies"),
-        ).unwrap();
+        )
+        .unwrap();
         assert!(matches!(result, Dispatch::Skipped));
     }
 
@@ -173,7 +176,8 @@ mod tests {
             },
             || Ok(Some(())),
             |_| panic!("must not send after focus loss"),
-        ).unwrap();
+        )
+        .unwrap();
         assert!(matches!(result, Dispatch::Skipped));
         assert_eq!(calls.get(), 2);
     }

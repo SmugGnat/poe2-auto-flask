@@ -357,8 +357,10 @@ fn maybe_fire(
     // All game policies send through the shared action executor. PoE2's
     // preexisting checks above remain its decision policy; the executor
     // additionally refuses input if the selected game lost focus.
-    let outcome = dispatch(process, ActionRequest::flask(slot, binding), || Ok(Some(())))
-        .map_err(DispatchError::into_io)?;
+    let outcome = dispatch(process, ActionRequest::flask(slot, binding), || {
+        Ok(Some(()))
+    })
+    .map_err(DispatchError::into_io)?;
     if let Dispatch::Sent { .. } = outcome {
         println!(
             "{label} flask: {:.1}% -> {} (charges {}/{})",

@@ -223,8 +223,7 @@ impl GameAutomationPolicy for Policy {
                             .is_some_and(|flask| flask.flask_type == FlaskType::Quicksilver)
                     {
                         quicksilver_ready
-                            && session.poe1_verify_animation(process).ok()
-                                == Some(RUN_ANIMATION_ID)
+                            && session.poe1_verify_animation(process).ok() == Some(RUN_ANIMATION_ID)
                     } else {
                         true
                     };
@@ -244,10 +243,7 @@ impl GameAutomationPolicy for Policy {
                         &self.rotation,
                         !self.activation_guard.life_input_pending(),
                     ) == Some(slot);
-                    if quicksilver_motion_ok
-                        && still_selected
-                        && !blocks_grace_period(&effects)
-                    {
+                    if quicksilver_motion_ok && still_selected && !blocks_grace_period(&effects) {
                         Ok(Some(new_vitals))
                     } else {
                         Ok(None)
@@ -255,7 +251,10 @@ impl GameAutomationPolicy for Policy {
                 });
 
                 match dispatched {
-                    Ok(Dispatch::Sent { validated: new_vitals, sent_at }) => {
+                    Ok(Dispatch::Sent {
+                        validated: new_vitals,
+                        sent_at,
+                    }) => {
                         if let Some(flask) = &flasks.slots[slot] {
                             self.activation_guard.mark(
                                 slot,
