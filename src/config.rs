@@ -227,14 +227,21 @@ impl Config {
                 "OFF"
             },
         );
-        let rules = self.poe1.nearby.iter().filter(|(kind, rule)| {
-            rule.enabled && self.poe1.utility.enabled(**kind)
-        }).map(|(kind, rule)| {
-            format!(
-                "{} >= {} {:?}+ within {}",
-                kind.name(), rule.minimum_count, rule.minimum_rarity, rule.radius
-            )
-        }).collect::<Vec<_>>();
+        let rules = self
+            .poe1
+            .nearby
+            .iter()
+            .filter(|(kind, rule)| rule.enabled && self.poe1.utility.enabled(**kind))
+            .map(|(kind, rule)| {
+                format!(
+                    "{} >= {} {:?}+ within {}",
+                    kind.name(),
+                    rule.minimum_count,
+                    rule.minimum_rarity,
+                    rule.radius
+                )
+            })
+            .collect::<Vec<_>>();
         if rules.is_empty() {
             base
         } else {
@@ -264,7 +271,9 @@ impl Config {
         }
         for (kind, rule) in &self.poe1.nearby {
             if !crate::poe1::types::UTILITY_TYPES.contains(kind) {
-                return Err(invalid(format!("PoE1 nearby rules only support utility flasks: {kind:?}")));
+                return Err(invalid(format!(
+                    "PoE1 nearby rules only support utility flasks: {kind:?}"
+                )));
             }
             if !(1..=150).contains(&rule.radius) || !(1..=512).contains(&rule.minimum_count) {
                 return Err(invalid(format!(
@@ -626,7 +635,8 @@ minimum_rarity = "rare"
 minimum_count = 1
 radius = 60
 "#,
-        ).unwrap();
+        )
+        .unwrap();
         assert!(cfg.poe1.utility.granite);
         let rule = cfg.poe1.nearby.get(&FlaskType::Granite).unwrap();
         assert!(rule.enabled);
@@ -646,9 +656,14 @@ radius = 60
             r#"minimum_rarity = "boss""#,
         ] {
             let cfg = format!("[poe1.nearby.granite]\n{body}\n");
-            assert!(Config::parse(Path::new("test.toml"), &cfg).is_err(), "{body}");
+            assert!(
+                Config::parse(Path::new("test.toml"), &cfg).is_err(),
+                "{body}"
+            );
         }
-        assert!(Config::parse(Path::new("test.toml"), "[poe1.nearby.life]\nradius = 60\n").is_err());
+        assert!(
+            Config::parse(Path::new("test.toml"), "[poe1.nearby.life]\nradius = 60\n").is_err()
+        );
     }
 
     #[test]

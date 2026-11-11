@@ -198,15 +198,23 @@ pub fn run(
             // One cached census is shared across every equipped utility type.
             // Failed scans disable nearby-gated utilities, never Life/Mana.
             let proximity = if needs_nearby(
-                manager.current(), vitals, &flasks, &effects, quicksilver_ready,
+                manager.current(),
+                vitals,
+                &flasks,
+                &effects,
+                quicksilver_ready,
             ) {
                 session.poe1_nearby(process).ok()
             } else {
                 None
             };
             let chosen = choose_action_with_nearby(
-                manager.current(), vitals, &flasks, &effects,
-                quicksilver_ready, proximity.as_ref(),
+                manager.current(),
+                vitals,
+                &flasks,
+                &effects,
+                quicksilver_ready,
+                proximity.as_ref(),
             );
             Ok(chosen.map(|slot| (slot, flasks, proximity)))
         })();
