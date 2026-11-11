@@ -12,6 +12,7 @@ pub mod flasks;
 pub mod movement;
 pub mod nearby;
 mod offsets;
+pub mod rotation;
 pub mod types;
 
 use std::io;

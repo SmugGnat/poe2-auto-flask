@@ -12,9 +12,10 @@ use crate::session::GameSession;
 use super::activation::ActivationGuard;
 use super::bindings::{BindingManager, BindingState};
 use super::decision::{
-    blocks_grace_period, choose_action_with_nearby, enabled_demand, needs_nearby,
+    blocks_grace_period, choose_action_rotating_with_nearby, enabled_demand, needs_nearby,
 };
 use super::movement::{RunTracker, RUN_ANIMATION_ID};
+use super::rotation::FlaskRotation;
 use super::types::FlaskType;
 
 const POLL: Duration = Duration::from_millis(100);
@@ -31,6 +32,7 @@ pub fn run(
     let mut armed = false;
     let mut was_down = false;
     let mut activation_guard = ActivationGuard::default();
+    let mut rotation = FlaskRotation::default();
     let mut run_tracker = RunTracker::default();
     let mut next_refresh = Instant::now();
     let mut next_config_reload = Instant::now() + RELOAD_INTERVAL;
@@ -54,6 +56,7 @@ pub fn run(
             match manager.check_for_reload() {
                 ConfigReload::Reloaded => {
                     run_tracker.reset();
+                    rotation.reset();
                     println!("PoE1 config reloaded: {}", manager.current().poe1_summary())
                 }
                 ConfigReload::Invalid(error) | ConfigReload::ReadError(error) => {
@@ -75,6 +78,7 @@ pub fn run(
             run_tracker.reset();
             armed = !armed;
             activation_guard.reset();
+            rotation.reset();
             needs_refresh = armed;
             next_refresh = started;
             show(
@@ -122,6 +126,7 @@ pub fn run(
                 Ok(()) => {
                     needs_refresh = false;
                     activation_guard.reset();
+                    rotation.reset();
                     run_tracker.reset();
                 }
                 Err(_) => {
@@ -208,13 +213,14 @@ pub fn run(
             } else {
                 None
             };
-            let chosen = choose_action_with_nearby(
+            let chosen = choose_action_rotating_with_nearby(
                 manager.current(),
                 vitals,
                 &flasks,
                 &effects,
                 quicksilver_ready,
                 proximity.as_ref(),
+                &rotation,
             );
             Ok(chosen.map(|slot| (slot, flasks, proximity)))
         })();
@@ -251,19 +257,22 @@ pub fn run(
                         let mut effects = session.poe1_effects(process)?.clone();
                         activation_guard.apply_to(started, &flasks, &mut effects);
                         if quicksilver_motion_ok
-                            && choose_action_with_nearby(
+                            && choose_action_rotating_with_nearby(
                                 manager.current(),
                                 new_vitals,
                                 &flasks,
                                 &effects,
                                 quicksilver_ready,
                                 proximity.as_ref(),
+                                &rotation,
                             ) == Some(slot)
                             && !blocks_grace_period(&effects)
                         {
-                            send_flask_key(keys[slot])?;
-                            activation_guard.mark(slot, Instant::now());
                             if let Some(flask) = &flasks.slots[slot] {
+                                send_flask_key(keys[slot])?;
+                                let sent_at = Instant::now();
+                                activation_guard.mark(slot, flask.flask_type, sent_at);
+                                rotation.record(slot, flask.flask_type);
                                 println!(
                                     "{} flask (slot {}) -> {} | charges {} | effective cost {}",
                                     flask.flask_type.name(),
@@ -272,8 +281,8 @@ pub fn run(
                                     flask.current_charges,
                                     flask.effective_per_use.unwrap_or_default()
                                 );
+                                show(&mut status, "ARMED");
                             }
-                            show(&mut status, "ARMED");
                         }
                     }
                     Ok(_) => show(&mut status, "PAUSED (chat or focus)"),

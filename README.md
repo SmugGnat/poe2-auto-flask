@@ -195,7 +195,7 @@ For PoE1 automation (starts **DISARMED**; press **F11** in the focused game to a
 ./poe2-auto-flask-linux-x86_64.AppImage --game poe1 --auto
 ```
 
-PoE2 remains the default with its original automation behavior. PoE1 uses `[health]` and `[mana]` thresholds, and individually opt-in utility types under `[poe1.utility]`. All 18 standard PoE1 utility base types are recognized; a `quicksilver_min_run_ms` option under `[poe1]` optionally delays Quicksilver until sustained running. Keybindings are discovered from PoE1's own `production_Config.ini`.
+PoE2 remains the default with its original automation behavior. PoE1 uses `[health]` and `[mana]` thresholds, and individually opt-in utility types under `[poe1.utility]`. Duplicate equipped flasks are selected automatically with least-recently-used rotation and a separate same-resource guard for instant Life/Mana recovery. All 18 standard PoE1 utility base types are recognized; a `quicksilver_min_run_ms` option under `[poe1]` optionally delays Quicksilver until sustained running. Keybindings are discovered from PoE1's own `production_Config.ini`.
 
 The **[PoE1 support guide](docs/POE1_SUPPORT.md)** documents memory architecture, configuration, duplicate-flask choices, safety checks, validation, and known limitations.
 

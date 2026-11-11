@@ -5,6 +5,7 @@ use crate::poe2::LiveVitals;
 use super::buffs::EffectsSnapshot;
 use super::flasks::{FlaskSnapshot, SLOT_COUNT};
 use super::nearby::NearbySnapshot;
+use super::rotation::FlaskRotation;
 use super::types::{FlaskType, UTILITY_TYPES};
 
 pub fn choose_action(
@@ -27,6 +28,33 @@ pub fn choose_action_with_nearby(
     quicksilver_ready: bool,
     nearby: Option<&NearbySnapshot>,
 ) -> Option<usize> {
+    choose_action_internal(config, vitals, flasks, effects, quicksilver_ready, nearby, None)
+}
+
+/// Stateful variant used only in PoE1 auto mode. No additional memory reads.
+pub fn choose_action_rotating_with_nearby(
+    config: &Config,
+    vitals: LiveVitals,
+    flasks: &FlaskSnapshot,
+    effects: &EffectsSnapshot,
+    quicksilver_ready: bool,
+    nearby: Option<&NearbySnapshot>,
+    rotation: &FlaskRotation,
+) -> Option<usize> {
+    choose_action_internal(
+        config, vitals, flasks, effects, quicksilver_ready, nearby, Some(rotation),
+    )
+}
+
+fn choose_action_internal(
+    config: &Config,
+    vitals: LiveVitals,
+    flasks: &FlaskSnapshot,
+    effects: &EffectsSnapshot,
+    quicksilver_ready: bool,
+    nearby: Option<&NearbySnapshot>,
+    rotation: Option<&FlaskRotation>,
+) -> Option<usize> {
     // Life and mana have priority over optional utility maintenance.
     let health = vitals.health;
     let ci_like = health.total == 1 && vitals.energy_shield.is_some_and(|es| es.total > 0);
@@ -37,7 +65,7 @@ pub fn choose_action_with_nearby(
             .percentage()
             .is_some_and(|percent| percent <= config.health.threshold_percent)
     {
-        if let Some(slot) = best_slot(FlaskType::Life, flasks, effects) {
+        if let Some(slot) = best_slot(FlaskType::Life, flasks, effects, rotation) {
             return Some(slot);
         }
     }
@@ -49,7 +77,7 @@ pub fn choose_action_with_nearby(
                     .is_some_and(|pct| pct <= config.mana.threshold_percent)
         })
     {
-        if let Some(slot) = best_slot(FlaskType::Mana, flasks, effects) {
+        if let Some(slot) = best_slot(FlaskType::Mana, flasks, effects, rotation) {
             return Some(slot);
         }
     }
@@ -73,7 +101,7 @@ pub fn choose_action_with_nearby(
                     continue;
                 }
             }
-            if let Some(slot) = best_slot(kind, flasks, effects) {
+            if let Some(slot) = best_slot(kind, flasks, effects, rotation) {
                 return Some(slot);
             }
         }
@@ -107,13 +135,19 @@ pub fn needs_nearby(
             && !(kind == FlaskType::Quicksilver
                 && config.poe1.quicksilver_min_run_ms != 0
                 && !quicksilver_ready)
-            && best_slot(kind, flasks, effects).is_some()
+            && best_slot(kind, flasks, effects, None).is_some()
     })
 }
 
-/// Duplicates: choose most whole uses remaining, then most charges,
-/// then the lowest slot. A currently active flask blocks *all* of its type.
-fn best_slot(kind: FlaskType, flasks: &FlaskSnapshot, effects: &EffectsSnapshot) -> Option<usize> {
+/// When more than one same-type flask has enough charges, prefer the least
+/// recently used physical slot. On first use, prefer the most whole charges
+/// remaining; ties go to the lowest slot. Never override an active effect.
+fn best_slot(
+    kind: FlaskType,
+    flasks: &FlaskSnapshot,
+    effects: &EffectsSnapshot,
+    rotation: Option<&FlaskRotation>,
+) -> Option<usize> {
     if flasks.slots.iter().enumerate().any(|(slot, state)| {
         state
             .as_ref()
@@ -132,10 +166,18 @@ fn best_slot(kind: FlaskType, flasks: &FlaskSnapshot, effects: &EffectsSnapshot)
             if uses < 1 {
                 return None;
             }
-            Some((slot, uses, state.current_charges))
+            let last_used = rotation.map_or(0, |r| r.last_sequence(slot, kind));
+            Some((slot, last_used, uses, state.current_charges))
         })
-        .max_by_key(|(slot, uses, charges)| (*uses, *charges, std::cmp::Reverse(*slot)))
-        .map(|(slot, _, _)| slot)
+        .max_by_key(|(slot, last_used, uses, charges)| {
+            (
+                std::cmp::Reverse(*last_used),
+                *uses,
+                *charges,
+                std::cmp::Reverse(*slot),
+            )
+        })
+        .map(|(slot, _, _, _)| slot)
 }
 
 pub fn enabled_demand(config: &Config, vitals: LiveVitals) -> bool {
@@ -416,6 +458,75 @@ mod tests {
             choose_action_with_nearby(&config, vitals, &flasks, &effects, true, None),
             Some(0)
         );
+    }
+
+
+    #[test]
+    fn duplicate_quicksilvers_round_robin_without_slot_settings() {
+        let (mut config, mut vitals, mut flasks, mut effects) = setup();
+        let mut rotation = FlaskRotation::default();
+        vitals.health.current = 100;
+        config.poe1.utility.quicksilver = true;
+        flasks.slots[1] = slot(FlaskType::Quicksilver, 45, Some(30));
+        flasks.slots[4] = slot(FlaskType::Quicksilver, 90, Some(30));
+        // First use chooses the better-filled flask; then switches to the
+        // other eligible copy, even if it has fewer remaining whole uses.
+        let choose = |flasks: &FlaskSnapshot, effects: &EffectsSnapshot, rotation: &FlaskRotation| {
+            choose_action_rotating_with_nearby(
+                &config, vitals, flasks, effects, true, None, rotation,
+            )
+        };
+        assert_eq!(choose(&flasks, &effects, &rotation), Some(4));
+        rotation.record(4, FlaskType::Quicksilver);
+        effects.slots_active[4] = true;
+        assert_eq!(choose(&flasks, &effects, &rotation), None);
+        effects.slots_active[4] = false;
+        assert_eq!(choose(&flasks, &effects, &rotation), Some(1));
+        rotation.record(1, FlaskType::Quicksilver);
+        assert_eq!(choose(&flasks, &effects, &rotation), Some(4));
+        // No more charges in flask 4: never select it on the next rotation.
+        flasks.slots[4] = slot(FlaskType::Quicksilver, 10, Some(30));
+        assert_eq!(choose(&flasks, &effects, &rotation), Some(1));
+    }
+
+    #[test]
+    fn duplicate_life_flasks_rotate_when_effect_is_no_longer_active() {
+        let (config, vitals, mut flasks, mut effects) = setup();
+        let mut rotation = FlaskRotation::default();
+        flasks.slots[0] = slot(FlaskType::Life, 45, Some(15));
+        flasks.slots[1] = slot(FlaskType::Life, 60, Some(15));
+        let choose = |effects: &EffectsSnapshot, rotation: &FlaskRotation| {
+            choose_action_rotating_with_nearby(
+                &config, vitals, &flasks, effects, true, None, rotation,
+            )
+        };
+        assert_eq!(choose(&effects, &rotation), Some(1));
+        rotation.record(1, FlaskType::Life);
+        effects.slots_active[1] = true;
+        assert_eq!(choose(&effects, &rotation), None);
+        effects.slots_active[1] = false;
+        assert_eq!(choose(&effects, &rotation), Some(0));
+        rotation.record(0, FlaskType::Life);
+        assert_eq!(choose(&effects, &rotation), Some(1));
+    }
+
+    #[test]
+    fn one_usable_duplicate_or_changed_slot_still_works() {
+        let (mut config, mut vitals, mut flasks, effects) = setup();
+        let mut rotation = FlaskRotation::default();
+        vitals.health.current = 100;
+        config.poe1.utility.quicksilver = true;
+        flasks.slots[2] = slot(FlaskType::Quicksilver, 75, Some(30));
+        flasks.slots[4] = slot(FlaskType::Quicksilver, 25, Some(30));
+        rotation.record(2, FlaskType::Quicksilver);
+        assert_eq!(choose_action_rotating_with_nearby(
+            &config, vitals, &flasks, &effects, true, None, &rotation,
+        ), Some(2));
+        flasks.slots[2] = None;
+        flasks.slots[0] = slot(FlaskType::Quicksilver, 75, Some(30));
+        assert_eq!(choose_action_rotating_with_nearby(
+            &config, vitals, &flasks, &effects, true, None, &rotation,
+        ), Some(0));
     }
 
     #[test]
