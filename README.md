@@ -1,23 +1,24 @@
 # PoE2 Auto Flask
 
-> A small Path of Exile 2 helper that automatically uses Life and Mana flasks when they fall below configurable thresholds.
+> Lightweight, configurable flask automation for **Path of Exile 1 and Path of Exile 2**.
 
 Runs on **Windows x64** and **Linux through Steam Proton**.
 
-The helper reads game state without writing to game memory and sends normal flask key presses using the bindings already configured in PoE2. No installer, administrator/root access, driver, or DLL injection is required.
+The helper reads validated game state without writing to game memory and sends ordinary flask key presses using the selected game's configured bindings. No installer, administrator/root access, driver, or DLL injection is required.
+
+**New in v0.8.0:** PoE1 support, a shared automation engine with independent game-specific policies, and automatic Steam/Proton game detection on Linux.
 
 ---
 
 ## ✨ Features
 
-- Automatic **Life Flask** and **Mana Flask** use
-- Configurable Life and Mana thresholds
-- Reads PoE2's flask key bindings automatically
-- Detects binding and config changes while running
-- Checks flask charges before using a flask
-- Avoids repeated presses while a flask effect is active
-- Pauses automatically when automation is not safe or allowed
-- Starts **DISARMED** every time
+- Automatic **Life** and **Mana** flask use in both games with configurable thresholds
+- **PoE1:** five equipped flask slots, automatic key discovery, and optional type-aware utility-flask rules for 18 base types
+- **PoE1:** effective flask charge costs, duplicate-flask rotation, optional Quicksilver movement and bounded nearby-monster conditions
+- **PoE2:** preserves its established two-slot Life/Mana logic and flask safety guards
+- Detects game keybinding and configuration changes while running
+- Checks flask charges and active effects; refuses input on invalid or stale game state
+- Starts **DISARMED** every time; only F11 in the selected game's focused window arms automation
 
 ---
 
@@ -77,7 +78,7 @@ The config file is stored in the normal per-user config location:
 
 Changes to `config.toml` are picked up automatically while the helper is running.
 
-Flask keys do not need to be added to the config. The helper reads them directly from PoE2 and also detects binding changes while running.
+Flask keys do not need to be added to the config. The selected game's keyboard bindings are read automatically (PoE1 via `production_Config.ini`, PoE2 via its own configuration). PoE1 utility flasks are disabled by default and must be explicitly enabled under `[poe1.utility]`; see the [PoE1 support guide](docs/POE1_SUPPORT.md).
 
 ---
 
@@ -85,13 +86,19 @@ Flask keys do not need to be added to the config. The helper reads them directly
 
 ### Windows
 
-Run:
+Select the game explicitly when using PoE1:
+
+```text
+poe2-auto-flask-windows-x64.exe --game poe1
+```
+
+Without `--game`, the Windows helper defaults to PoE2:
 
 ```text
 poe2-auto-flask-windows-x64.exe
 ```
 
-PoE2 can be started before or after the helper.
+PoE2 can be started before or after the helper. PoE1 uses its game-specific reader and policy.
 
 ### Linux / Steam Proton
 
@@ -101,13 +108,15 @@ Make the AppImage executable once:
 chmod +x poe2-auto-flask-x86_64.AppImage
 ```
 
-Start Path of Exile 2 through Steam first, then double-click the AppImage or run:
+Start PoE1 or PoE2 through **Steam** first, then double-click the AppImage or run:
 
 ```bash
 ./poe2-auto-flask-x86_64.AppImage
 ```
 
-If PoE2 closes, the helper closes as well.
+On Linux the launcher auto-selects the **one** running recognized Steam/Proton game by AppID and uses its active Proton prefix. If **both** games are running, choose explicitly with `--game poe1` or `--game poe2`; the launcher will not guess. If the selected game closes, its helper closes as well.
+
+**No `--auto` flag is needed.** Both games default to normal automation, starting DISARMED. Use `--debug` for read-only diagnostics.
 
 ---
 
@@ -118,13 +127,13 @@ F11     Arm / disarm auto-flask
 Ctrl+C  Exit
 ```
 
-F11 only changes the armed state while PoE2 is focused. The helper starts **DISARMED** every time.
+F11 changes the armed state only while the **selected game** is focused. The helper starts **DISARMED** every time.
 
-While armed, automation pauses automatically in towns, when PoE2 is not focused, when the player is dead, or when required game state cannot be read safely.
+While armed, automation pauses automatically in towns, when the selected game is not focused, when the player is dead, or when required game state cannot be read safely.
 
 Hideouts are blocked by default and can be enabled in `config.toml`.
 
-Keyboard flask bindings are supported in both WASD and mouse + keyboard modes. Controller/gamepad automation and mouse-button flask bindings are not currently supported.
+Keyboard flask bindings are supported; PoE2 supports its WASD and mouse + keyboard input modes. Controller/gamepad automation and mouse-button flask bindings are not currently supported.
 
 ---
 
@@ -144,9 +153,9 @@ poe2-auto-flask-windows-x64.exe --debug
 ./poe2-auto-flask-x86_64.AppImage --debug
 ```
 
-Debug mode shows the detected game state, area, Life/Mana values, flask charges, and active flask state without sending flask input.
+Debug mode shows the selected game's state, area, Life/Mana values, flask charges, and active effects without sending flask input. On Windows, add `--game poe1` to debug PoE1; on Linux, single-game auto-detection also applies in debug mode.
 
-If a PoE2 update changes required game structures, the helper stops sending input rather than guessing.
+If a game update changes required memory structures, the helper pauses rather than guessing and sending unsafe input.
 
 ---
 
@@ -179,6 +188,42 @@ Release AppImages are assembled by GitHub Actions.
 
 ---
 
+## 🧪 PoE1-specific options and limitations
+
+PoE1 support is included in **v0.8.0**. It provides a validated read-only reader, five-slot flask automation, type-aware discovery, charge-cost handling, automatic keybindings and optional Quicksilver movement gating. Normal Life/Mana rules are on by default; utility types require opt-in configuration.
+
+Start PoE1 through Steam before launching the release AppImage. On Linux,
+the launcher detects which game is running from its validated Steam AppID
+and Proton prefix. For normal automation, just launch the AppImage with
+**no flags**:
+
+```bash
+./poe2-auto-flask-x86_64.AppImage
+```
+
+Automation is the default for both games, but starts **DISARMED**; press **F11**
+while the selected game is focused to arm. To inspect game state without
+sending flask inputs, run:
+
+```bash
+./poe2-auto-flask-linux-x86_64.AppImage --debug
+```
+
+The optional `--auto` flag remains supported for existing commands but is
+not required. If **both** PoE1 and PoE2 are running, choose explicitly with
+`--game poe1` or `--game poe2`. The launcher never guesses between two
+running clients. If neither is detected, PoE2 remains the fallback selection,
+but an active Steam Proton environment is still required. On Windows,
+automatic Steam detection is not used; PoE2 remains the default unless
+`--game poe1` is specified. PoE1 uses `[health]` and `[mana]` thresholds, and individually opt-in utility types under `[poe1.utility]`. Duplicate equipped flasks are selected automatically with least-recently-used rotation and a separate same-resource guard for instant Life/Mana recovery. A Life-only emergency exception permits a positively identified instant Life flask to bypass an already-active gradual recovery effect at very low Life; conditional-instant flasks wait for actual Low Life (50% of maximum or less). All 18 standard PoE1 utility base types are recognized; a `quicksilver_min_run_ms` option under `[poe1]` optionally delays Quicksilver until sustained running. Keybindings are discovered from PoE1's own `production_Config.ini`.
+
+The **[PoE1 support guide](docs/POE1_SUPPORT.md)** documents memory architecture, configuration, duplicate-flask choices, safety checks, validation, and known limitations.
+
+A new **experimental, read-only** nearby-monster census is available with `--game poe1 --debug --nearby`. It reports rarity counts at 60 and 100 grid units, with strict scan-size/time limits; optional nearby conditions for utility flasks now share the cached reader when enabled. PoE1 debug mode now reports the helper's own **5-second CPU usage average**; with `--nearby` it also reports wall time spent on the last full entity scan, making baseline comparisons possible. A rarity threshold is inclusive (e.g. `rare` matches Rare and Unique); existing flask behavior remains unchanged unless you add a `[poe1.nearby.<type>]` table. Boss intro phases may still count before damage can be dealt. The external GameHelper C# reference tree is not bundled pending verification of its source license and provenance.
+
+---
+
+
 ## 📄 License
 
 Licensed under the **GNU General Public License v3.0 only** (`GPL-3.0-only`). See [`LICENSE`](LICENSE).
@@ -189,4 +234,4 @@ See [`ACKNOWLEDGEMENTS.md`](ACKNOWLEDGEMENTS.md) for upstream research reference
 
 ## ⚠️ Disclaimer
 
-This is an unofficial third-party tool. Path of Exile 2 updates may change compatibility. Use is at the user's discretion.
+This is an unofficial third-party tool. Path of Exile 1 or 2 updates may change compatibility. Use is at the user's discretion.

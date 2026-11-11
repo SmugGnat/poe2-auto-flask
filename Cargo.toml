@@ -1,9 +1,9 @@
 [package]
 name = "poe2-auto-flask"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 rust-version = "1.85"
-description = "A small Path of Exile 2 auto-flask companion for Windows and Proton"
+description = "A lightweight Path of Exile 1 and 2 auto-flask companion for Windows and Proton"
 license = "GPL-3.0-only"
 repository = "https://github.com/SmugGnat/poe2-auto-flask"
 publish = false

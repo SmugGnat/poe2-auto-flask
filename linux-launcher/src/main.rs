@@ -7,8 +7,40 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-const APP_ID: &str = "2694490";
-const GAME_EXE: &[u8] = b"PathOfExileSteam.exe";
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Game {
+    Poe1,
+    Poe2,
+}
+
+impl Game {
+    fn app_id(self) -> &'static str {
+        match self {
+            Self::Poe1 => "238960",
+            Self::Poe2 => "2694490",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Poe1 => "PoE1",
+            Self::Poe2 => "PoE2",
+        }
+    }
+
+    fn exe_names(self) -> &'static [&'static [u8]] {
+        match self {
+            Self::Poe1 => &[
+                b"PathOfExileSteam.exe",
+                b"PathOfExile.exe",
+                b"PathOfExile_x64.exe",
+                b"PathOfExile_KG.exe",
+            ],
+            Self::Poe2 => &[b"PathOfExileSteam.exe", b"PathOfExile.exe"],
+        }
+    }
+}
+
 const BUNDLED_HELPER_ENV: &str = "POE2_AUTO_FLASK_BUNDLED_HELPER";
 const HELPER_CONFIG_ENV: &str = "POE2_AUTO_FLASK_CONFIG";
 
@@ -21,6 +53,7 @@ struct LaunchEnvironment {
 
 struct Args {
     helper: Option<PathBuf>,
+    game: Option<Game>,
     helper_args: Vec<OsString>,
 }
 
@@ -39,7 +72,18 @@ fn run() -> Result<(), String> {
         return Ok(());
     };
 
-    let launch = discover_launch_environment()?;
+    // Normal automation is the helper's default for either game; this launcher
+    // only selects the matching Steam/Proton environment. Arming still requires F11.
+    let nearby = args.helper_args.iter().any(|arg| arg == "--nearby");
+    let debug = args.helper_args.iter().any(|arg| arg == "--debug");
+    if nearby && (!debug || args.game == Some(Game::Poe2)) {
+        return Err("--nearby requires PoE1 --debug".into());
+    }
+
+    let (game, launch) = discover_launch_environment(args.game)?;
+    if nearby && game != Game::Poe1 {
+        return Err("--nearby requires PoE1 --debug".into());
+    }
     let helper = resolve_helper_path(args.helper)?;
     if !helper.is_file() {
         return Err(format!(
@@ -51,7 +95,17 @@ fn run() -> Result<(), String> {
     let config = prepare_config_path()?;
     let wine_config = host_path_to_wine_z(&config)?;
 
-    println!("PoE2 PID    : {}", launch.pid);
+    println!(
+        "Selected    : {} (Steam AppID {}, {})",
+        game.label(),
+        game.app_id(),
+        if args.game.is_some() {
+            "explicit"
+        } else {
+            "auto-detected"
+        }
+    );
+    println!("{} PID    : {}", game.label(), launch.pid);
     println!("Steam       : {}", launch.steam_client.display());
     println!("Compat data : {}", launch.compat_data.display());
     println!("Proton      : {}", launch.proton.display());
@@ -62,6 +116,11 @@ fn run() -> Result<(), String> {
         .arg("runinprefix")
         .arg(&helper)
         .args(&args.helper_args)
+        .arg("--game")
+        .arg(match game {
+            Game::Poe1 => "poe1",
+            Game::Poe2 => "poe2",
+        })
         .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &launch.steam_client)
         .env("STEAM_COMPAT_DATA_PATH", &launch.compat_data)
         .env(HELPER_CONFIG_ENV, wine_config)
@@ -76,14 +135,31 @@ fn run() -> Result<(), String> {
 }
 
 fn parse_args() -> Result<Option<Args>, String> {
+    parse_args_from(env::args_os().skip(1))
+}
+
+fn parse_args_from(mut args: impl Iterator<Item = OsString>) -> Result<Option<Args>, String> {
     let mut helper = None;
     let mut helper_args = Vec::new();
-    let mut args = env::args_os().skip(1);
+    let mut game = None;
+    let mut game_seen = false;
 
     while let Some(arg) = args.next() {
         if arg == OsStr::new("--help") || arg == OsStr::new("-h") {
             print_help();
             return Ok(None);
+        }
+        if arg == OsStr::new("--game") {
+            if game_seen {
+                return Err("--game specified more than once".into());
+            }
+            game_seen = true;
+            game = match args.next().as_deref() {
+                Some(value) if value == OsStr::new("poe1") => Some(Game::Poe1),
+                Some(value) if value == OsStr::new("poe2") => Some(Game::Poe2),
+                _ => return Err("--game requires poe1 or poe2".into()),
+            };
+            continue;
         }
         if arg == OsStr::new("--helper") {
             helper = Some(PathBuf::from(
@@ -92,7 +168,10 @@ fn parse_args() -> Result<Option<Args>, String> {
             ));
             continue;
         }
-        if arg == OsStr::new("--auto") || arg == OsStr::new("--debug") {
+        if arg == OsStr::new("--auto")
+            || arg == OsStr::new("--debug")
+            || arg == OsStr::new("--nearby")
+        {
             helper_args.push(arg);
             continue;
         }
@@ -106,6 +185,7 @@ fn parse_args() -> Result<Option<Args>, String> {
 
     Ok(Some(Args {
         helper,
+        game,
         helper_args,
     }))
 }
@@ -264,14 +344,27 @@ fn print_help() {
     println!("poe2-auto-flask Linux launcher");
     println!();
     println!("Usage:");
-    println!("  poe2-auto-flask-linux-launcher [--auto | --debug] [--helper PATH]");
+    println!(
+        "  poe2-auto-flask-linux-launcher [--auto | --debug] [--game poe1|poe2] [--nearby] [--helper PATH]"
+    );
     println!();
-    println!("Path of Exile 2 must already be running through Steam Proton.");
+    println!("The selected Path of Exile game must already be running through Steam Proton.");
+    println!("Without --game, detect the single running game by its Steam AppID.");
+    println!("When both games are running, use --game poe1 or --game poe2.");
+    println!("When neither is detected, PoE2 remains the default (and still must be running).");
+    println!("Normal automation is the default for either game and starts DISARMED (F11 to arm).");
+    println!("Use --debug for read-only diagnostics; --auto remains an optional alias.");
 }
 
-fn discover_launch_environment() -> Result<LaunchEnvironment, String> {
+// Discovery happens once at launcher startup. All candidates must have a
+// recognized, consistent Steam AppID and a complete, usable Proton context.
+fn discover_launch_environment(
+    requested: Option<Game>,
+) -> Result<(Game, LaunchEnvironment), String> {
     let entries =
         fs::read_dir("/proc").map_err(|error| format!("could not read /proc: {error}"))?;
+    let mut poe1 = None;
+    let mut poe2 = None;
 
     for entry in entries.flatten() {
         let file_name = entry.file_name();
@@ -286,14 +379,26 @@ fn discover_launch_environment() -> Result<LaunchEnvironment, String> {
         let Ok(cmdline) = fs::read(process_dir.join("cmdline")) else {
             continue;
         };
-        if !contains_bytes(&cmdline, GAME_EXE) {
+        if ![Game::Poe1, Game::Poe2].iter().any(|game| {
+            game.exe_names()
+                .iter()
+                .any(|name| contains_bytes(&cmdline, name))
+        }) {
             continue;
         }
 
         let Ok(environ) = fs::read(process_dir.join("environ")) else {
             continue;
         };
-        if !environment_matches_app(&environ) {
+        let Some(game) = detected_game(&environ) else {
+            continue;
+        };
+        if requested.is_some_and(|selected| selected != game)
+            || !game
+                .exe_names()
+                .iter()
+                .any(|name| contains_bytes(&cmdline, name))
+        {
             continue;
         }
 
@@ -312,27 +417,85 @@ fn discover_launch_environment() -> Result<LaunchEnvironment, String> {
         let Some(proton) = find_proton(&tool_paths) else {
             continue;
         };
-
         if !steam_client.is_dir() || !compat_data.join("pfx").is_dir() {
             continue;
         }
 
-        return Ok(LaunchEnvironment {
+        let launch = LaunchEnvironment {
             pid,
             steam_client,
             compat_data,
             proton,
-        });
+        };
+        match game {
+            Game::Poe1 if poe1.is_none() => poe1 = Some(launch),
+            Game::Poe2 if poe2.is_none() => poe2 = Some(launch),
+            _ => {}
+        }
+        // Explicit selection does not require inspecting the other game.
+        if requested == Some(game) {
+            break;
+        }
+        // Once both valid games are found, selection cannot be implicit.
+        if poe1.is_some() && poe2.is_some() {
+            break;
+        }
     }
 
-    Err("could not find a running Path of Exile 2 Proton environment; start Path of Exile 2 through Steam first".to_string())
+    let game = select_game(requested, poe1.is_some(), poe2.is_some())?;
+    let launch = match game {
+        Game::Poe1 => poe1,
+        Game::Poe2 => poe2,
+    }
+    .ok_or_else(|| {
+        format!(
+            "could not find a running {} Proton environment (Steam AppID {}); start the selected game through Steam first",
+            game.label(),
+            game.app_id()
+        )
+    })?;
+    Ok((game, launch))
 }
 
-fn environment_matches_app(environ: &[u8]) -> bool {
-    [b"STEAM_COMPAT_APP_ID".as_slice(), b"SteamAppId".as_slice()]
-        .iter()
-        .filter_map(|key| env_value(environ, key))
-        .any(|value| value == OsStr::new(APP_ID))
+fn select_game(
+    requested: Option<Game>,
+    poe1_running: bool,
+    poe2_running: bool,
+) -> Result<Game, String> {
+    if let Some(game) = requested {
+        return Ok(game);
+    }
+    match (poe1_running, poe2_running) {
+        (true, false) => Ok(Game::Poe1),
+        (false, true) | (false, false) => Ok(Game::Poe2),
+        (true, true) => Err(
+            "both PoE1 and PoE2 Steam Proton environments are running; specify --game poe1 or --game poe2"
+                .into(),
+        ),
+    }
+}
+
+// Conflicting or unknown Steam IDs must not attach one game's policy to
+// another game's Proton prefix, even if the executable basenames overlap.
+fn detected_game(environ: &[u8]) -> Option<Game> {
+    let mut detected = None;
+    for key in [b"STEAM_COMPAT_APP_ID".as_slice(), b"SteamAppId".as_slice()] {
+        let Some(app_id) = env_value(environ, key) else {
+            continue;
+        };
+        let game = if app_id == OsStr::new(Game::Poe1.app_id()) {
+            Game::Poe1
+        } else if app_id == OsStr::new(Game::Poe2.app_id()) {
+            Game::Poe2
+        } else {
+            return None;
+        };
+        if detected.is_some_and(|previous| previous != game) {
+            return None;
+        }
+        detected = Some(game);
+    }
+    detected
 }
 
 fn env_value(environ: &[u8], key: &[u8]) -> Option<OsString> {
@@ -368,10 +531,11 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        contains_bytes, env_value, environment_matches_app, files_match, find_proton,
-        host_path_to_wine_z,
+        contains_bytes, detected_game, env_value, files_match, find_proton, host_path_to_wine_z,
+        parse_args_from, select_game, Game,
     };
     use std::env;
+    use std::ffi::OsString;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
@@ -389,12 +553,89 @@ mod tests {
     }
 
     #[test]
-    fn recognizes_poe2_app_id() {
-        assert!(environment_matches_app(
-            b"STEAM_COMPAT_APP_ID=2694490\0OTHER=value\0"
-        ));
-        assert!(environment_matches_app(b"SteamAppId=2694490\0"));
-        assert!(!environment_matches_app(b"STEAM_COMPAT_APP_ID=1234\0"));
+    fn default_launch_has_no_required_mode_or_game_flags() {
+        let args = parse_args_from(std::iter::empty()).unwrap().unwrap();
+        assert_eq!(args.game, None);
+        assert!(args.helper_args.is_empty());
+    }
+
+    #[test]
+    fn poe1_selection_does_not_require_auto_or_debug() {
+        let args = parse_args_from([OsString::from("--game"), OsString::from("poe1")].into_iter())
+            .unwrap()
+            .unwrap();
+        assert_eq!(args.game, Some(Game::Poe1));
+        assert!(args.helper_args.is_empty());
+    }
+
+    #[test]
+    fn debug_remains_an_explicit_override() {
+        let args = parse_args_from([OsString::from("--debug")].into_iter())
+            .unwrap()
+            .unwrap();
+        assert_eq!(args.game, None);
+        assert_eq!(args.helper_args, vec![OsString::from("--debug")]);
+    }
+
+    #[test]
+    fn auto_flag_remains_backwards_compatible() {
+        let args = parse_args_from([OsString::from("--auto")].into_iter())
+            .unwrap()
+            .unwrap();
+        assert_eq!(args.helper_args, vec![OsString::from("--auto")]);
+    }
+
+    #[test]
+    fn recognizes_only_consistent_game_app_ids() {
+        assert_eq!(
+            detected_game(b"STEAM_COMPAT_APP_ID=2694490\0OTHER=value\0"),
+            Some(Game::Poe2)
+        );
+        assert_eq!(detected_game(b"SteamAppId=2694490\0"), Some(Game::Poe2));
+        assert_eq!(detected_game(b"SteamAppId=238960\0"), Some(Game::Poe1));
+        assert_eq!(
+            detected_game(b"STEAM_COMPAT_APP_ID=238960\0SteamAppId=238960\0"),
+            Some(Game::Poe1)
+        );
+        assert_eq!(detected_game(b"SteamAppId=1234\0"), None);
+        assert_eq!(detected_game(b"OTHER=value\0"), None);
+        assert_eq!(
+            detected_game(b"STEAM_COMPAT_APP_ID=238960\0SteamAppId=2694490\0"),
+            None
+        );
+        assert_eq!(
+            detected_game(b"STEAM_COMPAT_APP_ID=1234\0SteamAppId=238960\0"),
+            None
+        );
+        assert!(Game::Poe1
+            .exe_names()
+            .contains(&b"PathOfExile_x64.exe".as_slice()));
+    }
+
+    #[test]
+    fn automatic_game_selection_is_unambiguous_and_defaults_to_poe2() {
+        assert_eq!(select_game(None, false, false).unwrap(), Game::Poe2);
+        assert_eq!(select_game(None, true, false).unwrap(), Game::Poe1);
+        assert_eq!(select_game(None, false, true).unwrap(), Game::Poe2);
+        assert!(select_game(None, true, true)
+            .unwrap_err()
+            .contains("--game"));
+    }
+
+    #[test]
+    fn explicit_override_wins_even_with_both_games_running() {
+        assert_eq!(
+            select_game(Some(Game::Poe1), true, true).unwrap(),
+            Game::Poe1
+        );
+        assert_eq!(
+            select_game(Some(Game::Poe2), true, true).unwrap(),
+            Game::Poe2
+        );
+        assert_eq!(
+            select_game(Some(Game::Poe1), false, true).unwrap(),
+            Game::Poe1
+        );
     }
 
     #[test]
