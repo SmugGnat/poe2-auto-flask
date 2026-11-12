@@ -1,13 +1,12 @@
-//! PoE1 flask and defensive skill policy for the shared 100ms engine.
-//! Both action paths are independent within a tick, and all game memory
-//! reads remain in GameSession's validated PoE1 adapter.
+//! PoE1 policy: one demand-driven game snapshot, then independent
+//! flask/skill candidates. Skill-specific rules never live in this scheduler.
+use std::collections::BTreeMap;
 use std::io;
 use std::time::{Duration, Instant};
 
 use crate::action::{dispatch, ActionRequest, Dispatch, DispatchError};
 use crate::config::{Config, ConfigManager, ConfigReload};
 use crate::engine::{GameAutomationPolicy, TickOutcome};
-use crate::game_state::LiveVitals;
 use crate::input::{is_process_foreground, KeyBinding};
 use crate::process::Process;
 use crate::session::GameSession;
@@ -17,11 +16,16 @@ use super::bindings::{BindingManager, BindingState};
 use super::decision::{
     blocks_grace_period, choose_action_rotating_guarded, enabled_demand, needs_nearby_guarded,
 };
+use super::flasks::FlaskSnapshot;
 use super::movement::{RunTracker, RUN_ANIMATION_ID};
+use super::nearby::NearbySnapshot;
 use super::rotation::FlaskRotation;
 use super::skill_rules::{
-    evaluate_molten_shell, needs_molten_shell, MoltenShellDecision, SkillAttemptGuard,
+    configured_rules, evaluate, observations_allow, preconditions_met, Condition, RuleDecision,
+    SkillAttemptGuard, SkillRule,
 };
+use super::skills::SkillId;
+use super::state::{Preflight, TickState};
 use super::types::FlaskType;
 
 pub fn run(process: &Process, session: GameSession, manager: &mut ConfigManager) -> io::Result<()> {
@@ -34,8 +38,16 @@ struct Policy {
     activation_guard: ActivationGuard,
     rotation: FlaskRotation,
     run_tracker: RunTracker,
-    skill_key: Option<KeyBinding>,
-    skill_attempt: SkillAttemptGuard,
+    skill_rules: Vec<SkillRule>,
+    skill_attempts: BTreeMap<SkillId, SkillAttemptGuard>,
+}
+
+struct FlaskCandidate {
+    slot: usize,
+    flasks: FlaskSnapshot,
+    proximity: Option<NearbySnapshot>,
+    quicksilver_ready: bool,
+    moving_ms: u64,
 }
 
 impl Policy {
@@ -45,9 +57,31 @@ impl Policy {
             activation_guard: ActivationGuard::default(),
             rotation: FlaskRotation::default(),
             run_tracker: RunTracker::default(),
-            skill_key: configured_skill_key(config)?,
-            skill_attempt: SkillAttemptGuard::default(),
+            skill_rules: configured_rules(&config.poe1.skills)?,
+            skill_attempts: BTreeMap::new(),
         })
+    }
+
+    fn guard_ready(&self, skill: SkillId, now: Instant) -> bool {
+        self.skill_attempts.get(&skill).is_none_or(|guard| guard.ready(now))
+    }
+
+    fn mark_skill(&mut self, skill: SkillId, sent_at: Instant) {
+        self.skill_attempts.entry(skill).or_default().mark(sent_at);
+    }
+
+    fn defer_skill(&mut self, skill: SkillId, started: Instant) {
+        self.skill_attempts.entry(skill).or_default().defer(started);
+    }
+
+    fn flask_key(&self, slot: usize) -> io::Result<KeyBinding> {
+        match self.bindings.current() {
+            BindingState::Ready(keys) => Ok(keys[slot]),
+            BindingState::Unavailable(_) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "PoE1 flask bindings changed during decision",
+            )),
+        }
     }
 }
 
@@ -62,8 +96,10 @@ impl GameAutomationPolicy for Policy {
     fn on_config_reload(&mut self, event: ConfigReload, config: &Config) {
         match event {
             ConfigReload::Reloaded => {
-                // ConfigManager has already validated the new key.
-                self.skill_key = configured_skill_key(config).ok().flatten();
+                // ConfigManager validated these presets before applying the reload.
+                if let Ok(rules) = configured_rules(&config.poe1.skills) {
+                    self.skill_rules = rules;
+                }
                 self.run_tracker.reset();
                 self.rotation.reset();
                 println!("PoE1 config reloaded: {}", config.poe1_summary());
@@ -82,8 +118,7 @@ impl GameAutomationPolicy for Policy {
     }
 
     fn bindings_pause(&self) -> Option<&'static str> {
-        // A missing flask binding must not block an independently configured skill.
-        if self.skill_key.is_some() {
+        if !self.skill_rules.is_empty() {
             return None;
         }
         match self.bindings.current() {
@@ -113,7 +148,6 @@ impl GameAutomationPolicy for Policy {
     }
 
     fn refresh(&mut self, _process: &Process, _session: &GameSession) -> io::Result<()> {
-        // All PoE1 pointer/cache refresh work belongs to GameSession's adapter.
         Ok(())
     }
 
@@ -132,53 +166,157 @@ impl GameAutomationPolicy for Policy {
         config: &Config,
         started: Instant,
     ) -> io::Result<TickOutcome> {
-        // A separate validated game-state read (and optional area read) is
-        // requested on demand. The engine itself never interprets these.
-        let sampled = (|| {
-            let vitals = session.vitals(process)?;
-            let area = session.poe1_area(process)?;
-            Ok::<_, io::Error>((
-                vitals,
-                area.allows_auto_flask(config.general.enable_in_hideout),
-            ))
-        })();
-        let (vitals, area_allowed) = match sampled {
-            Ok(values) => values,
+        let mut state = match TickState::sample(
+            session,
+            process,
+            config.general.enable_in_hideout,
+        ) {
+            Ok(value) => value,
             Err(_) => return Ok(TickOutcome::Refresh),
         };
-        if !area_allowed {
+        if !state.area_allowed {
             self.run_tracker.reset();
             return Ok(TickOutcome::Status("PAUSED (town or hideout)"));
         }
-        if vitals.health.current <= 0 {
+        if state.vitals.health.current <= 0 {
             self.run_tracker.reset();
             return Ok(TickOutcome::Status("PAUSED (dead)"));
         }
-        let shell = &config.poe1.skills.molten_shell;
-        let wants_skill = self.skill_key.is_some()
-            && self.skill_attempt.ready(started)
-            && needs_molten_shell(vitals, shell.threshold_percent);
-        let wants_flask = matches!(self.bindings.current(), BindingState::Ready(_))
-            && enabled_demand(config, vitals);
 
-        if !wants_flask && !wants_skill {
+        let flask_demand = matches!(self.bindings.current(), BindingState::Ready(_))
+            && enabled_demand(config, state.vitals);
+        let skill_demand = self
+            .skill_rules
+            .iter()
+            .any(|rule| self.guard_ready(rule.id, started) && preconditions_met(rule, state.vitals));
+        if !flask_demand && !skill_demand {
             self.run_tracker.reset();
             return Ok(TickOutcome::Status("ARMED"));
         }
-        // Each policy path can independently send one action. The paths share
-        // the same engine tick, but neither borrows the other's attempt guard.
-        if wants_flask {
-            let outcome = self.tick_flask(process, session, config, started, vitals)?;
-            if outcome != TickOutcome::Status("ARMED") {
-                return Ok(outcome);
+
+        // Shared state readers run once per tick, regardless of which policy
+        // requests a flask, a skill, or both.
+        if state.chat(session, process).is_err() {
+            return Ok(TickOutcome::Refresh);
+        }
+        if state.chat(session, process)? {
+            return Ok(TickOutcome::Status("PAUSED (chat or focus)"));
+        }
+        let effects = match state.effects(session, process) {
+            Ok(value) => value,
+            Err(_) => return Ok(TickOutcome::Refresh),
+        };
+        if blocks_grace_period(effects) {
+            return Ok(TickOutcome::Status("ARMED"));
+        }
+
+        let flask = if flask_demand {
+            match self.select_flask(process, session, config, started, &mut state) {
+                Ok(value) => value,
+                Err(_) => return Ok(TickOutcome::Refresh),
             }
         } else {
             self.run_tracker.reset();
+            None
+        };
+
+        // Each rule is data: no skill-specific dispatch function or loop.
+        let mut skills = Vec::new();
+        for rule in &self.skill_rules {
+            if !self.guard_ready(rule.id, started) {
+                continue;
+            }
+            if !observations_allow(rule, state.vitals, state.effects(session, process)?) {
+                continue;
+            }
+            if let BindingState::Ready(flask_keys) = self.bindings.current() {
+                if flask_keys.contains(&rule.key) {
+                    continue;
+                }
+            }
+            let readiness = if rule
+                .conditions
+                .iter()
+                .any(|condition| matches!(condition, Condition::SkillUsable))
+            {
+                match state.skill(session, process, rule.id) {
+                    Ok(value) => Some(value),
+                    Err(error) => {
+                        eprintln!("PoE1 {} state unavailable: {error}", rule.id.label());
+                        self.defer_skill(rule.id, started);
+                        continue;
+                    }
+                }
+            } else {
+                None
+            };
+            if evaluate(rule, state.vitals, state.effects(session, process)?, readiness)
+                == RuleDecision::Eligible
+            {
+                skills.push(rule.clone());
+            }
         }
-        if wants_skill {
-            let outcome = self.tick_molten_shell(process, session, config, started)?;
+
+        if flask.is_none() && skills.is_empty() {
+            return Ok(TickOutcome::Status("ARMED"));
+        }
+
+        // A single fresh state check protects *both* candidates. Each
+        // dispatched key still performs its own immediate focus checks.
+        let mut preflight = match Preflight::sample(session, process) {
+            Ok(value) => value,
+            Err(_) => return Ok(TickOutcome::Refresh),
+        };
+        if preflight.chat || preflight.vitals.health.current <= 0 {
+            return Ok(TickOutcome::Status("PAUSED (chat or focus)"));
+        }
+        if blocks_grace_period(&preflight.effects) {
+            return Ok(TickOutcome::Status("ARMED"));
+        }
+
+        if let Some(candidate) = flask {
+            let outcome = self.send_flask(process, session, config, started, &preflight, candidate)?;
             if outcome != TickOutcome::Status("ARMED") {
+                // Focus loss and stale shared state legitimately halt the tick.
                 return Ok(outcome);
+            }
+        }
+        for rule in skills {
+            let readiness = if rule
+                .conditions
+                .iter()
+                .any(|condition| matches!(condition, Condition::SkillUsable))
+            {
+                match preflight.skill(session, process, rule.id) {
+                    Ok(value) => Some(value),
+                    Err(error) => {
+                        self.defer_skill(rule.id, started);
+                        eprintln!("PoE1 {} verification unavailable: {error}", rule.id.label());
+                        continue;
+                    }
+                }
+            } else {
+                None
+            };
+            if evaluate(&rule, preflight.vitals, &preflight.effects, readiness)
+                != RuleDecision::Eligible
+            {
+                continue;
+            }
+            match dispatch(process, ActionRequest::skill(rule.key), || Ok(Some(()))) {
+                Ok(Dispatch::Sent { sent_at, .. }) => {
+                    self.mark_skill(rule.id, sent_at);
+                    println!("{} -> {}", rule.id.label(), rule.key.label());
+                }
+                Ok(Dispatch::Skipped) if !is_process_foreground(process.pid()) => {
+                    return Ok(TickOutcome::Status("PAUSED (chat or focus)"));
+                }
+                Ok(Dispatch::Skipped) => {}
+                Err(DispatchError::Validation(_)) => return Ok(TickOutcome::Refresh),
+                Err(DispatchError::Input(error)) => {
+                    self.defer_skill(rule.id, started);
+                    eprintln!("PoE1 {} input failed: {error}", rule.id.label());
+                }
             }
         }
         Ok(TickOutcome::Status("ARMED"))
@@ -186,276 +324,131 @@ impl GameAutomationPolicy for Policy {
 }
 
 impl Policy {
-    fn tick_flask(
+    fn select_flask(
         &mut self,
         process: &Process,
         session: &mut GameSession,
         config: &Config,
         started: Instant,
-        vitals: LiveVitals,
-    ) -> io::Result<TickOutcome> {
-        // Optional Quicksilver-only movement confirmation. Only a game
-        // policy knows when animation data is actually needed.
+        state: &mut TickState,
+    ) -> io::Result<Option<FlaskCandidate>> {
+        // Only Quicksilver needs animation; do not read it for other flasks.
         let moving_ms = config.poe1.quicksilver_min_run_ms;
         let quicksilver_ready = if moving_ms > 0 && config.poe1.utility.quicksilver {
-            let animation_id = session.poe1_animation(process).ok();
+            let animation = state.animation(session, process).ok();
             self.run_tracker
-                .observe(animation_id, started, Duration::from_millis(moving_ms))
+                .observe(animation, started, Duration::from_millis(moving_ms))
         } else {
             self.run_tracker.reset();
             true
         };
-
-        let state = (|| {
-            let chat = session.poe1_chat_active(process)?;
-            if chat {
-                return Ok::<_, io::Error>(None);
-            }
-            let mut effects = session.poe1_effects(process)?.clone();
-            if blocks_grace_period(&effects) {
-                return Ok(None);
-            }
-            let flasks = session.poe1_flasks(process)?.clone();
-            self.activation_guard
-                .apply_to(started, vitals, &flasks, &mut effects);
-            // Only scan monsters if an enabled, usable utility needs it.
-            // One cached census is shared across every equipped utility type.
-            // Failed scans disable nearby-gated utilities, never Life/Mana.
-            let proximity = if needs_nearby_guarded(
-                config,
-                vitals,
-                &flasks,
-                &effects,
-                quicksilver_ready,
-                !self.activation_guard.life_input_pending(),
-            ) {
-                session.poe1_nearby(process).ok()
-            } else {
-                None
-            };
-            let chosen = choose_action_rotating_guarded(
-                config,
-                vitals,
-                &flasks,
-                &effects,
-                quicksilver_ready,
-                proximity.as_ref(),
-                &self.rotation,
-                !self.activation_guard.life_input_pending(),
-            );
-            Ok(chosen.map(|slot| (slot, flasks, proximity)))
-        })();
-
-        match state {
-            Ok(Some((slot, flasks, proximity))) => {
-                // The shared executor checks foreground before and after
-                // game-specific validation, then owns the only SendInput.
-                // No input, cooldown or rotation bookkeeping is performed
-                // when the policy denies an action or a read becomes stale.
-                let keys = self.ready_keys()?;
-                let action = ActionRequest::flask(slot, keys[slot]);
-                let mut paused = false;
-                let dispatched = dispatch(process, action, || {
-                    // Keep the proven PoE1 pre-send checks: live player
-                    // identity/vitals, chat, Quicksilver animation and
-                    // re-running the current flask decision/active effects.
-                    let new_vitals = session.poe1_verify_vitals(process)?;
-                    let chat = session.poe1_chat_active(process)?;
-                    if chat || new_vitals.health.current <= 0 {
-                        paused = true;
-                        return Ok(None);
-                    }
-
-                    let quicksilver_motion_ok = if moving_ms > 0
-                        && flasks.slots[slot]
-                            .as_ref()
-                            .is_some_and(|flask| flask.flask_type == FlaskType::Quicksilver)
-                    {
-                        quicksilver_ready
-                            && session.poe1_verify_animation(process).ok() == Some(RUN_ANIMATION_ID)
-                    } else {
-                        true
-                    };
-                    if !quicksilver_motion_ok {
-                        self.run_tracker.reset();
-                    }
-                    let mut effects = session.poe1_effects(process)?.clone();
-                    self.activation_guard
-                        .apply_to(started, new_vitals, &flasks, &mut effects);
-                    let still_selected = choose_action_rotating_guarded(
-                        config,
-                        new_vitals,
-                        &flasks,
-                        &effects,
-                        quicksilver_ready,
-                        proximity.as_ref(),
-                        &self.rotation,
-                        !self.activation_guard.life_input_pending(),
-                    ) == Some(slot);
-                    if quicksilver_motion_ok && still_selected && !blocks_grace_period(&effects) {
-                        Ok(Some(new_vitals))
-                    } else {
-                        Ok(None)
-                    }
-                });
-
-                match dispatched {
-                    Ok(Dispatch::Sent {
-                        validated: new_vitals,
-                        sent_at,
-                    }) => {
-                        if let Some(flask) = &flasks.slots[slot] {
-                            self.activation_guard.mark(
-                                slot,
-                                flask.flask_type,
-                                sent_at,
-                                new_vitals,
-                                &flasks,
-                            );
-                            self.rotation.record(slot, flask.flask_type);
-                            println!(
-                                "{} flask (slot {}) -> {} | charges {} | effective cost {}",
-                                flask.flask_type.name(),
-                                slot + 1,
-                                keys[slot].label(),
-                                flask.current_charges,
-                                flask.effective_per_use.unwrap_or_default()
-                            );
-                        }
-                    }
-                    Ok(Dispatch::Skipped) if paused || !is_process_foreground(process.pid()) => {
-                        return Ok(TickOutcome::Status("PAUSED (chat or focus)"));
-                    }
-                    Ok(Dispatch::Skipped) => {}
-                    Err(DispatchError::Validation(_)) => return Ok(TickOutcome::Refresh),
-                    Err(DispatchError::Input(error)) => return Err(error),
-                }
-            }
-            Ok(None) => {}
-            Err(error) => {
-                eprintln!("PoE1 state unavailable: {error}");
-                return Ok(TickOutcome::Refresh);
-            }
-        }
-        Ok(TickOutcome::Status("ARMED"))
+        let flasks = state.flasks(session, process)?.clone();
+        let mut effects = state.effects(session, process)?.clone();
+        self.activation_guard
+            .apply_to(started, state.vitals, &flasks, &mut effects);
+        let proximity = if needs_nearby_guarded(
+            config,
+            state.vitals,
+            &flasks,
+            &effects,
+            quicksilver_ready,
+            !self.activation_guard.life_input_pending(),
+        ) {
+            state.nearby(session, process).ok().cloned()
+        } else {
+            None
+        };
+        let chosen = choose_action_rotating_guarded(
+            config,
+            state.vitals,
+            &flasks,
+            &effects,
+            quicksilver_ready,
+            proximity.as_ref(),
+            &self.rotation,
+            !self.activation_guard.life_input_pending(),
+        );
+        Ok(chosen.map(|slot| FlaskCandidate {
+            slot,
+            flasks,
+            proximity,
+            quicksilver_ready,
+            moving_ms,
+        }))
     }
 
-    fn tick_molten_shell(
+    fn send_flask(
         &mut self,
         process: &Process,
         session: &mut GameSession,
         config: &Config,
         started: Instant,
+        preflight: &Preflight,
+        candidate: FlaskCandidate,
     ) -> io::Result<TickOutcome> {
-        let key = match self.skill_key {
-            Some(key) => key,
-            None => return Ok(TickOutcome::Status("ARMED")),
-        };
-        // Config key collisions are detected against the game's current
-        // bindings. A collision disables ONLY the skill path.
-        if let BindingState::Ready(flasks) = self.bindings.current() {
-            if flasks.contains(&key) {
-                return Ok(TickOutcome::Status("ARMED"));
-            }
-        }
-        if session.poe1_chat_active(process)? {
-            return Ok(TickOutcome::Status("PAUSED (chat or focus)"));
-        }
-        let effects = session.poe1_effects(process)?;
-        if blocks_grace_period(effects)
-            || effects.effects.iter().any(|effect| {
-                effect.name == super::skill_rules::MOLTEN_SHELL_BUFF
-                    && (!effect.time_left.is_finite() || effect.time_left >= 0.0)
-            })
+        let slot = candidate.slot;
+        let key = self.flask_key(slot)?;
+        let quicksilver_motion_ok = if candidate.moving_ms > 0
+            && candidate.flasks.slots[slot]
+                .as_ref()
+                .is_some_and(|flask| flask.flask_type == FlaskType::Quicksilver)
         {
+            candidate.quicksilver_ready
+                && session.poe1_verify_animation(process).ok() == Some(RUN_ANIMATION_ID)
+        } else {
+            true
+        };
+        if !quicksilver_motion_ok {
+            self.run_tracker.reset();
+        }
+        let mut effects = preflight.effects.clone();
+        self.activation_guard
+            .apply_to(started, preflight.vitals, &candidate.flasks, &mut effects);
+        let still_selected = choose_action_rotating_guarded(
+            config,
+            preflight.vitals,
+            &candidate.flasks,
+            &effects,
+            candidate.quicksilver_ready,
+            candidate.proximity.as_ref(),
+            &self.rotation,
+            !self.activation_guard.life_input_pending(),
+        ) == Some(slot);
+        if !quicksilver_motion_ok || !still_selected {
             return Ok(TickOutcome::Status("ARMED"));
         }
 
-        // This reader is used only after Life/buff/attempt checks succeed.
-        let readiness = match session.poe1_molten_shell(process) {
-            Ok(value) => value,
-            Err(error) => {
-                // Skill-only reads must fail closed without stopping healthy flask rules.
-                self.skill_attempt.defer(started);
-                eprintln!("PoE1 Molten Shell state unavailable: {error}");
-                return Ok(TickOutcome::Status("ARMED"));
-            }
-        };
-        let vitals = session.vitals(process)?;
-        if evaluate_molten_shell(
-            vitals,
-            session.poe1_effects(process)?,
-            Some(readiness),
-            config.poe1.skills.molten_shell.threshold_percent,
-        ) != MoltenShellDecision::Eligible
-        {
-            return Ok(TickOutcome::Status("ARMED"));
-        }
-
-        let mut paused = false;
-        let mut skill_error = None;
-        let dispatched = dispatch(process, ActionRequest::skill(key), || {
-            let fresh_vitals = session.poe1_verify_vitals(process)?;
-            if fresh_vitals.health.current <= 0 || session.poe1_chat_active(process)? {
-                paused = true;
-                return Ok(None);
-            }
-            let fresh_effects = session.poe1_verify_effects(process)?;
-            if blocks_grace_period(&fresh_effects) {
-                return Ok(None);
-            }
-            let fresh_readiness = match session.poe1_verify_molten_shell(process) {
-                Ok(value) => value,
-                Err(error) => {
-                    skill_error = Some(error);
-                    return Ok(None);
+        match dispatch(process, ActionRequest::flask(slot, key), || {
+            Ok(Some(preflight.vitals))
+        }) {
+            Ok(Dispatch::Sent { validated, sent_at }) => {
+                if let Some(flask) = &candidate.flasks.slots[slot] {
+                    self.activation_guard.mark(
+                        slot,
+                        flask.flask_type,
+                        sent_at,
+                        validated,
+                        &candidate.flasks,
+                    );
+                    self.rotation.record(slot, flask.flask_type);
+                    println!(
+                        "{} flask (slot {}) -> {} | charges {} | effective cost {}",
+                        flask.flask_type.name(),
+                        slot + 1,
+                        key.label(),
+                        flask.current_charges,
+                        flask.effective_per_use.unwrap_or_default()
+                    );
                 }
-            };
-            if evaluate_molten_shell(
-                fresh_vitals,
-                &fresh_effects,
-                Some(fresh_readiness),
-                config.poe1.skills.molten_shell.threshold_percent,
-            ) == MoltenShellDecision::Eligible
-            {
-                Ok(Some(()))
-            } else {
-                Ok(None)
             }
-        });
-
-        match dispatched {
-            Ok(Dispatch::Sent { sent_at, .. }) => {
-                self.skill_attempt.mark(sent_at);
-                println!("Molten Shell -> {}", key.label());
-            }
-            Ok(Dispatch::Skipped) if paused || !is_process_foreground(process.pid()) => {
+            Ok(Dispatch::Skipped) if !is_process_foreground(process.pid()) => {
                 return Ok(TickOutcome::Status("PAUSED (chat or focus)"));
             }
-            Ok(Dispatch::Skipped) => {
-                if let Some(error) = skill_error {
-                    self.skill_attempt.defer(started);
-                    eprintln!("PoE1 Molten Shell verification unavailable: {error}");
-                }
-            }
+            Ok(Dispatch::Skipped) => {}
             Err(DispatchError::Validation(_)) => return Ok(TickOutcome::Refresh),
-            Err(DispatchError::Input(error)) => {
-                // A failed skill input must not terminate otherwise healthy flask use.
-                self.skill_attempt.defer(started);
-                eprintln!("PoE1 Molten Shell input failed: {error}");
-            }
+            Err(DispatchError::Input(error)) => return Err(error),
         }
         Ok(TickOutcome::Status("ARMED"))
-    }
-
-    fn ready_keys(&self) -> io::Result<[crate::input::KeyBinding; 5]> {
-        match self.bindings.current() {
-            BindingState::Ready(keys) => Ok(*keys),
-            BindingState::Unavailable(_) => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "PoE1 bindings changed during decision",
-            )),
-        }
     }
 }
 
@@ -470,14 +463,5 @@ fn binding_label(state: &BindingState) -> String {
                 .join(", ")
         ),
         BindingState::Unavailable(error) => format!("PoE1 bindings unavailable: {error}"),
-    }
-}
-
-fn configured_skill_key(config: &Config) -> io::Result<Option<KeyBinding>> {
-    let shell = &config.poe1.skills.molten_shell;
-    if shell.enabled {
-        shell.binding().map(Some)
-    } else {
-        Ok(None)
     }
 }

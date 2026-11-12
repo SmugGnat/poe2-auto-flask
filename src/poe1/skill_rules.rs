@@ -63,6 +63,27 @@ pub fn preconditions_met(rule: &SkillRule, vitals: LiveVitals) -> bool {
     })
 }
 
+/// Only observations already in this tick's snapshot are checked here.
+/// Expensive Actor skill reads are not requested if these conditions fail.
+pub fn observations_allow(
+    rule: &SkillRule,
+    vitals: LiveVitals,
+    effects: &EffectsSnapshot,
+) -> bool {
+    let max = vitals.health.usable_max();
+    if vitals.health.current <= 0 || max <= 0 || vitals.health.current > max {
+        return false;
+    }
+    rule.conditions.iter().all(|condition| match *condition {
+        Condition::LifeAtOrBelow(threshold) => life_at_or_below(vitals, threshold),
+        Condition::BuffAbsent(name) => !effects.effects.iter().any(|effect| {
+            effect.name == name
+                && (!effect.time_left.is_finite() || effect.time_left >= 0.0)
+        }),
+        Condition::SkillUsable => true,
+    })
+}
+
 pub fn evaluate(
     rule: &SkillRule,
     vitals: LiveVitals,
