@@ -59,7 +59,7 @@ mod tests {
                 current,
                 total: 100,
                 reserved_flat: 0,
-                reserved_percent: 0,
+                reserved_fraction: 0,
             },
             mana: None,
             energy_shield: None,
