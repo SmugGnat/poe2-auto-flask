@@ -146,9 +146,14 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                     );
                     // The debug reader shares one Actor pass for both actual
                     // presets, even when only one is equipped.
-                    let skills = session.poe1_skills(process, &[SkillId::MoltenShell, SkillId::BloodRage]);
-                    let skill = skills.as_ref().map(|snapshot| snapshot[&SkillId::MoltenShell]);
-                    let blood_rage = skills.as_ref().map(|snapshot| snapshot[&SkillId::BloodRage]);
+                    let skills =
+                        session.poe1_skills(process, &[SkillId::MoltenShell, SkillId::BloodRage]);
+                    let skill = skills
+                        .as_ref()
+                        .map(|snapshot| snapshot[&SkillId::MoltenShell]);
+                    let blood_rage = skills
+                        .as_ref()
+                        .map(|snapshot| snapshot[&SkillId::BloodRage]);
                     let rule = evaluate(
                         &diagnostic_rule,
                         vitals,
