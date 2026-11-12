@@ -6,7 +6,7 @@ use std::io;
 use serde::Deserialize;
 
 use super::types::FlaskType;
-use crate::config::{flask_summary, invalid, Config};
+use crate::config::{invalid, Config, FlaskConfig};
 use crate::input::KeyBinding;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -231,77 +231,91 @@ impl Default for NearbyRule {
     }
 }
 
+/// Startup and hot-reload status use one compact, grouped layout.
+/// Each utility's gates are displayed with that utility, never as a
+/// separate repeated section.
 impl Config {
     pub fn poe1_summary(&self) -> String {
-        let enabled = crate::poe1::types::UTILITY_TYPES
-            .into_iter()
-            .filter(|kind| self.poe1.utility.enabled(*kind))
-            .map(FlaskType::name)
-            .collect::<Vec<_>>();
-        let base = format!(
-            "{} | {} | Utility {} | Quicksilver movement {} | Hideout {}",
-            flask_summary("Life", &self.health),
-            flask_summary("Mana", &self.mana),
-            if enabled.is_empty() {
-                "OFF".to_string()
-            } else {
-                enabled.join(", ")
-            },
-            if self.poe1.quicksilver_min_run_ms == 0 {
-                "OFF".to_string()
-            } else {
-                format!("{}ms", self.poe1.quicksilver_min_run_ms)
-            },
-            if self.general.enable_in_hideout {
-                "ON"
-            } else {
-                "OFF"
-            },
-        );
-        let rules = self
-            .poe1
-            .nearby
-            .iter()
-            .filter(|(kind, rule)| rule.enabled && self.poe1.utility.enabled(**kind))
-            .map(|(kind, rule)| {
-                format!(
-                    "{} >= {} {:?}+ within {}",
-                    kind.name(),
+        let mut flasks = Vec::new();
+        for kind in crate::poe1::types::UTILITY_TYPES {
+            if !self.poe1.utility.enabled(kind) {
+                continue;
+            }
+
+            let mut gates = Vec::new();
+            if kind == FlaskType::Quicksilver && self.poe1.quicksilver_min_run_ms != 0 {
+                gates.push(format!("run >={}ms", self.poe1.quicksilver_min_run_ms));
+            }
+            if let Some(rule) = self.poe1.nearby.get(&kind).filter(|rule| rule.enabled) {
+                gates.push(nearby_summary(
                     rule.minimum_count,
                     rule.minimum_rarity,
-                    rule.radius
-                )
-            })
-            .collect::<Vec<_>>();
-        let base = if rules.is_empty() {
-            base
-        } else {
-            format!("{base} | Nearby {}", rules.join(", "))
-        };
-        let mut base = base;
+                    rule.radius,
+                ));
+            }
+            flasks.push(summary_entry(kind.name(), &gates));
+        }
+
+        let mut skills = Vec::new();
         let shell = &self.poe1.skills.molten_shell;
         if shell.enabled {
-            base.push_str(&format!(
-                " | Molten Shell <= {}% ({})",
-                shell.threshold_percent, shell.key
+            skills.push(summary_entry(
+                "Molten Shell",
+                &[format!("{}, Life <={}%", shell.key, shell.threshold_percent)],
             ));
         }
         let blood = &self.poe1.skills.blood_rage;
         if blood.enabled {
-            let nearby = if blood.require_nearby_monsters {
-                format!(
-                    "{} within {}",
-                    blood.nearby_minimum_count, blood.nearby_radius
-                )
-            } else {
-                "OFF".to_string()
-            };
-            base.push_str(&format!(
-                " | Blood Rage >= {}% ({}, nearby {})",
-                blood.min_life_percent, blood.key, nearby
-            ));
+            let mut gates = vec![
+                blood.key.clone(),
+                format!("Life >={}%", blood.min_life_percent),
+            ];
+            if blood.require_nearby_monsters {
+                gates.push(nearby_summary(
+                    blood.nearby_minimum_count,
+                    MinimumRarity::Normal,
+                    blood.nearby_radius,
+                ));
+            }
+            skills.push(summary_entry("Blood Rage", &gates));
         }
-        base
+
+        format!(
+            "Options : Hideout {}\nLife    : {}\nMana    : {}\n{}\n{}",
+            if self.general.enable_in_hideout { "ON" } else { "OFF" },
+            threshold_summary(&self.health),
+            threshold_summary(&self.mana),
+            summary_group("Flasks", &flasks),
+            summary_group("Skills", &skills),
+        )
+    }
+}
+
+fn threshold_summary(config: &FlaskConfig) -> String {
+    if config.enabled {
+        format!("<={}%", config.threshold_percent)
+    } else {
+        "OFF".to_string()
+    }
+}
+
+fn nearby_summary(count: u16, rarity: MinimumRarity, radius: u16) -> String {
+    format!("nearby >={count} {rarity:?}+ @{radius}")
+}
+
+fn summary_entry(name: &str, details: &[String]) -> String {
+    if details.is_empty() {
+        name.to_string()
+    } else {
+        format!("{name} [{}]", details.join(", "))
+    }
+}
+
+fn summary_group(label: &str, entries: &[String]) -> String {
+    if entries.is_empty() {
+        format!("{label:<7} : OFF")
+    } else {
+        format!("{label:<7} : {}", entries.join("\n          "))
     }
 }
 
@@ -337,5 +351,64 @@ impl Poe1Config {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::*;
+
+    #[test]
+    fn grouped_status_keeps_all_conditions_with_their_owners() {
+        let mut config = Config::default();
+        config.health.threshold_percent = 50.0;
+        config.mana.threshold_percent = 25.0;
+        config.poe1.utility.quicksilver = true;
+        config.poe1.utility.granite = true;
+        config.poe1.quicksilver_min_run_ms = 500;
+        config.poe1.nearby.insert(FlaskType::Granite, NearbyRule::default());
+        config.poe1.skills.molten_shell.enabled = true;
+        config.poe1.skills.molten_shell.key = "R".into();
+        config.poe1.skills.blood_rage.enabled = true;
+        config.poe1.skills.blood_rage.key = "T".into();
+
+        assert_eq!(
+            config.poe1_summary(),
+            "Options : Hideout OFF\n\
+Life    : <=50%\n\
+Mana    : <=25%\n\
+Flasks  : Quicksilver [run >=500ms]\n\
+          Granite [nearby >=1 Normal+ @60]\n\
+Skills  : Molten Shell [R, Life <=95%]\n\
+          Blood Rage [T, Life >=80%, nearby >=1 Normal+ @60]"
+        );
+    }
+
+    #[test]
+    fn grouped_status_only_shows_enabled_conditions_and_handles_empty_groups() {
+        let mut config = Config::default();
+        config.health.enabled = false;
+        config.mana.enabled = false;
+        config.general.enable_in_hideout = true;
+        config.poe1.quicksilver_min_run_ms = 500;
+        config.poe1.nearby.insert(FlaskType::Granite, NearbyRule::default());
+
+        assert_eq!(
+            config.poe1_summary(),
+            "Options : Hideout ON\nLife    : OFF\nMana    : OFF\nFlasks  : OFF\nSkills  : OFF"
+        );
+
+        config.poe1.utility.granite = true;
+        let rule = config.poe1.nearby.get_mut(&FlaskType::Granite).unwrap();
+        rule.minimum_count = 2;
+        rule.minimum_rarity = MinimumRarity::Magic;
+        rule.radius = 40;
+        config.poe1.skills.blood_rage.enabled = true;
+        config.poe1.skills.blood_rage.require_nearby_monsters = false;
+
+        assert_eq!(
+            config.poe1_summary(),
+            "Options : Hideout ON\nLife    : OFF\nMana    : OFF\nFlasks  : Granite [nearby >=2 Magic+ @40]\nSkills  : Blood Rage [T, Life >=80%]"
+        );
     }
 }
