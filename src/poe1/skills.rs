@@ -132,24 +132,25 @@ impl SkillCache {
             }
             let name = self.names.get(&row).expect("skill name was resolved");
             for &skill in &wanted {
-                if skill.matches_internal_name(name) {
-                    if found
-                        .insert(
-                            skill,
-                            (
-                                u32_at(&details, SKILL_DETAIL_ID),
-                                details[SKILL_DETAIL_CANNOT_USE] != 0,
-                            ),
-                        )
-                        .is_some()
-                    {
-                        // Duplicated matching entries may have different
-                        // cooldowns/bindings. Unknown must never mean usable.
-                        return Err(invalid(format!(
-                            "multiple {} skill entries found",
-                            skill.label()
-                        )));
-                    }
+                if !skill.matches_internal_name(name) {
+                    continue;
+                }
+                if found
+                    .insert(
+                        skill,
+                        (
+                            u32_at(&details, SKILL_DETAIL_ID),
+                            details[SKILL_DETAIL_CANNOT_USE] != 0,
+                        ),
+                    )
+                    .is_some()
+                {
+                    // Duplicated matching entries may have different
+                    // cooldowns/bindings. Unknown must never mean usable.
+                    return Err(invalid(format!(
+                        "multiple {} skill entries found",
+                        skill.label()
+                    )));
                 }
             }
         }
