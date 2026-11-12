@@ -19,8 +19,9 @@ use super::decision::{
 };
 use super::movement::{RunTracker, RUN_ANIMATION_ID};
 use super::rotation::FlaskRotation;
-use super::skill_rules::{evaluate_molten_shell, needs_molten_shell, MoltenShellDecision, SkillAttemptGuard};
-use super::skills::SkillReadiness;
+use super::skill_rules::{
+    evaluate_molten_shell, needs_molten_shell, MoltenShellDecision, SkillAttemptGuard,
+};
 use super::types::FlaskType;
 
 pub fn run(process: &Process, session: GameSession, manager: &mut ConfigManager) -> io::Result<()> {

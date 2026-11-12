@@ -215,25 +215,42 @@ mod tests {
     fn flask_and_skill_both_dispatch_without_consuming_the_other() {
         let sent = Cell::new(0);
         for action in [ActionRequest::flask(0, key()), ActionRequest::skill(key())] {
-            let result = dispatch_with(action, || true, || Ok(Some(())), |_| {
-                sent.set(sent.get() + 1);
-                Ok(())
-            })
+            let result = dispatch_with(
+                action,
+                || true,
+                || Ok(Some(())),
+                |_| {
+                    sent.set(sent.get() + 1);
+                    Ok(())
+                },
+            )
             .unwrap();
             assert!(matches!(result, Dispatch::Sent { .. }));
         }
         assert_eq!(sent.get(), 2);
         let mut called = false;
-        let ignored = dispatch_with(ActionRequest::flask(0, key()), || true, || Ok::<_, io::Error>(None::<()>), |_| {
-            called = true;
-            Ok(())
-        }).unwrap();
+        let ignored = dispatch_with(
+            ActionRequest::flask(0, key()),
+            || true,
+            || Ok::<_, io::Error>(None::<()>),
+            |_| {
+                called = true;
+                Ok(())
+            },
+        )
+        .unwrap();
         assert!(matches!(ignored, Dispatch::Skipped));
         assert!(!called);
-        let permitted = dispatch_with(ActionRequest::skill(key()), || true, || Ok(Some(())), |_| {
-            called = true;
-            Ok(())
-        }).unwrap();
+        let permitted = dispatch_with(
+            ActionRequest::skill(key()),
+            || true,
+            || Ok(Some(())),
+            |_| {
+                called = true;
+                Ok(())
+            },
+        )
+        .unwrap();
         assert!(matches!(permitted, Dispatch::Sent { .. }));
         assert!(called);
     }

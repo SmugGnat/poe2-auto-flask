@@ -509,10 +509,16 @@ radius = 60
         )
         .expect("valid Molten Shell config");
         assert!(parsed.poe1.skills.molten_shell.enabled);
-        assert_eq!(parsed.poe1.skills.molten_shell.binding().unwrap().vk, u16::from(b'Q'));
+        assert_eq!(
+            parsed.poe1.skills.molten_shell.binding().unwrap().vk,
+            u16::from(b'Q')
+        );
         for key in ["F11", "Ctrl+Q", "Mouse1", "F13", ""] {
             let text = format!("[poe1.skills.molten_shell]\nenabled = true\nkey = \"{key}\"\n");
-            assert!(Config::parse(Path::new("config.toml"), &text).is_err(), "{key}");
+            assert!(
+                Config::parse(Path::new("config.toml"), &text).is_err(),
+                "{key}"
+            );
         }
         for percent in [0, 100] {
             let text = format!("[poe1.skills.molten_shell]\nthreshold_percent = {percent}\n");

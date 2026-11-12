@@ -6,8 +6,8 @@ use std::io;
 use serde::Deserialize;
 
 use super::types::FlaskType;
-use crate::input::KeyBinding;
 use crate::config::{flask_summary, invalid, Config};
+use crate::input::KeyBinding;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
@@ -56,22 +56,30 @@ impl MoltenShellConfig {
                 let number = key
                     .strip_prefix('F')
                     .and_then(|rest| rest.parse::<u16>().ok())
-                    .ok_or_else(|| invalid("poe1.skills.molten_shell.key must be A-Z, 0-9 or F1-F12"))?;
+                    .ok_or_else(|| {
+                        invalid("poe1.skills.molten_shell.key must be A-Z, 0-9 or F1-F12")
+                    })?;
                 if !(1..=12).contains(&number) {
-                    return Err(invalid("poe1.skills.molten_shell.key must be A-Z, 0-9 or F1-F12"));
+                    return Err(invalid(
+                        "poe1.skills.molten_shell.key must be A-Z, 0-9 or F1-F12",
+                    ));
                 }
                 0x6F + number
             }
         };
         if vk == 0x7A {
-            return Err(invalid("poe1.skills.molten_shell.key cannot be F11 (arm toggle)"));
+            return Err(invalid(
+                "poe1.skills.molten_shell.key cannot be F11 (arm toggle)",
+            ));
         }
         KeyBinding::from_poe(vk, 0)
     }
 
     pub fn validate(&self) -> io::Result<()> {
         if !(1..=99).contains(&self.threshold_percent) {
-            return Err(invalid("poe1.skills.molten_shell.threshold_percent must be 1..=99"));
+            return Err(invalid(
+                "poe1.skills.molten_shell.threshold_percent must be 1..=99",
+            ));
         }
         self.binding()?;
         Ok(())
@@ -220,7 +228,10 @@ impl Config {
         };
         let shell = &self.poe1.skills.molten_shell;
         if shell.enabled {
-            format!("{base} | Molten Shell <= {}% ({})", shell.threshold_percent, shell.key)
+            format!(
+                "{base} | Molten Shell <= {}% ({})",
+                shell.threshold_percent, shell.key
+            )
         } else {
             base
         }
