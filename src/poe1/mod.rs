@@ -7,6 +7,7 @@ pub mod bindings;
 pub mod buffs;
 pub mod charge_cost;
 pub mod chat;
+pub mod config;
 pub mod debug;
 pub mod decision;
 pub mod flasks;

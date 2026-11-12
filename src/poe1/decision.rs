@@ -483,7 +483,7 @@ mod tests {
 
     #[test]
     fn rarity_thresholds_include_unique_bosses() {
-        use crate::config::{MinimumRarity, NearbyRule};
+        use crate::poe1::config::{MinimumRarity, NearbyRule};
         use crate::poe1::nearby::{NearbyMonster, Rarity};
         use std::time::Duration;
 
@@ -537,7 +537,7 @@ mod tests {
 
     #[test]
     fn count_radius_and_failed_scans_block_only_proximity_gated_flasks() {
-        use crate::config::{MinimumRarity, NearbyRule};
+        use crate::poe1::config::{MinimumRarity, NearbyRule};
         use crate::poe1::nearby::{NearbyMonster, Rarity};
         use std::time::Duration;
 
@@ -805,7 +805,7 @@ mod tests {
 
     #[test]
     fn outstanding_life_input_does_not_suppress_nearby_utility_scanning() {
-        use crate::config::NearbyRule;
+        use crate::poe1::config::NearbyRule;
         use crate::poe1::buffs::Effect;
         let (mut config, mut vitals, mut flasks, mut effects) = setup();
         config.poe1.utility.granite = true;
