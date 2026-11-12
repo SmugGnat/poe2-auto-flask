@@ -176,7 +176,7 @@ impl GameAutomationPolicy for Policy {
             self.run_tracker.reset();
         }
         if wants_skill {
-            let outcome = self.tick_molten_shell(process, session, config)?;
+            let outcome = self.tick_molten_shell(process, session, config, started)?;
             if outcome != TickOutcome::Status("ARMED") {
                 return Ok(outcome);
             }
@@ -345,6 +345,7 @@ impl Policy {
         process: &Process,
         session: &mut GameSession,
         config: &Config,
+        started: Instant,
     ) -> io::Result<TickOutcome> {
         let key = match self.skill_key {
             Some(key) => key,
@@ -371,7 +372,15 @@ impl Policy {
         }
 
         // This reader is used only after Life/buff/attempt checks succeed.
-        let readiness = session.poe1_molten_shell(process)?;
+        let readiness = match session.poe1_molten_shell(process) {
+            Ok(value) => value,
+            Err(error) => {
+                // Skill-only reads must fail closed without stopping healthy flask rules.
+                self.skill_attempt.defer(started);
+                eprintln!("PoE1 Molten Shell state unavailable: {error}");
+                return Ok(TickOutcome::Status("ARMED"));
+            }
+        };
         let vitals = session.vitals(process)?;
         if evaluate_molten_shell(
             vitals,
@@ -384,6 +393,7 @@ impl Policy {
         }
 
         let mut paused = false;
+        let mut skill_error = None;
         let dispatched = dispatch(process, ActionRequest::skill(key), || {
             let fresh_vitals = session.poe1_verify_vitals(process)?;
             if fresh_vitals.health.current <= 0 || session.poe1_chat_active(process)? {
@@ -394,7 +404,13 @@ impl Policy {
             if blocks_grace_period(&fresh_effects) {
                 return Ok(None);
             }
-            let fresh_readiness = session.poe1_verify_molten_shell(process)?;
+            let fresh_readiness = match session.poe1_verify_molten_shell(process) {
+                Ok(value) => value,
+                Err(error) => {
+                    skill_error = Some(error);
+                    return Ok(None);
+                }
+            };
             if evaluate_molten_shell(
                 fresh_vitals,
                 &fresh_effects,
@@ -416,9 +432,18 @@ impl Policy {
             Ok(Dispatch::Skipped) if paused || !is_process_foreground(process.pid()) => {
                 return Ok(TickOutcome::Status("PAUSED (chat or focus)"));
             }
-            Ok(Dispatch::Skipped) => {}
+            Ok(Dispatch::Skipped) => {
+                if let Some(error) = skill_error {
+                    self.skill_attempt.defer(started);
+                    eprintln!("PoE1 Molten Shell verification unavailable: {error}");
+                }
+            }
             Err(DispatchError::Validation(_)) => return Ok(TickOutcome::Refresh),
-            Err(DispatchError::Input(error)) => return Err(error),
+            Err(DispatchError::Input(error)) => {
+                // A failed skill input must not terminate otherwise healthy flask use.
+                self.skill_attempt.defer(started);
+                eprintln!("PoE1 Molten Shell input failed: {error}");
+            }
         }
         Ok(TickOutcome::Status("ARMED"))
     }

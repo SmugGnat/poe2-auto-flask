@@ -24,16 +24,23 @@ pub enum MoltenShellDecision {
 #[derive(Debug, Default)]
 pub struct SkillAttemptGuard {
     last_sent: Option<Instant>,
+    retry_after: Option<Instant>,
 }
 
 impl SkillAttemptGuard {
     pub fn ready(&self, now: Instant) -> bool {
         self.last_sent
             .is_none_or(|sent| now.saturating_duration_since(sent) >= MIN_ATTEMPT_GAP)
+            && self.retry_after.is_none_or(|at| now >= at)
     }
 
     pub fn mark(&mut self, sent_at: Instant) {
         self.last_sent = Some(sent_at);
+        self.retry_after = None;
+    }
+
+    pub fn defer(&mut self, now: Instant) {
+        self.retry_after = Some(now + MIN_ATTEMPT_GAP);
     }
 }
 
@@ -130,6 +137,9 @@ mod tests {
         guard.mark(at);
         assert!(!guard.ready(at + Duration::from_millis(100)));
         assert!(guard.ready(at + Duration::from_secs(1)));
+        guard.defer(at + Duration::from_secs(1));
+        assert!(!guard.ready(at + Duration::from_millis(1500)));
+        assert!(guard.ready(at + Duration::from_secs(2)));
     }
 
     #[test]
