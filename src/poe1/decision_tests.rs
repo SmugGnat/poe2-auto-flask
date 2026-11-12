@@ -33,7 +33,7 @@ fn setup() -> (Config, LiveVitals, FlaskSnapshot, EffectsSnapshot) {
             slots: std::array::from_fn(|_| None),
         },
         EffectsSnapshot {
-            slots_active: [false; SLOT_COUNT],
+            slots_active: [false; FLASK_SLOT_COUNT],
             effects: Vec::new(),
         },
     )

@@ -10,7 +10,7 @@ use super::{invalid, plausible_ptr, read_metadata, read_ptr, Probe};
 use crate::entity::resolve_component;
 use crate::process::Process;
 
-pub const SLOT_COUNT: usize = 5;
+pub const FLASK_SLOT_COUNT: usize = 5;
 const MAX_INVENTORIES: usize = 256;
 const MAX_CELLS: usize = 64;
 const MAX_CHARGES: i32 = 100_000;
@@ -35,7 +35,7 @@ impl FlaskSlot {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FlaskSnapshot {
-    pub slots: [Option<FlaskSlot>; SLOT_COUNT],
+    pub slots: [Option<FlaskSlot>; FLASK_SLOT_COUNT],
 }
 
 #[derive(Debug, Clone)]
@@ -51,7 +51,7 @@ struct CachedItem {
 #[derive(Debug, Default)]
 pub struct FlaskCache {
     inventory: Option<usize>,
-    slots: [Option<CachedItem>; SLOT_COUNT],
+    slots: [Option<CachedItem>; FLASK_SLOT_COUNT],
 }
 
 impl FlaskCache {
@@ -115,7 +115,7 @@ pub fn sample(
     let cells = (width as usize)
         .checked_mul(height as usize)
         .ok_or_else(|| invalid("PoE1 flask inventory size overflow"))?;
-    if !(SLOT_COUNT..=MAX_CELLS).contains(&cells) {
+    if !(FLASK_SLOT_COUNT..=MAX_CELLS).contains(&cells) {
         return Err(invalid("unexpected PoE1 flask inventory dimensions"));
     }
 
@@ -126,14 +126,14 @@ pub fn sample(
             "PoE1 flask inventory dimensions and ItemList disagree",
         ));
     }
-    let raw_slots = process.read_bytes(items_first, SLOT_COUNT * 8)?;
+    let raw_slots = process.read_bytes(items_first, FLASK_SLOT_COUNT * 8)?;
     // If Stats are temporarily unreadable, raw flask data remains available for
     // diagnostics but automation will not consider any cost to be trustworthy.
     let player_modifier = charge_cost::player_charge_modifier(process, probe.local_player).ok();
     let mut result = FlaskSnapshot {
         slots: std::array::from_fn(|_| None),
     };
-    for slot in 0..SLOT_COUNT {
+    for slot in 0..FLASK_SLOT_COUNT {
         let inventory_item = u64_at(&raw_slots, slot * 8) as usize;
         if inventory_item == 0 {
             cache.slots[slot] = None;

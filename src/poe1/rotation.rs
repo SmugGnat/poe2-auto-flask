@@ -1,13 +1,13 @@
 //! Deterministic, zero-allocation round-robin history across five physical slots.
 //! A type never needs its own configured slot. The least recently used eligible
 //! slot wins; unseen slots tie-break using remaining full uses and charge count.
-use super::flasks::SLOT_COUNT;
+use super::flasks::FLASK_SLOT_COUNT;
 use super::types::FlaskType;
 
 #[derive(Debug, Default)]
 pub struct FlaskRotation {
     next_sequence: u64,
-    last_used: [Option<(FlaskType, u64)>; SLOT_COUNT],
+    last_used: [Option<(FlaskType, u64)>; FLASK_SLOT_COUNT],
 }
 
 impl FlaskRotation {
@@ -18,7 +18,7 @@ impl FlaskRotation {
 
     /// Call only after successful SendInput.
     pub fn record(&mut self, slot: usize, kind: FlaskType) {
-        if slot < SLOT_COUNT {
+        if slot < FLASK_SLOT_COUNT {
             self.next_sequence = self.next_sequence.wrapping_add(1);
             if self.next_sequence == 0 {
                 // Extremely unlikely wraparound, but preserve ordering invariant.

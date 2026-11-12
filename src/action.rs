@@ -10,7 +10,8 @@ use std::time::Instant;
 use crate::input::{is_process_foreground, send_flask_key, KeyBinding};
 use crate::process::Process;
 
-pub const FLASK_SLOT_COUNT: usize = 5;
+/// Maximum number of flask slots any supported game can request.
+const MAX_FLASK_SLOTS: usize = 5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActionKind {
@@ -77,7 +78,7 @@ fn dispatch_with<T>(
     send: impl FnOnce(KeyBinding) -> io::Result<()>,
 ) -> Result<Dispatch<T>, DispatchError> {
     match action.kind {
-        ActionKind::Flask { slot } if slot < FLASK_SLOT_COUNT => {}
+        ActionKind::Flask { slot } if slot < MAX_FLASK_SLOTS => {}
         ActionKind::Flask { .. } => {
             return Err(DispatchError::Input(io::Error::new(
                 io::ErrorKind::InvalidInput,

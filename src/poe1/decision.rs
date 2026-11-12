@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::game_state::LiveVitals;
 
 use super::buffs::EffectsSnapshot;
-use super::flasks::{FlaskSnapshot, SLOT_COUNT};
+use super::flasks::{FlaskSnapshot, FLASK_SLOT_COUNT};
 use super::nearby::NearbySnapshot;
 use super::rotation::FlaskRotation;
 use super::types::{FlaskType, UTILITY_TYPES};
@@ -282,7 +282,7 @@ fn best_eligible_slot(
     rotation: Option<&FlaskRotation>,
     eligible: impl Fn(usize, &super::flasks::FlaskSlot) -> bool,
 ) -> Option<usize> {
-    (0..SLOT_COUNT)
+    (0..FLASK_SLOT_COUNT)
         .filter_map(|slot| {
             let state = flasks.slots[slot].as_ref()?;
             if state.flask_type != kind || !eligible(slot, state) {

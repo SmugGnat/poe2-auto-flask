@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use crate::game_state::LiveVitals;
 
 use super::buffs::EffectsSnapshot;
-use super::flasks::{FlaskSnapshot, SLOT_COUNT};
+use super::flasks::{FlaskSnapshot, FLASK_SLOT_COUNT};
 use super::types::FlaskType;
 
 pub const SETTLING_GUARD: Duration = Duration::from_millis(350);
@@ -25,7 +25,7 @@ struct RecoveryAttempt {
 
 #[derive(Debug, Default)]
 pub struct ActivationGuard {
-    last_sent: [Option<(FlaskType, Instant)>; SLOT_COUNT],
+    last_sent: [Option<(FlaskType, Instant)>; FLASK_SLOT_COUNT],
     life: Option<RecoveryAttempt>,
     mana: Option<RecoveryAttempt>,
 }

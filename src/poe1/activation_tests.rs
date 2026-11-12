@@ -37,7 +37,7 @@ fn setup() -> (Config, LiveVitals, FlaskSnapshot, EffectsSnapshot) {
     flasks.slots[1] = slot(FlaskType::Quicksilver, 80);
     flasks.slots[3] = slot(FlaskType::Life, 80);
     let effects = EffectsSnapshot {
-        slots_active: [false; SLOT_COUNT],
+        slots_active: [false; FLASK_SLOT_COUNT],
         effects: Vec::new(),
     };
     (config, vitals, flasks, effects)
@@ -51,7 +51,7 @@ fn choose(
     now: Instant,
 ) -> Option<usize> {
     let mut effects = EffectsSnapshot {
-        slots_active: [false; SLOT_COUNT],
+        slots_active: [false; FLASK_SLOT_COUNT],
         effects: Vec::new(),
     };
     guard.apply_to(now, vitals, flasks, &mut effects);
