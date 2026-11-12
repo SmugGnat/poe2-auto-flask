@@ -217,13 +217,14 @@ impl GameAutomationPolicy for Policy {
             None
         };
 
-        // Each rule is data: no skill-specific dispatch function or loop.
-        let mut skills = Vec::new();
+        // Only rules with passing cheap conditions enter the Actor request.
+        // A single scan resolves readiness for *all* requested skills.
+        let mut candidates = Vec::new();
+        let observed_effects = state.effects(session, process)?.clone();
         for rule in &self.skill_rules {
-            if !self.guard_ready(rule.id, started) {
-                continue;
-            }
-            if !observations_allow(rule, state.vitals, state.effects(session, process)?) {
+            if !self.guard_ready(rule.id, started)
+                || !observations_allow(rule, state.vitals, &observed_effects)
+            {
                 continue;
             }
             if let BindingState::Ready(flask_keys) = self.bindings.current() {
@@ -231,33 +232,39 @@ impl GameAutomationPolicy for Policy {
                     continue;
                 }
             }
-            let readiness = if rule
-                .conditions
-                .iter()
-                .any(|condition| matches!(condition, Condition::SkillUsable))
-            {
-                match state.skill(session, process, rule.id) {
-                    Ok(value) => Some(value),
-                    Err(error) => {
-                        eprintln!("PoE1 {} state unavailable: {error}", rule.id.label());
-                        self.skill_attempts
-                            .entry(rule.id)
-                            .or_default()
-                            .defer(started);
-                        continue;
+            candidates.push(rule.clone());
+        }
+        let requested: Vec<SkillId> = candidates
+            .iter()
+            .filter(|rule| requires_skill_readiness(rule))
+            .map(|rule| rule.id)
+            .collect();
+        let statuses = if requested.is_empty() {
+            None
+        } else {
+            match state.skills(session, process, &requested) {
+                Ok(value) => Some(value.clone()),
+                Err(error) => {
+                    // All affected skill rules fail closed; flask candidates
+                    // remain valid and do not get delayed by this failure.
+                    eprintln!("PoE1 skill snapshot unavailable: {error}");
+                    for id in &requested {
+                        self.defer_skill(*id, started);
                     }
+                    None
                 }
-            } else {
-                None
-            };
-            if evaluate(
-                rule,
-                state.vitals,
-                state.effects(session, process)?,
-                readiness,
-            ) == RuleDecision::Eligible
+            }
+        };
+        let mut skills = Vec::new();
+        for rule in candidates {
+            let readiness = statuses
+                .as_ref()
+                .and_then(|all| all.get(&rule.id))
+                .copied();
+            if evaluate(&rule, state.vitals, &observed_effects, readiness)
+                == RuleDecision::Eligible
             {
-                skills.push(rule.clone());
+                skills.push(rule);
             }
         }
 
@@ -286,23 +293,30 @@ impl GameAutomationPolicy for Policy {
                 return Ok(outcome);
             }
         }
-        for rule in skills {
-            let readiness = if rule
-                .conditions
-                .iter()
-                .any(|condition| matches!(condition, Condition::SkillUsable))
-            {
-                match preflight.skill(session, process, rule.id) {
-                    Ok(value) => Some(value),
-                    Err(error) => {
-                        self.defer_skill(rule.id, started);
-                        eprintln!("PoE1 {} verification unavailable: {error}", rule.id.label());
-                        continue;
+        let requested: Vec<SkillId> = skills
+            .iter()
+            .filter(|rule| requires_skill_readiness(rule))
+            .map(|rule| rule.id)
+            .collect();
+        let fresh_statuses = if requested.is_empty() {
+            None
+        } else {
+            match preflight.skills(session, process, &requested) {
+                Ok(value) => Some(value.clone()),
+                Err(error) => {
+                    eprintln!("PoE1 skill preflight unavailable: {error}");
+                    for id in &requested {
+                        self.defer_skill(*id, started);
                     }
+                    None
                 }
-            } else {
-                None
-            };
+            }
+        };
+        for rule in skills {
+            let readiness = fresh_statuses
+                .as_ref()
+                .and_then(|all| all.get(&rule.id))
+                .copied();
             if evaluate(&rule, preflight.vitals, &preflight.effects, readiness)
                 != RuleDecision::Eligible
             {
@@ -455,6 +469,12 @@ impl Policy {
         }
         Ok(TickOutcome::Status("ARMED"))
     }
+}
+
+fn requires_skill_readiness(rule: &SkillRule) -> bool {
+    rule.conditions
+        .iter()
+        .any(|condition| matches!(condition, Condition::SkillUsable))
 }
 
 fn binding_label(state: &BindingState) -> String {
