@@ -1,14 +1,10 @@
 mod action;
 mod area;
-mod automation;
 mod bindings;
-mod buffs;
 mod config;
-mod debug;
 mod engine;
 mod entity;
 mod file_watch;
-mod flask_inventory;
 mod game;
 mod game_state;
 mod input;
@@ -22,9 +18,7 @@ use std::io;
 use std::thread;
 use std::time::Duration;
 
-use automation::run_auto;
-use config::{Config, ConfigManager, ConfigStartup};
-use debug::run_debug;
+use config::{ConfigManager, ConfigStartup};
 use game::Game;
 use platform::running_under_wine;
 use process::Process;
@@ -150,10 +144,9 @@ fn run(options: Options) -> io::Result<()> {
 
         match (mode, game) {
             (Mode::Auto, Game::Poe2) => {
-                print_auto_session_header(config_manager.current());
-                run_auto(&process, probe, &mut config_manager)?;
+                poe2::automation::run(&process, probe, &mut config_manager)?;
             }
-            (Mode::Debug, Game::Poe2) => run_debug(
+            (Mode::Debug, Game::Poe2) => poe2::debug::run(
                 &process,
                 probe.into_poe2_probe()?,
                 config_manager.current(),
@@ -252,9 +245,4 @@ fn print_config_startup(startup: &ConfigStartup) {
 fn print_wine_process_exit_notice(game: Game) {
     println!("{} exited.", game.name());
     println!("On Proton/Wine, restart the game first, then relaunch poe2-auto-flask.");
-}
-
-fn print_auto_session_header(config: &Config) {
-    println!("Connected to Path of Exile 2.");
-    println!("{}", config.summary());
 }

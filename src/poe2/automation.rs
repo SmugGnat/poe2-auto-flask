@@ -3,18 +3,19 @@
 use std::io;
 use std::time::{Duration, Instant};
 
-use crate::action::{dispatch, ActionRequest, Dispatch, DispatchError};
-use crate::area::{resolve_area_info, AreaInfo};
-use crate::bindings::{BindingManager, BindingReload, GameBindings};
-use crate::buffs::{resolve_flask_lock_probe, sample_flask_locks, FlaskLockProbe, FlaskLocks};
-use crate::config::{Config, ConfigManager, ConfigReload, FlaskConfig};
-use crate::engine::{GameAutomationPolicy, TickOutcome};
-use crate::flask_inventory::{
+use super::area::resolve_area_info;
+use super::bindings::{BindingManager, BindingReload, GameBindings};
+use super::buffs::{resolve_flask_lock_probe, sample_flask_locks, FlaskLockProbe, FlaskLocks};
+use super::flasks::{
     resolve_flask_inventory_probe, sample_flask_charges_fast, FlaskChargeCache,
     FlaskChargeSnapshot, FlaskChargeState, FlaskInventoryProbe,
 };
+use crate::action::{dispatch, ActionRequest, Dispatch, DispatchError};
+use crate::area::AreaInfo;
+use crate::config::{Config, ConfigManager, ConfigReload, FlaskConfig};
+use crate::engine::{GameAutomationPolicy, TickOutcome};
+use crate::game_state::VitalPool;
 use crate::input::KeyBinding;
-use crate::poe2::VitalPool;
 use crate::process::Process;
 use crate::session::GameSession;
 
@@ -123,7 +124,7 @@ impl Policy {
     }
 }
 
-pub fn run_auto(
+pub fn run(
     process: &Process,
     session: GameSession,
     config_manager: &mut ConfigManager,
@@ -133,7 +134,9 @@ pub fn run_auto(
 }
 
 impl GameAutomationPolicy for Policy {
-    fn banner(&self, _config: &Config) {
+    fn banner(&self, config: &Config) {
+        println!("Connected to Path of Exile 2.");
+        println!("{}", config.poe2_summary());
         println!("{}", self.bindings.current().summary());
         println!("Press F11 to arm/disarm while PoE2 is focused. Ctrl+C exits.\n");
     }
@@ -141,7 +144,7 @@ impl GameAutomationPolicy for Policy {
     fn on_config_reload(&mut self, event: ConfigReload, config: &Config) {
         match event {
             ConfigReload::Unchanged => {}
-            ConfigReload::Reloaded => println!("Config reloaded: {}", config.summary()),
+            ConfigReload::Reloaded => println!("Config reloaded: {}", config.poe2_summary()),
             ConfigReload::Removed => {
                 println!("Config: config.toml removed; keeping previous settings.");
             }
@@ -411,7 +414,7 @@ fn flask_has_usable_charges(
 #[cfg(test)]
 mod tests {
     use super::{ci_like_defense, player_is_dead, FlaskState};
-    use crate::poe2::VitalPool;
+    use crate::game_state::VitalPool;
 
     fn pool(current: i32, total: i32) -> VitalPool {
         VitalPool {

@@ -1,77 +1,17 @@
+//! Validated read-only PoE2 memory reader and bounded offset fallback.
 use std::collections::HashSet;
 use std::io;
 
-pub mod adapter;
-
+use super::layout::prioritized_offsets;
+use super::offsets::*;
 use crate::entity::resolve_component;
+use crate::game_state::{LiveVitals, VitalPool};
 use crate::process::{PeSection, Process};
-
-// GameStates global-slot signature. Immediate operands after the RIP-relative reference are
-// wildcarded; the stable post-call instructions keep the pattern unique.
-const GAME_STATE_PATTERN: [Option<u8>; 31] = [
-    Some(0x48),
-    Some(0x39),
-    Some(0x2D),
-    None,
-    None,
-    None,
-    None,
-    Some(0x0F),
-    Some(0x85),
-    None,
-    None,
-    None,
-    None,
-    Some(0xB9),
-    None,
-    None,
-    None,
-    None,
-    Some(0xE8),
-    None,
-    None,
-    None,
-    None,
-    Some(0x48),
-    Some(0x8B),
-    Some(0xF8),
-    Some(0x48),
-    Some(0x89),
-    Some(0x44),
-    Some(0x24),
-    Some(0x50),
-];
-
-const GAME_STATE_CURRENT_STATE_PTR: usize = 0x08;
-const GAME_STATE_STATES: usize = 0x48;
-const GAME_STATE_SLOT_STRIDE: usize = 0x10;
-const GAME_STATE_SLOT_COUNT: usize = 12;
-
-// Primary offsets are validated before use. Narrow fallback searches tolerate minor layout drift.
-const IN_GAME_STATE_AREA_INSTANCE: usize = 0x2A0;
-const AREA_INSTANCE_LOCAL_PLAYER: usize = 0x5D0;
-
-const ENTITY_DETAILS_PTR: usize = 0x08;
-const ENTITY_DETAILS_NAME: usize = 0x08;
-
-const LIFE_HEALTH: usize = 0x1B0;
-const LIFE_MANA: usize = 0x208;
-const LIFE_ENERGY_SHIELD: usize = 0x248;
-
-const VITAL_RESERVED_FLAT: usize = 0x10;
-const VITAL_RESERVED_FRACTION: usize = 0x14;
-const VITAL_TOTAL: usize = 0x2C;
-const VITAL_CURRENT: usize = 0x30;
-const VITAL_READ_LEN: usize = VITAL_CURRENT + 4 - VITAL_RESERVED_FLAT;
 
 const MAX_METADATA_CHARS: usize = 256;
 
-// Compatibility re-export during the adapter migration. The canonical
-// definitions now live in game_state, not in a PoE2-specific memory parser.
-pub use crate::game_state::{LiveVitals, VitalPool};
-
 #[derive(Debug)]
-pub struct VitalsProbe {
+pub struct Probe {
     pub text_section: PeSection,
     pub aob_match_count: usize,
     pub game_state_slot: usize,
@@ -91,7 +31,7 @@ pub struct VitalsProbe {
     pub energy_shield: Option<VitalPool>,
 }
 
-pub fn probe_vitals(process: &Process) -> io::Result<VitalsProbe> {
+pub fn probe(process: &Process) -> io::Result<Probe> {
     let text_section = process.find_pe_section(".text")?;
     let matches =
         process.scan_pattern(text_section.address, text_section.size, &GAME_STATE_PATTERN)?;
@@ -121,9 +61,9 @@ pub fn probe_vitals(process: &Process) -> io::Result<VitalsProbe> {
 }
 
 // Re-resolve after an area or player transition without rescanning the executable section.
-pub fn refresh_vitals(process: &Process, previous: &VitalsProbe) -> io::Result<VitalsProbe> {
+pub fn refresh(process: &Process, previous: &Probe) -> io::Result<Probe> {
     let Some(game_state) = read_ptr(process, previous.game_state_slot) else {
-        return probe_vitals(process);
+        return probe(process);
     };
 
     match probe_from_game_state_root(
@@ -136,7 +76,7 @@ pub fn refresh_vitals(process: &Process, previous: &VitalsProbe) -> io::Result<V
         Ok(probe) => Ok(probe),
         Err(error) => {
             if read_ptr(process, previous.game_state_slot).is_none() {
-                probe_vitals(process)
+                probe(process)
             } else {
                 Err(error)
             }
@@ -146,7 +86,7 @@ pub fn refresh_vitals(process: &Process, previous: &VitalsProbe) -> io::Result<V
 
 // Area and player identity checks make stale pointers fail closed. Each VitalStruct is read in one
 // compact block instead of several separate process reads.
-pub fn sample_vitals(process: &Process, probe: &VitalsProbe) -> io::Result<LiveVitals> {
+pub fn sample_vitals(process: &Process, probe: &Probe) -> io::Result<LiveVitals> {
     let area_instance = read_ptr(process, probe.in_game_state + probe.area_instance_offset)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "AreaInstance is unavailable"))?;
     if area_instance != probe.area_instance {
@@ -221,7 +161,7 @@ fn probe_from_game_state_match(
     instruction: usize,
     aob_match_count: usize,
     text_section: PeSection,
-) -> io::Result<VitalsProbe> {
+) -> io::Result<Probe> {
     let displacement = process.read_i32(instruction + 3)? as i64;
     let game_state_slot = add_signed(instruction + 7, displacement)?;
     let game_state = read_ptr(process, game_state_slot).ok_or_else(|| {
@@ -246,7 +186,7 @@ fn probe_from_game_state_root(
     game_state: usize,
     aob_match_count: usize,
     text_section: PeSection,
-) -> io::Result<VitalsProbe> {
+) -> io::Result<Probe> {
     let states = in_game_state_candidates(process, game_state);
     if states.is_empty() {
         return Err(io::Error::new(
@@ -332,7 +272,7 @@ fn try_player_chain(
     in_game_state: usize,
     area_instance_offset: usize,
     local_player_offset: usize,
-) -> Option<VitalsProbe> {
+) -> Option<Probe> {
     let area_instance = read_ptr(process, in_game_state + area_instance_offset)?;
     let local_player = read_ptr(process, area_instance + local_player_offset)?;
     let metadata = read_metadata(process, local_player)?;
@@ -347,7 +287,7 @@ fn try_player_chain(
     let energy_shield =
         resolve_vital_offset_allow_zero(process, life_component, LIFE_ENERGY_SHIELD);
 
-    Some(VitalsProbe {
+    Some(Probe {
         text_section: text_section.clone(),
         aob_match_count,
         game_state_slot,
@@ -501,33 +441,6 @@ fn add_signed(base: usize, displacement: i64) -> io::Result<usize> {
         ));
     }
     Ok(value as usize)
-}
-
-fn prioritized_offsets(center: usize, start: usize, end: usize, step: usize) -> Vec<usize> {
-    let mut offsets = Vec::new();
-    if center >= start && center <= end {
-        offsets.push(center);
-    }
-
-    let mut distance = step;
-    while center.saturating_sub(distance) >= start || center.saturating_add(distance) <= end {
-        if let Some(lower) = center.checked_sub(distance) {
-            if lower >= start && lower <= end {
-                offsets.push(lower);
-            }
-        }
-        if let Some(upper) = center.checked_add(distance) {
-            if upper >= start && upper <= end {
-                offsets.push(upper);
-            }
-        }
-        distance = match distance.checked_add(step) {
-            Some(next) => next,
-            None => break,
-        };
-    }
-
-    offsets
 }
 
 #[cfg(test)]

@@ -1,25 +1,15 @@
+//! PoE2-specific active effects, lock probes and debug buff scanning.
 use std::collections::HashMap;
 use std::io;
 
+use super::offsets::buffs::*;
+use super::{Probe, FLASK_SLOT_COUNT};
 use crate::entity::resolve_component;
-use crate::poe2::VitalsProbe;
 use crate::process::Process;
 
-const ENTITY_ID: usize = 0x88;
-
-const BUFFS_STATUS_EFFECT_VECTOR: usize = 0x160;
 const MAX_STATUS_EFFECTS: usize = 512;
 
-const STATUS_BUFF_DEFINITION_PTR: usize = 0x08;
-const STATUS_TOTAL_TIME: usize = 0x18;
-const STATUS_TIME_LEFT: usize = 0x1C;
-const STATUS_SOURCE_ENTITY_ID: usize = 0x28;
-const STATUS_FLASK_SLOT: usize = 0x42;
-
-const BUFF_DEFINITION_NAME_PTR: usize = 0x00;
-const BUFF_DEFINITION_TYPE: usize = 0x67;
 const MAX_BUFF_NAME_CHARS: usize = 128;
-const POE2_FLASK_SLOT_COUNT: usize = 2;
 
 // Auto mode reads one contiguous block containing every status field it needs.
 const FAST_STATUS_START: usize = STATUS_BUFF_DEFINITION_PTR;
@@ -58,7 +48,7 @@ pub struct FlaskProbe {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FlaskLocks {
-    pub slots: [bool; POE2_FLASK_SLOT_COUNT],
+    pub slots: [bool; FLASK_SLOT_COUNT],
 }
 
 /// Caches definition classifications for the current player chain.
@@ -69,7 +59,7 @@ pub struct FlaskLockProbe {
     definition_cache: HashMap<usize, bool>,
 }
 
-pub fn resolve_flask_probe(process: &Process, vitals: &VitalsProbe) -> io::Result<FlaskProbe> {
+pub fn resolve_flask_probe(process: &Process, vitals: &Probe) -> io::Result<FlaskProbe> {
     let (player_id, buffs_component) = resolve_player_buffs(process, vitals)?;
     let probe = FlaskProbe {
         local_player: vitals.local_player,
@@ -82,10 +72,7 @@ pub fn resolve_flask_probe(process: &Process, vitals: &VitalsProbe) -> io::Resul
     Ok(probe)
 }
 
-pub fn resolve_flask_lock_probe(
-    process: &Process,
-    vitals: &VitalsProbe,
-) -> io::Result<FlaskLockProbe> {
+pub fn resolve_flask_lock_probe(process: &Process, vitals: &Probe) -> io::Result<FlaskLockProbe> {
     let (player_id, buffs_component) = resolve_player_buffs(process, vitals)?;
     let mut probe = FlaskLockProbe {
         local_player: vitals.local_player,
@@ -99,7 +86,7 @@ pub fn resolve_flask_lock_probe(
     Ok(probe)
 }
 
-fn resolve_player_buffs(process: &Process, vitals: &VitalsProbe) -> io::Result<(u32, usize)> {
+fn resolve_player_buffs(process: &Process, vitals: &Probe) -> io::Result<(u32, usize)> {
     let player_id = read_u32(process, vitals.local_player + ENTITY_ID)?;
     if player_id == 0 || player_id == u32::MAX {
         return Err(io::Error::new(
@@ -134,7 +121,7 @@ pub fn sample_flask_locks(process: &Process, probe: &mut FlaskLockProbe) -> io::
     }
 
     let pointer_bytes = process.read_bytes(first, count * 8)?;
-    let mut slots = [false; POE2_FLASK_SLOT_COUNT];
+    let mut slots = [false; FLASK_SLOT_COUNT];
 
     for pointer in pointer_bytes.chunks_exact(8) {
         let effect_ptr =
@@ -154,7 +141,7 @@ pub fn sample_flask_locks(process: &Process, probe: &mut FlaskLockProbe) -> io::
         let slot = read_i16_from(&bytes, STATUS_FLASK_SLOT - FAST_STATUS_START);
 
         if source != probe.player_id
-            || !(0..POE2_FLASK_SLOT_COUNT as i16).contains(&slot)
+            || !(0..FLASK_SLOT_COUNT as i16).contains(&slot)
             || !total_time.is_finite()
             || !time_left.is_finite()
             || !(0.05..=60.0).contains(&total_time)

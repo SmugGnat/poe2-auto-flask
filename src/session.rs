@@ -7,7 +7,7 @@ use crate::area::AreaInfo;
 use crate::game::Game;
 use crate::game_state::{GameSnapshot, GameStateReader, LiveVitals};
 use crate::poe1::{self, buffs::EffectsSnapshot, flasks::FlaskSnapshot};
-use crate::poe2::{self, VitalsProbe};
+use crate::poe2::{self, Probe as Poe2Probe};
 use crate::process::Process;
 
 enum Reader {
@@ -131,16 +131,16 @@ impl GameSession {
 
     /// Existing PoE2-specialized probes remain accessible for its proven
     /// automation policy; they migrate during the later engine stage.
-    pub fn poe2_probe(&self) -> io::Result<&VitalsProbe> {
+    pub fn poe2_probe(&self) -> io::Result<&Poe2Probe> {
         match &self.reader {
-            Reader::Poe2(adapter) => Ok(adapter.vitals_probe()),
+            Reader::Poe2(adapter) => Ok(adapter.current_probe()),
             Reader::Poe1(_) => Err(unsupported()),
         }
     }
 
-    pub fn into_poe2_probe(self) -> io::Result<VitalsProbe> {
+    pub fn into_poe2_probe(self) -> io::Result<Poe2Probe> {
         match self.reader {
-            Reader::Poe2(adapter) => Ok(adapter.into_vitals_probe()),
+            Reader::Poe2(adapter) => Ok(adapter.into_probe()),
             Reader::Poe1(_) => Err(unsupported()),
         }
     }

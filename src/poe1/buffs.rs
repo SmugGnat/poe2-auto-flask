@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 use std::io;
 
+use super::flasks::FLASK_SLOT_COUNT;
 use super::offsets::*;
 use super::{invalid, plausible_ptr, read_player_id, Probe};
 use crate::entity::resolve_component;
@@ -10,7 +11,6 @@ use crate::process::Process;
 const MAX_EFFECTS: usize = 512;
 const MAX_DEFINITIONS: usize = 2048;
 const MAX_NAME_UNITS: usize = 128;
-const SLOT_COUNT: usize = 5;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Effect {
@@ -22,7 +22,7 @@ pub struct Effect {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EffectsSnapshot {
-    pub slots_active: [bool; SLOT_COUNT],
+    pub slots_active: [bool; FLASK_SLOT_COUNT],
     pub effects: Vec<Effect>,
 }
 
@@ -77,7 +77,7 @@ pub fn sample(
     };
 
     let mut result = EffectsSnapshot {
-        slots_active: [false; SLOT_COUNT],
+        slots_active: [false; FLASK_SLOT_COUNT],
         effects: Vec::with_capacity(count.min(32)),
     };
     for pointer in pointers.chunks_exact(8) {
@@ -149,7 +149,7 @@ fn flask_slot(
 ) -> Option<usize> {
     (kind == 4
         && source == player
-        && (0..SLOT_COUNT as i16).contains(&slot)
+        && (0..FLASK_SLOT_COUNT as i16).contains(&slot)
         && total.is_finite()
         && remaining.is_finite()
         && total > 0.0

@@ -14,13 +14,6 @@ use windows_sys::Win32::System::Threading::{
 
 use crate::game::Game;
 
-const POE2_PROCESS_NAMES: &[&str] = &["PathOfExileSteam.exe", "PathOfExile.exe"];
-const POE1_PROCESS_NAMES: &[&str] = &[
-    "PathOfExileSteam.exe",
-    "PathOfExile.exe",
-    "PathOfExile_x64.exe",
-    "PathOfExile_KG.exe",
-];
 const SCAN_CHUNK_SIZE: usize = 1024 * 1024;
 const STILL_ACTIVE_EXIT_CODE: u32 = 259;
 
@@ -49,8 +42,8 @@ impl Process {
         // Executable names overlap between games. A game-specific memory probe
         // must succeed before any state is used; multiple candidates fail closed.
         let names = match game {
-            Game::Poe1 => POE1_PROCESS_NAMES,
-            Game::Poe2 => POE2_PROCESS_NAMES,
+            Game::Poe1 => crate::poe1::PROCESS_NAMES,
+            Game::Poe2 => crate::poe2::PROCESS_NAMES,
         };
         let pid = find_process_id(names)?;
         let handle = open_read_only(pid)?;

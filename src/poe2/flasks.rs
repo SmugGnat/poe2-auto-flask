@@ -1,24 +1,13 @@
+//! PoE2-specific two-slot flask inventory and charge sampling.
 use std::io;
 
+use super::offsets::flasks::*;
+use super::{Probe, FLASK_SLOT_COUNT};
 use crate::entity::resolve_component;
-use crate::poe2::VitalsProbe;
 use crate::process::Process;
 
-const PLAYER_INFO_LOCAL_PLAYER: usize = 0x20;
-const SERVER_DATA_PLAYER_DATA_VECTOR: usize = 0x48;
-const PLAYER_DATA_INVENTORIES_VECTOR: usize = 0x320;
-const INVENTORY_DESCRIPTOR_STRIDE: usize = 0x18;
 const FLASK_INVENTORY_ID: i32 = 12;
 
-const INVENTORY_TOTAL_BOXES: usize = 0x150;
-const INVENTORY_ITEM_LIST: usize = 0x170;
-const INVENTORY_ITEM_ENTITY: usize = 0x00;
-
-const CHARGES_INTERNAL_PTR: usize = 0x10;
-const CHARGES_CURRENT: usize = 0x18;
-const CHARGES_INTERNAL_PER_USE: usize = 0x18;
-
-const POE2_FLASK_SLOT_COUNT: usize = 2;
 const MAX_PLAYER_DATA_POINTERS: usize = 16;
 const MAX_INVENTORIES: usize = 256;
 const MAX_INVENTORY_CELLS: usize = 64;
@@ -41,7 +30,7 @@ impl FlaskChargeState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FlaskChargeSnapshot {
-    pub slots: [Option<FlaskChargeState>; POE2_FLASK_SLOT_COUNT],
+    pub slots: [Option<FlaskChargeState>; FLASK_SLOT_COUNT],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -67,18 +56,18 @@ struct CachedChargeComponent {
 /// Caches named Charges components while the corresponding inventory-item pointer is unchanged.
 #[derive(Debug, Default)]
 pub struct FlaskChargeCache {
-    slots: [Option<CachedChargeComponent>; POE2_FLASK_SLOT_COUNT],
+    slots: [Option<CachedChargeComponent>; FLASK_SLOT_COUNT],
 }
 
 impl FlaskChargeCache {
     pub fn clear(&mut self) {
-        self.slots = [None; POE2_FLASK_SLOT_COUNT];
+        self.slots = [None; FLASK_SLOT_COUNT];
     }
 }
 
 pub fn resolve_flask_inventory_probe(
     process: &Process,
-    vitals: &VitalsProbe,
+    vitals: &Probe,
 ) -> io::Result<FlaskInventoryProbe> {
     let player_info_offset = vitals
         .local_player_offset
@@ -161,7 +150,7 @@ pub fn resolve_flask_inventory_probe(
             "flask inventory dimensions imply {expected_cells} cells but ItemList contains {item_cells}"
         )));
     }
-    if item_cells < POE2_FLASK_SLOT_COUNT {
+    if item_cells < FLASK_SLOT_COUNT {
         return Err(invalid(format!(
             "PoE2 flask inventory exposes only {item_cells} cells; expected at least two"
         )));
@@ -219,7 +208,7 @@ pub fn sample_flask_charges(
         ));
     }
 
-    let mut slots: [Option<FlaskChargeState>; POE2_FLASK_SLOT_COUNT] = [None; 2];
+    let mut slots: [Option<FlaskChargeState>; FLASK_SLOT_COUNT] = [None; FLASK_SLOT_COUNT];
     for (slot, output) in slots.iter_mut().enumerate() {
         let inventory_item_raw = process.read_u64(item_first + slot * 8)? as usize;
         if inventory_item_raw == 0 {
@@ -290,15 +279,15 @@ pub fn sample_flask_charges_fast(
         MAX_INVENTORY_CELLS,
         "FlaskInventory.ItemList",
     )?;
-    if item_cells != probe.item_cells || item_cells < POE2_FLASK_SLOT_COUNT {
+    if item_cells != probe.item_cells || item_cells < FLASK_SLOT_COUNT {
         return Err(io::Error::new(
             io::ErrorKind::Interrupted,
             "flask inventory shape changed",
         ));
     }
 
-    let slot_pointers = process.read_bytes(item_first, POE2_FLASK_SLOT_COUNT * 8)?;
-    let mut slots: [Option<FlaskChargeState>; POE2_FLASK_SLOT_COUNT] = [None; 2];
+    let slot_pointers = process.read_bytes(item_first, FLASK_SLOT_COUNT * 8)?;
+    let mut slots: [Option<FlaskChargeState>; FLASK_SLOT_COUNT] = [None; FLASK_SLOT_COUNT];
 
     for (slot, output) in slots.iter_mut().enumerate() {
         let inventory_item = read_u64_from(&slot_pointers, slot * 8) as usize;

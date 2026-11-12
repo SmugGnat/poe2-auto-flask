@@ -2,22 +2,24 @@ use std::io;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::area::{resolve_area_info, AreaInfo};
-use crate::buffs::{
+use super::area::resolve_area_info;
+use super::buffs::{
     resolve_flask_lock_probe, resolve_flask_probe, sample_flask_effects, sample_flask_locks,
     FlaskLockProbe, FlaskLocks, FlaskProbe,
 };
-use crate::config::Config;
-use crate::flask_inventory::{
+use super::flasks::{
     resolve_flask_inventory_probe, sample_flask_charges, FlaskChargeSnapshot, FlaskInventoryProbe,
 };
-use crate::poe2::{refresh_vitals, sample_vitals, LiveVitals, VitalPool, VitalsProbe};
+use super::{refresh, sample_vitals, Probe};
+use crate::area::AreaInfo;
+use crate::config::Config;
+use crate::game_state::{LiveVitals, VitalPool};
 use crate::process::Process;
 
 const DEBUG_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 struct DebugRuntime {
-    vitals: VitalsProbe,
+    vitals: Probe,
     area: AreaInfo,
     raw_flasks: FlaskProbe,
     locks: FlaskLockProbe,
@@ -25,7 +27,7 @@ struct DebugRuntime {
 }
 
 impl DebugRuntime {
-    fn resolve(process: &Process, vitals: VitalsProbe) -> io::Result<Self> {
+    fn resolve(process: &Process, vitals: Probe) -> io::Result<Self> {
         let area = resolve_area_info(process, &vitals)?;
         let raw_flasks = resolve_flask_probe(process, &vitals)?;
         let locks = resolve_flask_lock_probe(process, &vitals)?;
@@ -40,7 +42,7 @@ impl DebugRuntime {
     }
 
     fn refresh(&mut self, process: &Process) -> io::Result<()> {
-        let vitals = refresh_vitals(process, &self.vitals)?;
+        let vitals = refresh(process, &self.vitals)?;
         *self = Self::resolve(process, vitals)?;
         Ok(())
     }
@@ -65,9 +67,9 @@ struct DebugSnapshot {
     candidates: Vec<CandidateEffect>,
 }
 
-pub fn run_debug(
+pub fn run(
     process: &Process,
-    vitals: VitalsProbe,
+    vitals: Probe,
     config: &Config,
     config_loaded: bool,
 ) -> io::Result<()> {

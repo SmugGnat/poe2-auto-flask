@@ -10,13 +10,9 @@ use std::time::{Duration, Instant};
 use crate::entity::resolve_component;
 use crate::process::Process;
 
+use super::offsets::nearby::*;
 use super::{invalid, plausible_ptr, read_metadata, read_ptr, Probe};
 
-const AREA_AWAKE_ENTITIES: usize = 0xA28;
-const MAP_NODE_SIZE: usize = 0x30;
-const MAP_KEY_ID: usize = 0x20;
-const MAP_ENTITY_PTR: usize = 0x28;
-const MAP_IS_NIL: usize = 0x19;
 const MAX_MAP_NODES: usize = 1500;
 const MAX_NEARBY_MONSTERS: usize = 512;
 const MAX_STATIC_CACHE: usize = 2500;
@@ -24,14 +20,6 @@ const MAX_COMPONENTS: usize = 50;
 const MAX_GRID_DISTANCE: f32 = 150.0;
 const WORLD_TO_GRID: f32 = 250.0 / 23.0;
 const REFRESH_DELAY: Duration = Duration::from_millis(750);
-
-// Monster-side offsets. ObjectMagicProperties has a different base from
-// the inventory item's Mods component.
-const RENDER_POSITION: usize = 0x120;
-const LIFE_CURRENT: usize = 0x178 + 0x30;
-const POSITIONED_REACTION: usize = 0x1E0;
-const TARGETABLE_FLAG: usize = 0x50;
-const MONSTER_RARITY: usize = 0x90 + 0xB4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Rarity {
@@ -75,7 +63,8 @@ pub struct NearbySnapshot {
     pub candidate_monsters: usize,
     pub nearby: Vec<NearbyMonster>,
     /// Wall time for the most recent full scan (not CPU time). Includes
-    /// Wine/ReadProcessMemory latency; no sampling when --nearby is absent.
+    /// Wine/ReadProcessMemory latency; sampling requires debug --nearby or
+    /// an explicitly enabled proximity-gated PoE1 utility flask.
     pub scan_wall: Duration,
 }
 

@@ -1,35 +1,34 @@
-//! PoE2-specific adapter. Other PoE2 flask/buff probes remain in the
-//! proven PoE2 runtime until the later engine-consolidation stage.
+//! PoE2 validated GameStateReader adapter, independent of the shared engine.
 use std::io;
 
 use crate::game_state::{GameStateReader, LiveVitals};
 use crate::process::Process;
 
-use super::VitalsProbe;
+use super::Probe;
 
 pub struct Adapter {
-    probe: VitalsProbe,
+    probe: Probe,
 }
 
 impl Adapter {
     pub fn probe(process: &Process) -> io::Result<Self> {
         Ok(Self {
-            probe: super::probe_vitals(process)?,
+            probe: super::probe(process)?,
         })
     }
 
-    pub fn vitals_probe(&self) -> &VitalsProbe {
+    pub fn current_probe(&self) -> &Probe {
         &self.probe
     }
 
-    pub fn into_vitals_probe(self) -> VitalsProbe {
+    pub fn into_probe(self) -> Probe {
         self.probe
     }
 }
 
 impl GameStateReader for Adapter {
     fn refresh(&mut self, process: &Process) -> io::Result<()> {
-        self.probe = super::refresh_vitals(process, &self.probe)?;
+        self.probe = super::refresh(process, &self.probe)?;
         Ok(())
     }
 
