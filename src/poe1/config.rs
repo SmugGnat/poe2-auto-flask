@@ -374,13 +374,15 @@ mod summary_tests {
 
         assert_eq!(
             config.poe1_summary(),
-            "Options : Hideout OFF\n\
-Life    : <=50%\n\
-Mana    : <=25%\n\
-Flasks  : Quicksilver [run >=500ms]\n\
-          Granite [nearby >=1 Normal+ @60]\n\
-Skills  : Molten Shell [R, Life <=95%]\n\
-          Blood Rage [T, Life >=80%, nearby >=1 Normal+ @60]"
+            concat!(
+                "Options : Hideout OFF\n",
+                "Life    : <=50%\n",
+                "Mana    : <=25%\n",
+                "Flasks  : Quicksilver [run >=500ms]\n",
+                "          Granite [nearby >=1 Normal+ @60]\n",
+                "Skills  : Molten Shell [R, Life <=95%]\n",
+                "          Blood Rage [T, Life >=80%, nearby >=1 Normal+ @60]",
+            )
         );
     }
 
