@@ -16,6 +16,29 @@ const MAX_SKILLS: usize = 128;
 const MAX_NAMES: usize = 256;
 const NAME_UNITS: usize = 128;
 
+/// Stable PoE1 skill identifier. Adding a skill doesn't add a new scheduler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SkillId {
+    MoltenShell,
+}
+
+impl SkillId {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::MoltenShell => "Molten Shell",
+        }
+    }
+
+    fn matches_internal_name(self, name: &str) -> bool {
+        match self {
+            Self::MoltenShell => {
+                name.eq_ignore_ascii_case("MoltenShell")
+                    || name.eq_ignore_ascii_case("molten_shell_barrier")
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkillReadiness {
     NotFound,
@@ -35,7 +58,7 @@ impl SkillCache {
         self.names.clear();
     }
 
-    pub fn sample(&mut self, process: &Process, probe: &Probe) -> io::Result<SkillReadiness> {
+    pub fn sample(&mut self, process: &Process, probe: &Probe, skill: SkillId) -> io::Result<SkillReadiness> {
         if read_player_id(process, probe.local_player)? != probe.player_id {
             self.clear();
             return Err(io::Error::new(
@@ -86,14 +109,14 @@ impl SkillCache {
                 self.names.insert(row, name.clone());
                 name
             };
-            if !is_molten_shell_skill(&name) {
+            if !skill.matches_internal_name(&name) {
                 continue;
             }
             let id = u32_at(&details, SKILL_DETAIL_ID);
             let unavailable = details[SKILL_DETAIL_CANNOT_USE] != 0;
             if found.is_some() {
                 // Ambiguous skills cannot authorize a key press.
-                return Err(invalid("multiple Molten Shell skill entries found"));
+                return Err(invalid(format!("multiple {} skill entries found", skill.label())));
             }
             found = Some((id, unavailable));
         }
@@ -125,10 +148,6 @@ impl SkillCache {
         }
         Ok(SkillReadiness::Usable)
     }
-}
-
-fn is_molten_shell_skill(name: &str) -> bool {
-    name.eq_ignore_ascii_case("MoltenShell") || name.eq_ignore_ascii_case("molten_shell_barrier")
 }
 
 fn read_name(process: &Process, address: usize) -> io::Result<String> {
@@ -188,10 +207,10 @@ mod tests {
 
     #[test]
     fn molten_shell_is_matched_exactly_not_vaal_variant() {
-        assert!(is_molten_shell_skill("MoltenShell"));
-        assert!(is_molten_shell_skill("molten_shell_barrier"));
-        assert!(!is_molten_shell_skill("VaalMoltenShell"));
-        assert!(!is_molten_shell_skill("molten_shell_shield"));
+        assert!(SkillId::MoltenShell.matches_internal_name("MoltenShell"));
+        assert!(SkillId::MoltenShell.matches_internal_name("molten_shell_barrier"));
+        assert!(!SkillId::MoltenShell.matches_internal_name("VaalMoltenShell"));
+        assert!(!SkillId::MoltenShell.matches_internal_name("molten_shell_shield"));
     }
 
     #[test]
