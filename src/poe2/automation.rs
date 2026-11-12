@@ -14,8 +14,8 @@ use crate::action::{dispatch, ActionRequest, Dispatch, DispatchError};
 use crate::area::AreaInfo;
 use crate::config::{Config, ConfigManager, ConfigReload, FlaskConfig};
 use crate::engine::{GameAutomationPolicy, TickOutcome};
-use crate::input::KeyBinding;
 use crate::game_state::VitalPool;
+use crate::input::KeyBinding;
 use crate::process::Process;
 use crate::session::GameSession;
 
