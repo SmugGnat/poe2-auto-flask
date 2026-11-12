@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::io;
 
 use super::offsets::buffs::*;
-use super::{FLASK_SLOT_COUNT, Probe};
+use super::{Probe, FLASK_SLOT_COUNT};
 use crate::entity::resolve_component;
 use crate::process::Process;
 

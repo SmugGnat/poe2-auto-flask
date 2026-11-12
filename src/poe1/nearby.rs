@@ -21,7 +21,6 @@ const MAX_GRID_DISTANCE: f32 = 150.0;
 const WORLD_TO_GRID: f32 = 250.0 / 23.0;
 const REFRESH_DELAY: Duration = Duration::from_millis(750);
 
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Rarity {
     Normal,
