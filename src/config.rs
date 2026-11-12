@@ -470,7 +470,10 @@ radius = 60
         assert!(cfg.poe1.utility.granite);
         let rule = cfg.poe1.nearby.get(&FlaskType::Granite).unwrap();
         assert!(rule.enabled);
-        assert_eq!(rule.minimum_rarity, crate::poe1::config::MinimumRarity::Rare);
+        assert_eq!(
+            rule.minimum_rarity,
+            crate::poe1::config::MinimumRarity::Rare
+        );
         assert_eq!(rule.minimum_rarity.first_index(), 2);
         assert_eq!(rule.minimum_count, 1);
         assert_eq!(rule.radius, 60);
