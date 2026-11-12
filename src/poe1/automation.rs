@@ -422,7 +422,6 @@ impl Policy {
         Ok(TickOutcome::Status("ARMED"))
     }
 
- {
     fn ready_keys(&self) -> io::Result<[crate::input::KeyBinding; 5]> {
         match self.bindings.current() {
             BindingState::Ready(keys) => Ok(*keys),
