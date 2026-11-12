@@ -1,5 +1,4 @@
-//! PoE2-specific adapter. Other PoE2 flask/buff probes remain in the
-//! proven PoE2 runtime until the later engine-consolidation stage.
+//! PoE2 validated GameStateReader adapter, independent of the shared engine.
 use std::io;
 
 use crate::game_state::{GameStateReader, LiveVitals};

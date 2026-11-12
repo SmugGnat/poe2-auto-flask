@@ -1,3 +1,4 @@
+//! PoE2-specific two-slot flask inventory and charge sampling.
 use std::io;
 
 use crate::entity::resolve_component;

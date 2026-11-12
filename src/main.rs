@@ -1,14 +1,10 @@
 mod action;
 mod area;
-mod automation;
 mod bindings;
-mod buffs;
 mod config;
-mod debug;
 mod engine;
 mod entity;
 mod file_watch;
-mod flask_inventory;
 mod game;
 mod game_state;
 mod input;
@@ -22,9 +18,9 @@ use std::io;
 use std::thread;
 use std::time::Duration;
 
-use automation::run_auto;
+use poe2::automation::run_auto;
 use config::{Config, ConfigManager, ConfigStartup};
-use debug::run_debug;
+use poe2::debug::run_debug;
 use game::Game;
 use platform::running_under_wine;
 use process::Process;

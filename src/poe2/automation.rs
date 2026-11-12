@@ -4,17 +4,18 @@ use std::io;
 use std::time::{Duration, Instant};
 
 use crate::action::{dispatch, ActionRequest, Dispatch, DispatchError};
-use crate::area::{resolve_area_info, AreaInfo};
-use crate::bindings::{BindingManager, BindingReload, GameBindings};
-use crate::buffs::{resolve_flask_lock_probe, sample_flask_locks, FlaskLockProbe, FlaskLocks};
+use crate::area::AreaInfo;
+use super::area::resolve_area_info;
+use super::bindings::{BindingManager, BindingReload, GameBindings};
+use super::buffs::{resolve_flask_lock_probe, sample_flask_locks, FlaskLockProbe, FlaskLocks};
 use crate::config::{Config, ConfigManager, ConfigReload, FlaskConfig};
 use crate::engine::{GameAutomationPolicy, TickOutcome};
-use crate::flask_inventory::{
+use super::flasks::{
     resolve_flask_inventory_probe, sample_flask_charges_fast, FlaskChargeCache,
     FlaskChargeSnapshot, FlaskChargeState, FlaskInventoryProbe,
 };
 use crate::input::KeyBinding;
-use crate::poe2::VitalPool;
+use crate::game_state::VitalPool;
 use crate::process::Process;
 use crate::session::GameSession;
 
@@ -411,7 +412,7 @@ fn flask_has_usable_charges(
 #[cfg(test)]
 mod tests {
     use super::{ci_like_defense, player_is_dead, FlaskState};
-    use crate::poe2::VitalPool;
+    use crate::game_state::VitalPool;
 
     fn pool(current: i32, total: i32) -> VitalPool {
         VitalPool {

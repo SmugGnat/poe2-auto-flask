@@ -2,72 +2,20 @@ use std::collections::HashSet;
 use std::io;
 
 pub mod adapter;
+pub mod area;
+pub mod automation;
+pub mod bindings;
+pub mod buffs;
+pub mod debug;
+pub mod flasks;
+mod offsets;
+
+use offsets::*;
 
 use crate::entity::resolve_component;
 use crate::process::{PeSection, Process};
 
-// GameStates global-slot signature. Immediate operands after the RIP-relative reference are
-// wildcarded; the stable post-call instructions keep the pattern unique.
-const GAME_STATE_PATTERN: [Option<u8>; 31] = [
-    Some(0x48),
-    Some(0x39),
-    Some(0x2D),
-    None,
-    None,
-    None,
-    None,
-    Some(0x0F),
-    Some(0x85),
-    None,
-    None,
-    None,
-    None,
-    Some(0xB9),
-    None,
-    None,
-    None,
-    None,
-    Some(0xE8),
-    None,
-    None,
-    None,
-    None,
-    Some(0x48),
-    Some(0x8B),
-    Some(0xF8),
-    Some(0x48),
-    Some(0x89),
-    Some(0x44),
-    Some(0x24),
-    Some(0x50),
-];
-
-const GAME_STATE_CURRENT_STATE_PTR: usize = 0x08;
-const GAME_STATE_STATES: usize = 0x48;
-const GAME_STATE_SLOT_STRIDE: usize = 0x10;
-const GAME_STATE_SLOT_COUNT: usize = 12;
-
-// Primary offsets are validated before use. Narrow fallback searches tolerate minor layout drift.
-const IN_GAME_STATE_AREA_INSTANCE: usize = 0x2A0;
-const AREA_INSTANCE_LOCAL_PLAYER: usize = 0x5D0;
-
-const ENTITY_DETAILS_PTR: usize = 0x08;
-const ENTITY_DETAILS_NAME: usize = 0x08;
-
-const LIFE_HEALTH: usize = 0x1B0;
-const LIFE_MANA: usize = 0x208;
-const LIFE_ENERGY_SHIELD: usize = 0x248;
-
-const VITAL_RESERVED_FLAT: usize = 0x10;
-const VITAL_RESERVED_FRACTION: usize = 0x14;
-const VITAL_TOTAL: usize = 0x2C;
-const VITAL_CURRENT: usize = 0x30;
-const VITAL_READ_LEN: usize = VITAL_CURRENT + 4 - VITAL_RESERVED_FLAT;
-
-const MAX_METADATA_CHARS: usize = 256;
-
-// Compatibility re-export during the adapter migration. The canonical
-// definitions now live in game_state, not in a PoE2-specific memory parser.
+// Common resource values live in game_state; PoE2 owns only layout and parsing.
 pub use crate::game_state::{LiveVitals, VitalPool};
 
 #[derive(Debug)]

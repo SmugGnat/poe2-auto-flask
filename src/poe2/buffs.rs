@@ -1,3 +1,4 @@
+//! PoE2-specific active effects, lock probes and debug buff scanning.
 use std::collections::HashMap;
 use std::io;
 
