@@ -4,7 +4,7 @@
 use crate::process::Process;
 use std::io;
 
-const MAX_VITAL_TOTAL: i32 = 10_000_000;
+pub(crate) const MAX_VITAL_TOTAL: i32 = 10_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VitalPool {

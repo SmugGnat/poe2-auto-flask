@@ -59,4 +59,45 @@ pub(super) const VITAL_TOTAL: usize = 0x2C;
 pub(super) const VITAL_CURRENT: usize = 0x30;
 pub(super) const VITAL_READ_LEN: usize = VITAL_CURRENT + 4 - VITAL_RESERVED_FLAT;
 
-pub(super) const MAX_METADATA_CHARS: usize = 256;
+/// Fixed PoE2 WorldData and WorldArea offsets.
+pub(super) mod area {
+    pub(crate) const IN_GAME_WORLD_DATA: usize = 0x368;
+    pub(crate) const WORLD_DATA_SEARCH_START: usize = 0x340;
+    pub(crate) const WORLD_DATA_SEARCH_END: usize = 0x390;
+    pub(crate) const WORLD_DATA_SEARCH_STEP: usize = 8;
+    pub(crate) const WORLD_DATA_AREA_DETAILS: usize = 0x98;
+    pub(crate) const WORLD_AREA_DETAILS_ROW: usize = 0x98;
+    pub(crate) const AREA_ROW_ID_PTR: usize = 0x00;
+    pub(crate) const AREA_ROW_NAME_PTR: usize = 0x08;
+    pub(crate) const AREA_ROW_ACT: usize = 0x10;
+    pub(crate) const AREA_ROW_IS_TOWN: usize = 0x14;
+    pub(crate) const AREA_ROW_HAS_WAYPOINT: usize = 0x15;
+    pub(crate) const AREA_ROW_READ_LEN: usize = 0x16;
+}
+
+/// Fixed PoE2 buff/status structures.
+pub(super) mod buffs {
+    pub(crate) const ENTITY_ID: usize = 0x88;
+    pub(crate) const BUFFS_STATUS_EFFECT_VECTOR: usize = 0x160;
+    pub(crate) const STATUS_BUFF_DEFINITION_PTR: usize = 0x08;
+    pub(crate) const STATUS_TOTAL_TIME: usize = 0x18;
+    pub(crate) const STATUS_TIME_LEFT: usize = 0x1C;
+    pub(crate) const STATUS_SOURCE_ENTITY_ID: usize = 0x28;
+    pub(crate) const STATUS_FLASK_SLOT: usize = 0x42;
+    pub(crate) const BUFF_DEFINITION_NAME_PTR: usize = 0x00;
+    pub(crate) const BUFF_DEFINITION_TYPE: usize = 0x67;
+}
+
+/// Fixed PoE2 flask inventory and charge structures.
+pub(super) mod flasks {
+    pub(crate) const PLAYER_INFO_LOCAL_PLAYER: usize = 0x20;
+    pub(crate) const SERVER_DATA_PLAYER_DATA_VECTOR: usize = 0x48;
+    pub(crate) const PLAYER_DATA_INVENTORIES_VECTOR: usize = 0x320;
+    pub(crate) const INVENTORY_DESCRIPTOR_STRIDE: usize = 0x18;
+    pub(crate) const INVENTORY_TOTAL_BOXES: usize = 0x150;
+    pub(crate) const INVENTORY_ITEM_LIST: usize = 0x170;
+    pub(crate) const INVENTORY_ITEM_ENTITY: usize = 0x00;
+    pub(crate) const CHARGES_INTERNAL_PTR: usize = 0x10;
+    pub(crate) const CHARGES_CURRENT: usize = 0x18;
+    pub(crate) const CHARGES_INTERNAL_PER_USE: usize = 0x18;
+}

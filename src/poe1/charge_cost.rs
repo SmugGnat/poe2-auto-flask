@@ -5,21 +5,15 @@ use std::io;
 use crate::entity::resolve_component;
 use crate::process::Process;
 
+use super::offsets::*;
 use super::recovery::RecoveryKind;
 use super::{invalid, plausible_ptr, read_ptr};
 
 const FLASK_CHARGES_USED_STAT: i32 = 0x2E5;
-const STATS_DATA_PTR: usize = 0x20;
-const STATS_VECTOR: usize = 0xF0;
 const MAX_STATS: usize = 8192;
-const STAT_STRIDE: usize = 8;
 
 // ModsOffsets.Details0.Mods.ExplicitMods = 0xC0 + 0x18.
-const EXPLICIT_MODS_VECTOR: usize = 0xD8;
-const MOD_STRIDE: usize = 0x38;
 const MAX_MODS: usize = 128;
-const MOD_VALUE: usize = 0x18;
-const MOD_DATA_PTR: usize = 0x28;
 const MAX_NAME_UNITS: usize = 128;
 
 pub fn player_charge_modifier(process: &Process, player: usize) -> io::Result<i32> {

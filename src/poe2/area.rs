@@ -1,25 +1,12 @@
 //! PoE2 WorldData/WorldArea reader. Shared area data lives at crate::area.
 use std::io;
 
+use super::offsets::area::*;
 use super::Probe;
 use crate::area::AreaInfo;
 use crate::process::Process;
 
 // Primary WorldData offset with a narrow pointer-aligned fallback window for layout drift.
-const IN_GAME_WORLD_DATA: usize = 0x368;
-const WORLD_DATA_SEARCH_START: usize = 0x340;
-const WORLD_DATA_SEARCH_END: usize = 0x390;
-const WORLD_DATA_SEARCH_STEP: usize = 8;
-
-const WORLD_DATA_AREA_DETAILS: usize = 0x98;
-const WORLD_AREA_DETAILS_ROW: usize = 0x98;
-
-const AREA_ROW_ID_PTR: usize = 0x00;
-const AREA_ROW_NAME_PTR: usize = 0x08;
-const AREA_ROW_ACT: usize = 0x10;
-const AREA_ROW_IS_TOWN: usize = 0x14;
-const AREA_ROW_HAS_WAYPOINT: usize = 0x15;
-const AREA_ROW_READ_LEN: usize = 0x16;
 
 const MAX_AREA_ID_CHARS: usize = 128;
 const MAX_AREA_NAME_CHARS: usize = 192;

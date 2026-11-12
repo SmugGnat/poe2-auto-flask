@@ -12,6 +12,9 @@ mod offsets;
 
 use offsets::*;
 
+const MAX_METADATA_CHARS: usize = 256;
+const FLASK_SLOT_COUNT: usize = 2;
+
 use crate::entity::resolve_component;
 use crate::process::{PeSection, Process};
 

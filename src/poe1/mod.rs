@@ -22,13 +22,12 @@ pub mod types;
 use std::io;
 
 use crate::entity::resolve_component;
-use crate::game_state::{LiveVitals, VitalPool};
+use crate::game_state::{LiveVitals, VitalPool, MAX_VITAL_TOTAL};
 use crate::process::Process;
 use layout::Layout;
 use offsets::*;
 
 const MAX_METADATA_CHARS: usize = 256;
-const MAX_VITAL_TOTAL: i32 = 10_000_000;
 
 #[derive(Debug)]
 pub struct Probe {

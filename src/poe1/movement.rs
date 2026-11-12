@@ -7,9 +7,9 @@ use std::time::{Duration, Instant};
 use crate::entity::resolve_component;
 use crate::process::Process;
 
+use super::offsets::ACTOR_ANIMATION_ID;
 use super::{invalid, Probe};
 
-const ACTOR_ANIMATION_ID: usize = 0x248;
 pub const RUN_ANIMATION_ID: i32 = 4;
 pub const SAMPLE_MAX_GAP: Duration = Duration::from_millis(350);
 

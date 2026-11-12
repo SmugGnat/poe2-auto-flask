@@ -2,12 +2,10 @@
 //! Unknown or unreadable UI state blocks automation.
 use std::io;
 
+use super::offsets::*;
 use super::{read_ptr, Probe};
 use crate::process::Process;
 
-const IN_GAME_UI: usize = 0x978;
-const CHAT_PARENT: usize = 0x540;
-const CHAT_BACKGROUND_COLOR: usize = 0x288;
 const CHAT_ALPHA_ACTIVE: u32 = 0x8C;
 
 pub fn is_chat_active(process: &Process, probe: &Probe) -> io::Result<bool> {
