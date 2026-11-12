@@ -4,7 +4,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::movement::RUN_ANIMATION_ID;
-use super::skill_rules::{evaluate_molten_shell, DEFAULT_LIFE_THRESHOLD_PERCENT, MOLTEN_SHELL_BUFF};
+use super::skill_rules::{
+    evaluate_molten_shell, DEFAULT_LIFE_THRESHOLD_PERCENT, MOLTEN_SHELL_BUFF,
+};
 use crate::process::Process;
 use crate::session::GameSession;
 use windows_sys::Win32::Foundation::FILETIME;

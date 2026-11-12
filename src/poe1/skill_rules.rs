@@ -75,10 +75,22 @@ mod tests {
 
     #[test]
     fn requires_hp_threshold_and_verified_skill_readiness() {
-        assert_eq!(evaluate_molten_shell(vitals(96), &empty(), Some(SkillReadiness::Usable), 95), MoltenShellDecision::LifeAboveThreshold);
-        assert_eq!(evaluate_molten_shell(vitals(95), &empty(), Some(SkillReadiness::Usable), 95), MoltenShellDecision::Eligible);
-        assert_eq!(evaluate_molten_shell(vitals(50), &empty(), None, 95), MoltenShellDecision::SkillUnavailable);
-        assert_eq!(evaluate_molten_shell(vitals(50), &empty(), Some(SkillReadiness::NotUsable), 95), MoltenShellDecision::SkillNotUsable);
+        assert_eq!(
+            evaluate_molten_shell(vitals(96), &empty(), Some(SkillReadiness::Usable), 95),
+            MoltenShellDecision::LifeAboveThreshold
+        );
+        assert_eq!(
+            evaluate_molten_shell(vitals(95), &empty(), Some(SkillReadiness::Usable), 95),
+            MoltenShellDecision::Eligible
+        );
+        assert_eq!(
+            evaluate_molten_shell(vitals(50), &empty(), None, 95),
+            MoltenShellDecision::SkillUnavailable
+        );
+        assert_eq!(
+            evaluate_molten_shell(vitals(50), &empty(), Some(SkillReadiness::NotUsable), 95),
+            MoltenShellDecision::SkillNotUsable
+        );
     }
 
     #[test]
@@ -90,8 +102,17 @@ mod tests {
             buff_type: 0,
             time_left: 2.0,
         });
-        assert_eq!(evaluate_molten_shell(vitals(20), &state, Some(SkillReadiness::Usable), 95), MoltenShellDecision::AlreadyActive);
-        assert_eq!(evaluate_molten_shell(vitals(0), &empty(), Some(SkillReadiness::Usable), 95), MoltenShellDecision::InvalidVitals);
-        assert_eq!(evaluate_molten_shell(vitals(80), &empty(), Some(SkillReadiness::Usable), 101), MoltenShellDecision::InvalidVitals);
+        assert_eq!(
+            evaluate_molten_shell(vitals(20), &state, Some(SkillReadiness::Usable), 95),
+            MoltenShellDecision::AlreadyActive
+        );
+        assert_eq!(
+            evaluate_molten_shell(vitals(0), &empty(), Some(SkillReadiness::Usable), 95),
+            MoltenShellDecision::InvalidVitals
+        );
+        assert_eq!(
+            evaluate_molten_shell(vitals(80), &empty(), Some(SkillReadiness::Usable), 101),
+            MoltenShellDecision::InvalidVitals
+        );
     }
 }

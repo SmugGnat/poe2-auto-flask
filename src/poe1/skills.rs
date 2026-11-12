@@ -42,7 +42,10 @@ impl SkillCache {
     pub fn sample(&mut self, process: &Process, probe: &Probe) -> io::Result<SkillReadiness> {
         if read_player_id(process, probe.local_player)? != probe.player_id {
             self.clear();
-            return Err(io::Error::new(io::ErrorKind::Interrupted, "PoE1 player identity changed"));
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "PoE1 player identity changed",
+            ));
         }
         let actor = match self.actor {
             Some(addr) => addr,
@@ -56,7 +59,11 @@ impl SkillCache {
         let skill_header = process.read_bytes(actor + ACTOR_SKILLS, 16)?;
         let first = u64_at(&skill_header, 0) as usize;
         let count = vector_count(first, u64_at(&skill_header, 8) as usize, 16, MAX_SKILLS)?;
-        let list = if count == 0 { Vec::new() } else { process.read_bytes(first, count * 16)? };
+        let list = if count == 0 {
+            Vec::new()
+        } else {
+            process.read_bytes(first, count * 16)?
+        };
         let mut found = None;
         for entry in list.chunks_exact(16) {
             let details_ptr = u64_at(entry, 0) as usize;
@@ -94,14 +101,20 @@ impl SkillCache {
             }
             found = Some((id, unavailable));
         }
-        let Some((id, unavailable)) = found else { return Ok(SkillReadiness::NotFound) };
+        let Some((id, unavailable)) = found else {
+            return Ok(SkillReadiness::NotFound);
+        };
         if unavailable {
             return Ok(SkillReadiness::NotUsable);
         }
         let header = process.read_bytes(actor + ACTOR_COOLDOWNS, 16)?;
         let first = u64_at(&header, 0) as usize;
         let count = vector_count(first, u64_at(&header, 8) as usize, 0x48, MAX_SKILLS)?;
-        let cooldowns = if count == 0 { Vec::new() } else { process.read_bytes(first, count * 0x48)? };
+        let cooldowns = if count == 0 {
+            Vec::new()
+        } else {
+            process.read_bytes(first, count * 0x48)?
+        };
         for record in cooldowns.chunks_exact(0x48) {
             if u32_at(record, COOLDOWN_SKILL_ID) != id {
                 continue;
@@ -128,10 +141,15 @@ fn read_name(process: &Process, address: usize) -> io::Result<String> {
     let mut terminated = false;
     for pair in bytes.chunks_exact(2) {
         let ch = u16::from_le_bytes([pair[0], pair[1]]);
-        if ch == 0 { terminated = true; break; }
+        if ch == 0 {
+            terminated = true;
+            break;
+        }
         units.push(ch);
     }
-    if !terminated { return Err(invalid("PoE1 skill name is unterminated")); }
+    if !terminated {
+        return Err(invalid("PoE1 skill name is unterminated"));
+    }
     let name = String::from_utf16(&units).map_err(|_| invalid("PoE1 skill name invalid UTF-16"))?;
     if name.is_empty() || name.chars().any(char::is_control) {
         return Err(invalid("PoE1 skill name is invalid"));
@@ -140,20 +158,32 @@ fn read_name(process: &Process, address: usize) -> io::Result<String> {
 }
 
 fn vector_count(first: usize, last: usize, stride: usize, max: usize) -> io::Result<usize> {
-    if first == 0 && last == 0 { return Ok(0); }
+    if first == 0 && last == 0 {
+        return Ok(0);
+    }
     if !plausible_ptr(first) || last < first || (last - first) % stride != 0 {
         return Err(invalid("PoE1 skill vector malformed"));
     }
     let count = (last - first) / stride;
-    if count > max { return Err(invalid("PoE1 skill vector exceeds limit")); }
+    if count > max {
+        return Err(invalid("PoE1 skill vector exceeds limit"));
+    }
     Ok(count)
 }
 
 fn u64_at(data: &[u8], offset: usize) -> u64 {
-    u64::from_le_bytes(data[offset..offset + 8].try_into().expect("bounded pointer"))
+    u64::from_le_bytes(
+        data[offset..offset + 8]
+            .try_into()
+            .expect("bounded pointer"),
+    )
 }
 fn u32_at(data: &[u8], offset: usize) -> u32 {
-    u32::from_le_bytes(data[offset..offset + 4].try_into().expect("bounded integer"))
+    u32::from_le_bytes(
+        data[offset..offset + 4]
+            .try_into()
+            .expect("bounded integer"),
+    )
 }
 
 #[cfg(test)]
