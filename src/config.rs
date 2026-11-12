@@ -527,6 +527,43 @@ radius = 60
     }
 
     #[test]
+    fn blood_rage_config_is_opt_in_and_bounds_checked() {
+        let defaults = Config::default();
+        assert!(!defaults.poe1.skills.blood_rage.enabled);
+        assert!(defaults.poe1.skills.blood_rage.require_nearby_monsters);
+        let parsed = Config::parse(
+            Path::new("test.toml"),
+            "[poe1.skills.blood_rage]\nenabled = true\nkey = \"T\"\nmin_life_percent = 80\n",
+        )
+        .unwrap();
+        assert!(parsed.poe1.skills.blood_rage.enabled);
+        assert_eq!(parsed.poe1.skills.blood_rage.binding().unwrap().vk, u16::from(b'T'));
+        assert_eq!(
+            crate::poe1::skill_rules::configured_rules(&parsed.poe1.skills)
+                .unwrap()
+                .len(),
+            1
+        );
+        for invalid in [
+            "key = \"F11\"",
+            "key = \"Mouse1\"",
+            "min_life_percent = 0",
+            "min_life_percent = 101",
+            "nearby_radius = 0",
+            "nearby_radius = 151",
+            "nearby_minimum_count = 0",
+            "nearby_minimum_count = 513",
+        ] {
+            let config = format!("[poe1.skills.blood_rage]\n{invalid}\n");
+            assert!(Config::parse(Path::new("test.toml"), &config).is_err(), "{invalid}");
+        }
+        let duplicate = "[poe1.skills.molten_shell]\nenabled = true\nkey = \"R\"\n[poe1.skills.blood_rage]\nenabled = true\nkey = \"R\"\n";
+        let distinct = "[poe1.skills.molten_shell]\nenabled = true\nkey = \"R\"\n[poe1.skills.blood_rage]\nenabled = true\nkey = \"T\"\n";
+        assert!(Config::parse(Path::new("test.toml"), duplicate).is_err());
+        assert!(Config::parse(Path::new("test.toml"), distinct).is_ok());
+    }
+
+    #[test]
     fn invalid_threshold_is_rejected() {
         let text = r#"
 [health]

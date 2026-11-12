@@ -84,9 +84,11 @@ snapshot, and (only when selected) a fresh bulk pre-dispatch check. It
 inspects the character's current Actor skills, not the game's complete skill
 database. Static skill-definition names remain cached; live usability is
 read fresh. Rules whose cheap conditions fail trigger no skill scans. The
-currently configured preset is Molten Shell; the second skill ID in unit
-tests demonstrates independent result classification before additional
-presets are enabled. Do not infer hotbar assignment from presence in the
+configured skill presets are Molten Shell (maximum Life threshold) and Blood
+Rage (minimum Life threshold, absent buff, and optional nearby-monster gate).
+Blood Rage reuses the same throttled nearby census already provided to
+utility-flask conditions, with no additional Actor scan per skill. Unknown
+nearby state fails closed and blocks only that proximity-gated skill. Do not infer hotbar assignment from presence in the
 Actor skill list. Rechecking game focus, player identity, charges or area boundaries is a
 deliberate fail-closed requirement. PoE2's debug and optimized auto readers are separate
 workloads, not duplicate work performed every tick. Some small helper functions
