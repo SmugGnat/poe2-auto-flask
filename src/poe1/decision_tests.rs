@@ -264,12 +264,9 @@ fn duplicate_quicksilvers_round_robin_without_slot_settings() {
     flasks.slots[4] = slot(FlaskType::Quicksilver, 90, Some(30));
     // First use chooses the better-filled flask; then switches to the
     // other eligible copy, even if it has fewer remaining whole uses.
-    let choose =
-        |flasks: &FlaskSnapshot, effects: &EffectsSnapshot, rotation: &FlaskRotation| {
-            choose_action_rotating_with_nearby(
-                &config, vitals, flasks, effects, true, None, rotation,
-            )
-        };
+    let choose = |flasks: &FlaskSnapshot, effects: &EffectsSnapshot, rotation: &FlaskRotation| {
+        choose_action_rotating_with_nearby(&config, vitals, flasks, effects, true, None, rotation)
+    };
     assert_eq!(choose(&flasks, &effects, &rotation), Some(4));
     rotation.record(4, FlaskType::Quicksilver);
     effects.slots_active[4] = true;
@@ -290,9 +287,7 @@ fn duplicate_life_flasks_rotate_when_effect_is_no_longer_active() {
     flasks.slots[0] = slot(FlaskType::Life, 45, Some(15));
     flasks.slots[1] = slot(FlaskType::Life, 60, Some(15));
     let choose = |effects: &EffectsSnapshot, rotation: &FlaskRotation| {
-        choose_action_rotating_with_nearby(
-            &config, vitals, &flasks, effects, true, None, rotation,
-        )
+        choose_action_rotating_with_nearby(&config, vitals, &flasks, effects, true, None, rotation)
     };
     assert_eq!(choose(&effects, &rotation), Some(1));
     rotation.record(1, FlaskType::Life);
