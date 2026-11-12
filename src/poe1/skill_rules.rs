@@ -453,9 +453,16 @@ mod tests {
         let rule = configured_rules(&settings).unwrap().remove(0);
         // Disable the optional proximity predicate to isolate readiness.
         let mut rule = rule;
-        rule.conditions.retain(|condition| !matches!(condition, Condition::NearbyMonsters { .. }));
+        rule.conditions
+            .retain(|condition| !matches!(condition, Condition::NearbyMonsters { .. }));
         assert_eq!(
-            evaluate(&rule, vitals(100), &empty(), None, Some(SkillReadiness::Ambiguous)),
+            evaluate(
+                &rule,
+                vitals(100),
+                &empty(),
+                None,
+                Some(SkillReadiness::Ambiguous)
+            ),
             RuleDecision::SkillUnavailable
         );
     }

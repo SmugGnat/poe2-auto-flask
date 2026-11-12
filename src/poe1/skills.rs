@@ -307,7 +307,12 @@ mod tests {
         let snapshot = classify(&requested, &found, &BTreeSet::new(), &HashSet::from([3u32]));
         assert_eq!(snapshot[&SkillId::MoltenShell], SkillReadiness::NotUsable);
         assert_eq!(snapshot[&SkillId::BloodRage], SkillReadiness::Usable);
-        let absent = classify(&requested, &BTreeMap::new(), &BTreeSet::new(), &HashSet::new());
+        let absent = classify(
+            &requested,
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+            &HashSet::new(),
+        );
         assert_eq!(absent[&SkillId::MoltenShell], SkillReadiness::NotFound);
         assert_eq!(absent[&SkillId::BloodRage], SkillReadiness::NotFound);
     }

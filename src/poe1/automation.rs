@@ -588,7 +588,10 @@ mod tests {
         assert_eq!(warnings.len(), 1);
         assert_eq!(warnings[0].0, SkillId::MoltenShell);
         assert_eq!(warnings[0].1, 3);
-        assert!(conflicting_skill_bindings(&rules, &BindingState::Unavailable("unknown".into())).is_empty());
+        assert!(
+            conflicting_skill_bindings(&rules, &BindingState::Unavailable("unknown".into()))
+                .is_empty()
+        );
     }
 }
 
