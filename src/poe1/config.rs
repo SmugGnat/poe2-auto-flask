@@ -159,7 +159,6 @@ impl Config {
             format!("{base} | Nearby {}", rules.join(", "))
         }
     }
-
 }
 
 impl Poe1Config {
