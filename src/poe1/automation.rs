@@ -92,7 +92,7 @@ impl Policy {
 impl GameAutomationPolicy for Policy {
     fn banner(&self, config: &Config) {
         println!("Connected to Path of Exile 1.");
-        println!("{}", config.poe1_summary());
+        println!("Settings:\n{}", config.poe1_summary());
         println!("{}", binding_label(self.bindings.current()));
         warn_key_conflicts(&self.skill_rules, self.bindings.current());
         println!("Starts DISARMED. Press F11 while PoE1 is focused to arm/disarm. Ctrl+C exits.");
@@ -107,7 +107,7 @@ impl GameAutomationPolicy for Policy {
                 }
                 self.run_tracker.reset();
                 self.rotation.reset();
-                println!("PoE1 config reloaded: {}", config.poe1_summary());
+                println!("PoE1 config reloaded:\n{}", config.poe1_summary());
                 warn_key_conflicts(&self.skill_rules, self.bindings.current());
             }
             ConfigReload::Invalid(error) | ConfigReload::ReadError(error) => {
