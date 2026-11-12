@@ -37,6 +37,11 @@ PoE1 additionally owns `config.rs` (utility, movement and proximity options),
 because those mechanics do not currently have identical consumers in PoE2.
 Its long decision and activation test suites are separated into
 `decision_tests.rs` and `activation_tests.rs`.
+PoE1 also owns `state.rs` (one demand-driven tick snapshot and shared
+pre-dispatch verification), `skills.rs` (validated Actor skill readiness)
+and `skill_rules.rs` (skill IDs, declarative conditions, preset registry
+and per-skill attempt guards). Molten Shell is the first registered preset,
+not a special scheduler branch.
 
 ## Terminology
 
@@ -58,18 +63,26 @@ Its long decision and activation test suites are separated into
 | --- | --- | --- |
 | Shared engine | One 100ms tick, process/config check every 1s, bindings every 2s, retry on stale pointers | No duplicate automation loop or game-memory parser |
 | Shared session | Cache common vitals once per decision tick; PoE1 adapter caches area/flask/effect/animation snapshots per tick | Avoids multiple full reads of the same cached PoE1 snapshot |
-| PoE1 decision / pre-send | Samples flasks/effects for selection, then checks **fresh** vitals, chat, animation (when configured) and focus before sending | Intentional redundant validation for input safety; do not remove |
+| PoE1 decision / pre-send | One demand-driven `TickState` caches vitals/area/chat/effects and selected game observations. A single fresh `Preflight` verifies vitals/chat/effects once for all candidates; dispatch checks focus for every key | Avoids repeating full memory reads/validation independently for each action while retaining a safety boundary |
 | PoE1 flask reader | Checks identity/inventory shape and live charge state; caches item identities and component/modifier classification | Identity/charge reads are required to fail closed on equipment or area changes |
+| PoE1 optional skill rules | `configured_rules` registers enabled presets; pure conditions select eligible skills from `TickState`. Skill-readiness is requested only after cheaper conditions pass | No skill Actor scan when all skill presets are disabled; flask and skill candidates can both dispatch in one 100ms tick |
 | PoE1 proximity | On-demand bounded awake-monster walk; caches static component addresses and throttles scans to once per 750ms | No global entity tracker; off when there is no eligible configured rule |
 | PoE2 auto | Samples existing two-slot status locks and charges, caches charge-component locations, enforces a 1000ms guard | Existing fast reader preserved without new per-tick overhead |
 | PoE2 debug | Uses a deliberately fuller reader for detailed effects/inventory diagnostics | Runs in read-only debug mode, **not** in addition to fast auto sampling |
 | PoE2 layout | Shared one identical known-offset-first helper previously repeated in two modules | Actual source duplication removed without changing search order |
 | Linux launcher | Identifies game and active Proton environment at startup | No per-tick Steam/process discovery overhead |
 
-The application repeatedly samples some live fields **by design**. This is
-not equivalent to performing unnecessary work: rechecking player identity,
-game focus, chat visibility, charges or area boundaries prevents input on stale
-or wrong-process state. PoE2's debug and optimized auto readers are separate
+The application deliberately samples some values twice only when an action is
+actually selected: once for the tick decision, then once for the shared
+pre-dispatch safety boundary. Flask and skill actions reuse the same preflight
+values, rather than re-reading vitals/chat/effects for each action separately.
+Foreground focus is still checked around each key, including the second action
+in a tick. PoE1's first registered skill is Molten Shell; each future preset
+adds its own conditions without another automation loop. If many skills are
+enabled simultaneously in the future, measure and consolidate their Actor
+skill scanning into one bulk snapshot before adding more repeated readers.
+Rechecking game focus, player identity, charges or area boundaries is a
+deliberate fail-closed requirement. PoE2's debug and optimized auto readers are separate
 workloads, not duplicate work performed every tick. Some small helper functions
 retain per-game validation/error semantics rather than being generalized
 prematurely.

@@ -244,6 +244,22 @@ mod tests {
         );
     }
     #[test]
+    fn cheap_state_conditions_skip_unneeded_actor_skill_reads() {
+        let r = rule();
+        assert!(!preconditions_met(&r, vitals(96)));
+        let mut effects = empty();
+        effects.effects.push(Effect {
+            name: MOLTEN_SHELL_BUFF.into(),
+            flask_slot: None,
+            buff_type: 0,
+            time_left: 2.0,
+        });
+        assert!(!observations_allow(&r, vitals(50), &effects));
+        assert!(observations_allow(&r, vitals(50), &empty()));
+        assert!(!observations_allow(&r, vitals(100), &empty()));
+    }
+
+    #[test]
     fn attempt_guard_is_independent_of_other_actions() {
         let mut guard = SkillAttemptGuard::default();
         let at = Instant::now();
