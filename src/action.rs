@@ -256,6 +256,29 @@ mod tests {
     }
 
     #[test]
+    fn two_independent_skills_and_a_flask_can_dispatch_in_one_decision_pass() {
+        let sends = Cell::new(0);
+        for action in [
+            ActionRequest::flask(1, key()),
+            ActionRequest::skill(KeyBinding::new(b'R' as u16, KeyModifier::None)),
+            ActionRequest::skill(KeyBinding::new(b'T' as u16, KeyModifier::None)),
+        ] {
+            let result = dispatch_with(
+                action,
+                || true,
+                || Ok(Some(())),
+                |_| {
+                    sends.set(sends.get() + 1);
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert!(matches!(result, Dispatch::Sent { .. }));
+        }
+        assert_eq!(sends.get(), 3);
+    }
+
+    #[test]
     fn malformed_flask_slot_never_runs_validation_or_sends() {
         let result: Result<Dispatch<()>, DispatchError> = dispatch_with(
             ActionRequest::flask(5, key()),

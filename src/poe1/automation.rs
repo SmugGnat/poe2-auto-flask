@@ -40,6 +40,7 @@ struct Policy {
     run_tracker: RunTracker,
     skill_rules: Vec<SkillRule>,
     skill_attempts: BTreeMap<SkillId, SkillAttemptGuard>,
+    flask_read_warning: bool,
 }
 
 struct FlaskCandidate {
@@ -59,6 +60,7 @@ impl Policy {
             run_tracker: RunTracker::default(),
             skill_rules: configured_rules(&config.poe1.skills)?,
             skill_attempts: BTreeMap::new(),
+            flask_read_warning: false,
         })
     }
 
@@ -92,6 +94,7 @@ impl GameAutomationPolicy for Policy {
         println!("Connected to Path of Exile 1.");
         println!("{}", config.poe1_summary());
         println!("{}", binding_label(self.bindings.current()));
+        warn_key_conflicts(&self.skill_rules, self.bindings.current());
         println!("Starts DISARMED. Press F11 while PoE1 is focused to arm/disarm. Ctrl+C exits.");
     }
 
@@ -105,6 +108,7 @@ impl GameAutomationPolicy for Policy {
                 self.run_tracker.reset();
                 self.rotation.reset();
                 println!("PoE1 config reloaded: {}", config.poe1_summary());
+                warn_key_conflicts(&self.skill_rules, self.bindings.current());
             }
             ConfigReload::Invalid(error) | ConfigReload::ReadError(error) => {
                 eprintln!("PoE1 config read failed, keeping last valid config: {error}");
@@ -116,6 +120,7 @@ impl GameAutomationPolicy for Policy {
     fn check_bindings(&mut self) {
         if self.bindings.reload() {
             println!("{}", binding_label(self.bindings.current()));
+            warn_key_conflicts(&self.skill_rules, self.bindings.current());
         }
     }
 
@@ -147,6 +152,7 @@ impl GameAutomationPolicy for Policy {
         self.activation_guard.reset();
         self.rotation.reset();
         self.run_tracker.reset();
+        self.flask_read_warning = false;
     }
 
     fn refresh(&mut self, _process: &Process, _session: &GameSession) -> io::Result<()> {
@@ -209,8 +215,31 @@ impl GameAutomationPolicy for Policy {
 
         let flask = if flask_demand {
             match self.select_flask(process, session, config, started, &mut state) {
-                Ok(value) => value,
-                Err(_) => return Ok(TickOutcome::Refresh),
+                Ok(value) => {
+                    if self.flask_read_warning {
+                        println!("PoE1 flask reader recovered.");
+                        self.flask_read_warning = false;
+                    }
+                    value
+                }
+                Err(error) => {
+                    // Interrupted player identity, memory I/O failures and all
+                    // unclassified errors remain session-wide refresh events.
+                    // Only a flask-local malformed inventory may be skipped,
+                    // and only after a fresh player/vitals verification.
+                    if !can_skip_flask_read_error(&error, skill_demand)
+                        || session.poe1_verify_vitals(process).is_err()
+                    {
+                        return Ok(TickOutcome::Refresh);
+                    }
+                    if !self.flask_read_warning {
+                        eprintln!(
+                            "PoE1 flask data unavailable ({error}); flask input suppressed, skill rules remain active."
+                        );
+                        self.flask_read_warning = true;
+                    }
+                    None
+                }
             }
         } else {
             self.run_tracker.reset();
@@ -486,10 +515,81 @@ impl Policy {
     }
 }
 
+/// Only malformed flask-inventory observations may be isolated from an
+/// otherwise healthy player/session. A fresh identity check is required at
+/// the call site; I/O failures and identity transitions trigger Refresh.
+fn can_skip_flask_read_error(error: &io::Error, skill_demand: bool) -> bool {
+    skill_demand && error.kind() == io::ErrorKind::InvalidData
+}
+
+/// Report conflicting keys only when configuration/bindings actually change,
+/// never every 100 ms. Conflicting skills are already denied at selection.
+fn conflicting_skill_bindings(
+    rules: &[SkillRule],
+    bindings: &BindingState,
+) -> Vec<(SkillId, usize, KeyBinding)> {
+    let BindingState::Ready(keys) = bindings else {
+        return Vec::new();
+    };
+    rules
+        .iter()
+        .flat_map(|rule| {
+            keys.iter().enumerate().filter_map(move |(slot, binding)| {
+                (*binding == rule.key).then_some((rule.id, slot + 1, rule.key))
+            })
+        })
+        .collect()
+}
+
+fn warn_key_conflicts(rules: &[SkillRule], bindings: &BindingState) {
+    for (skill, slot, key) in conflicting_skill_bindings(rules, bindings) {
+        eprintln!(
+            "PoE1 key conflict: {} uses {} (flask slot {slot}); suppressing skill input until the bindings change.",
+            skill.label(),
+            key.label()
+        );
+    }
+}
+
 fn requires_skill_readiness(rule: &SkillRule) -> bool {
     rule.conditions
         .iter()
         .any(|condition| matches!(condition, Condition::SkillUsable))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::input::KeyModifier;
+
+    #[test]
+    fn local_flask_error_is_skippable_only_when_skill_policy_needs_it() {
+        let inventory = io::Error::new(io::ErrorKind::InvalidData, "malformed flask inventory");
+        let player_changed = io::Error::new(io::ErrorKind::Interrupted, "player changed");
+        let io_error = io::Error::other("unreadable process memory");
+        assert!(can_skip_flask_read_error(&inventory, true));
+        assert!(!can_skip_flask_read_error(&inventory, false));
+        assert!(!can_skip_flask_read_error(&player_changed, true));
+        assert!(!can_skip_flask_read_error(&io_error, true));
+    }
+
+    #[test]
+    fn detects_skill_to_flask_conflicts_without_blocking_unrelated_skills() {
+        let config = Config::default();
+        let mut settings = config.poe1.skills.clone();
+        settings.molten_shell.enabled = true;
+        settings.molten_shell.key = "R".into();
+        settings.blood_rage.enabled = true;
+        settings.blood_rage.key = "T".into();
+        let rules = configured_rules(&settings).unwrap();
+        let mut keys = [KeyBinding::new(b'1' as u16, KeyModifier::None); 5];
+        keys[2] = KeyBinding::new(b'R' as u16, KeyModifier::None);
+        let warnings = conflicting_skill_bindings(&rules, &BindingState::Ready(keys));
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].0, SkillId::MoltenShell);
+        assert_eq!(warnings[0].1, 3);
+        assert!(conflicting_skill_bindings(&rules, &BindingState::Unavailable("unknown".into())).is_empty());
+    }
 }
 
 fn binding_label(state: &BindingState) -> String {
