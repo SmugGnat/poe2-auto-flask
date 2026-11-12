@@ -21,8 +21,8 @@ use super::movement::{RunTracker, RUN_ANIMATION_ID};
 use super::nearby::NearbySnapshot;
 use super::rotation::FlaskRotation;
 use super::skill_rules::{
-    configured_rules, evaluate, observations_allow, preconditions_met, Condition, RuleDecision,
-    SkillAttemptGuard, SkillRule,
+    configured_rules, evaluate, nearby_conditions_met, observations_allow, preconditions_met,
+    requires_nearby, Condition, RuleDecision, SkillAttemptGuard, SkillRule,
 };
 use super::skills::SkillId;
 use super::state::{Preflight, TickState};
@@ -232,6 +232,14 @@ impl GameAutomationPolicy for Policy {
                     continue;
                 }
             }
+            // A proximity-gated skill fails closed when the census is
+            // unavailable. TickState reuses a flask's existing census.
+            if requires_nearby(rule) {
+                let nearby = state.nearby(session, process).ok();
+                if !nearby_conditions_met(rule, nearby) {
+                    continue;
+                }
+            }
             candidates.push(rule.clone());
         }
         let requested: Vec<SkillId> = candidates
@@ -258,7 +266,13 @@ impl GameAutomationPolicy for Policy {
         let mut skills = Vec::new();
         for rule in candidates {
             let readiness = statuses.as_ref().and_then(|all| all.get(&rule.id)).copied();
-            if evaluate(&rule, state.vitals, &observed_effects, readiness) == RuleDecision::Eligible
+            if evaluate(
+                &rule,
+                state.vitals,
+                &observed_effects,
+                state.observed_nearby(),
+                readiness,
+            ) == RuleDecision::Eligible
             {
                 skills.push(rule);
             }
@@ -313,8 +327,13 @@ impl GameAutomationPolicy for Policy {
                 .as_ref()
                 .and_then(|all| all.get(&rule.id))
                 .copied();
-            if evaluate(&rule, preflight.vitals, &preflight.effects, readiness)
-                != RuleDecision::Eligible
+            if evaluate(
+                &rule,
+                preflight.vitals,
+                &preflight.effects,
+                state.observed_nearby(),
+                readiness,
+            ) != RuleDecision::Eligible
             {
                 continue;
             }

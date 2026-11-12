@@ -111,6 +111,12 @@ impl TickState {
         Ok(self.skills.as_ref().expect("skills sampled"))
     }
 
+    /// Optional census already sampled within this tick. Never initiates a
+    /// scan simply because a rule is being revalidated before dispatch.
+    pub fn observed_nearby(&self) -> Option<&NearbySnapshot> {
+        self.nearby.as_ref()
+    }
+
     pub fn nearby(
         &mut self,
         session: &mut GameSession,
