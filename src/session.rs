@@ -101,12 +101,13 @@ impl GameSession {
         }
     }
 
-    pub fn poe1_molten_shell(
+    pub fn poe1_skill_readiness(
         &mut self,
         process: &Process,
+        skill: poe1::skills::SkillId,
     ) -> io::Result<poe1::skills::SkillReadiness> {
         match &mut self.reader {
-            Reader::Poe1(adapter) => adapter.molten_shell(process),
+            Reader::Poe1(adapter) => adapter.skill_readiness(process, skill),
             Reader::Poe2(_) => Err(unsupported()),
         }
     }
@@ -148,12 +149,13 @@ impl GameSession {
     }
 
     /// Fresh PoE1 skill-usability check. Does not reuse the tick snapshot.
-    pub fn poe1_verify_molten_shell(
+    pub fn poe1_verify_skill_readiness(
         &mut self,
         process: &Process,
+        skill: poe1::skills::SkillId,
     ) -> io::Result<poe1::skills::SkillReadiness> {
         match &mut self.reader {
-            Reader::Poe1(adapter) => adapter.verify_molten_shell(process),
+            Reader::Poe1(adapter) => adapter.verify_skill_readiness(process, skill),
             Reader::Poe2(_) => Err(unsupported()),
         }
     }

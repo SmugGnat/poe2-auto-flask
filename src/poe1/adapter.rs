@@ -1,5 +1,6 @@
 //! PoE1-specific game-state adapter. Owns PoE1 pointers, specialized
 //! snapshots and demand-driven reader caches, independently of PoE2.
+use std::collections::BTreeMap;
 use std::io;
 
 use crate::area::AreaInfo;
@@ -10,7 +11,7 @@ use super::buffs::{EffectCache, EffectsSnapshot};
 use super::flasks::{FlaskCache, FlaskSnapshot};
 use super::movement::MotionCache;
 use super::nearby::{NearbyCache, NearbySnapshot};
-use super::skills::{SkillCache, SkillReadiness};
+use super::skills::{SkillCache, SkillId, SkillReadiness};
 use super::Probe;
 
 #[derive(Default)]
@@ -19,7 +20,7 @@ struct TickSnapshot {
     flasks: Option<FlaskSnapshot>,
     effects: Option<EffectsSnapshot>,
     animation: Option<i32>,
-    molten_shell: Option<SkillReadiness>,
+    skills: BTreeMap<SkillId, SkillReadiness>,
 }
 
 pub struct Adapter {
@@ -74,12 +75,17 @@ impl Adapter {
         self.motion_cache.sample(process, &self.probe)
     }
 
-    pub fn molten_shell(&mut self, process: &Process) -> io::Result<SkillReadiness> {
-        if let Some(state) = self.tick.molten_shell {
-            return Ok(state);
+    /// Game-specific snapshot of one supported skill. Cached for this decision tick.
+    pub fn skill_readiness(
+        &mut self,
+        process: &Process,
+        skill: SkillId,
+    ) -> io::Result<SkillReadiness> {
+        if let Some(state) = self.tick.skills.get(&skill) {
+            return Ok(*state);
         }
-        let state = self.skill_cache.sample(process, &self.probe)?;
-        self.tick.molten_shell = Some(state);
+        let state = self.skill_cache.sample(process, &self.probe, skill)?;
+        self.tick.skills.insert(skill, state);
         Ok(state)
     }
 
@@ -89,8 +95,12 @@ impl Adapter {
     }
 
     /// Bypass the within-tick cache before authorizing skill input.
-    pub fn verify_molten_shell(&mut self, process: &Process) -> io::Result<SkillReadiness> {
-        self.skill_cache.sample(process, &self.probe)
+    pub fn verify_skill_readiness(
+        &mut self,
+        process: &Process,
+        skill: SkillId,
+    ) -> io::Result<SkillReadiness> {
+        self.skill_cache.sample(process, &self.probe, skill)
     }
 
     pub fn nearby(&mut self, process: &Process) -> io::Result<NearbySnapshot> {

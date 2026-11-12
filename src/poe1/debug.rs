@@ -4,9 +4,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::movement::RUN_ANIMATION_ID;
-use super::skill_rules::{
-    evaluate_molten_shell, DEFAULT_LIFE_THRESHOLD_PERCENT, MOLTEN_SHELL_BUFF,
-};
+use super::config::Poe1SkillsConfig;
+use super::skill_rules::{configured_rules, evaluate, MOLTEN_SHELL_BUFF};
+use super::skills::SkillId;
 use crate::process::Process;
 use crate::session::GameSession;
 use windows_sys::Win32::Foundation::FILETIME;
@@ -29,6 +29,12 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
         println!("Experimental nearby census ENABLED (read-only, 750ms cache, 1500-node limit).");
     }
 
+    let mut diagnostic_config = Poe1SkillsConfig::default();
+    diagnostic_config.molten_shell.enabled = true;
+    let diagnostic_rule = configured_rules(&diagnostic_config)?
+        .into_iter()
+        .next()
+        .expect("diagnostic Molten Shell preset exists");
     let mut report_at = Instant::now();
     let mut refresh_at = Instant::now();
     let mut waiting = false;
@@ -138,12 +144,12 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                             .collect::<Vec<_>>()
                             .join(", "),
                     );
-                    let skill = session.poe1_molten_shell(process);
-                    let rule = evaluate_molten_shell(
+                    let skill = session.poe1_skill_readiness(process, SkillId::MoltenShell);
+                    let rule = evaluate(
+                        &diagnostic_rule,
                         vitals,
                         &buffs,
                         skill.as_ref().ok().copied(),
-                        DEFAULT_LIFE_THRESHOLD_PERCENT,
                     );
                     println!(
                         "  Molten Shell (read-only prototype): buff {} | skill {} | rule at {}% Life {:?}",
@@ -156,7 +162,7 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                             Ok(state) => format!("{state:?}"),
                             Err(error) => format!("unavailable ({error})"),
                         },
-                        DEFAULT_LIFE_THRESHOLD_PERCENT,
+                        diagnostic_config.molten_shell.threshold_percent,
                         rule
                     );
                     if let Some(line) = cpu_meter.report() {
