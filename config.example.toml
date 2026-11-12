@@ -56,4 +56,14 @@ iron = false
 # before the enemy is damageable. An unavailable census blocks only gated
 # utility flasks, not emergency Life/Mana recovery.
 
+# PoE1 defensive skill presets are separately configurable. Skills are
+# disabled by default and share the existing 100 ms loop with flask rules.
+# The same key must be bound to Molten Shell in game. Only A-Z, 0-9,
+# F1-F10 and F12 are supported for this initial preset; F11 is reserved.
+# The skill rule cannot run in town, or in hideouts unless permitted above.
+[poe1.skills.molten_shell]
+enabled = false
+threshold_percent = 95
+key = "Q"
+
 # Existing PoE2 operation is unchanged: two slots, F11, 100 ms polling.

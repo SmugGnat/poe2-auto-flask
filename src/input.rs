@@ -87,7 +87,7 @@ pub fn is_process_foreground(pid: u32) -> bool {
     foreground_pid == pid
 }
 
-pub fn send_flask_key(binding: KeyBinding) -> io::Result<()> {
+pub fn send_key(binding: KeyBinding) -> io::Result<()> {
     if let Some(modifier_vk) = modifier_vk(binding.modifier) {
         let inputs = [
             keyboard_input(modifier_vk, false),

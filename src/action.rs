@@ -7,7 +7,7 @@
 use std::io;
 use std::time::Instant;
 
-use crate::input::{is_process_foreground, send_flask_key, KeyBinding};
+use crate::input::{is_process_foreground, send_key, KeyBinding};
 use crate::process::Process;
 
 /// Maximum number of flask slots any supported game can request.
@@ -16,6 +16,7 @@ const MAX_FLASK_SLOTS: usize = 5;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActionKind {
     Flask { slot: usize },
+    Skill,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,6 +29,13 @@ impl ActionRequest {
     pub fn flask(slot: usize, binding: KeyBinding) -> Self {
         Self {
             kind: ActionKind::Flask { slot },
+            binding,
+        }
+    }
+
+    pub fn skill(binding: KeyBinding) -> Self {
+        Self {
+            kind: ActionKind::Skill,
             binding,
         }
     }
@@ -67,7 +75,7 @@ pub fn dispatch<T>(
         action,
         || is_process_foreground(process.pid()),
         validate,
-        send_flask_key,
+        send_key,
     )
 }
 
@@ -79,6 +87,7 @@ fn dispatch_with<T>(
 ) -> Result<Dispatch<T>, DispatchError> {
     match action.kind {
         ActionKind::Flask { slot } if slot < MAX_FLASK_SLOTS => {}
+        ActionKind::Skill => {}
         ActionKind::Flask { .. } => {
             return Err(DispatchError::Input(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -200,6 +209,33 @@ mod tests {
             |_| Err(io::Error::other("SendInput failed")),
         );
         assert!(matches!(result, Err(DispatchError::Input(_))));
+    }
+
+    #[test]
+    fn flask_and_skill_both_dispatch_without_consuming_the_other() {
+        let sent = Cell::new(0);
+        for action in [ActionRequest::flask(0, key()), ActionRequest::skill(key())] {
+            let result = dispatch_with(action, || true, || Ok(Some(())), |_| {
+                sent.set(sent.get() + 1);
+                Ok(())
+            })
+            .unwrap();
+            assert!(matches!(result, Dispatch::Sent { .. }));
+        }
+        assert_eq!(sent.get(), 2);
+        let mut called = false;
+        let ignored = dispatch_with(ActionRequest::flask(0, key()), || true, || Ok::<_, io::Error>(None::<()>), |_| {
+            called = true;
+            Ok(())
+        }).unwrap();
+        assert!(matches!(ignored, Dispatch::Skipped));
+        assert!(!called);
+        let permitted = dispatch_with(ActionRequest::skill(key()), || true, || Ok(Some(())), |_| {
+            called = true;
+            Ok(())
+        }).unwrap();
+        assert!(matches!(permitted, Dispatch::Sent { .. }));
+        assert!(called);
     }
 
     #[test]
