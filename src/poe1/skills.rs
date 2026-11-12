@@ -58,7 +58,12 @@ impl SkillCache {
         self.names.clear();
     }
 
-    pub fn sample(&mut self, process: &Process, probe: &Probe, skill: SkillId) -> io::Result<SkillReadiness> {
+    pub fn sample(
+        &mut self,
+        process: &Process,
+        probe: &Probe,
+        skill: SkillId,
+    ) -> io::Result<SkillReadiness> {
         if read_player_id(process, probe.local_player)? != probe.player_id {
             self.clear();
             return Err(io::Error::new(
@@ -116,7 +121,10 @@ impl SkillCache {
             let unavailable = details[SKILL_DETAIL_CANNOT_USE] != 0;
             if found.is_some() {
                 // Ambiguous skills cannot authorize a key press.
-                return Err(invalid(format!("multiple {} skill entries found", skill.label())));
+                return Err(invalid(format!(
+                    "multiple {} skill entries found",
+                    skill.label()
+                )));
             }
             found = Some((id, unavailable));
         }

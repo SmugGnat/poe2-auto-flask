@@ -65,11 +65,7 @@ pub fn preconditions_met(rule: &SkillRule, vitals: LiveVitals) -> bool {
 
 /// Only observations already in this tick's snapshot are checked here.
 /// Expensive Actor skill reads are not requested if these conditions fail.
-pub fn observations_allow(
-    rule: &SkillRule,
-    vitals: LiveVitals,
-    effects: &EffectsSnapshot,
-) -> bool {
+pub fn observations_allow(rule: &SkillRule, vitals: LiveVitals, effects: &EffectsSnapshot) -> bool {
     let max = vitals.health.usable_max();
     if vitals.health.current <= 0 || max <= 0 || vitals.health.current > max {
         return false;
@@ -77,8 +73,7 @@ pub fn observations_allow(
     rule.conditions.iter().all(|condition| match *condition {
         Condition::LifeAtOrBelow(threshold) => life_at_or_below(vitals, threshold),
         Condition::BuffAbsent(name) => !effects.effects.iter().any(|effect| {
-            effect.name == name
-                && (!effect.time_left.is_finite() || effect.time_left >= 0.0)
+            effect.name == name && (!effect.time_left.is_finite() || effect.time_left >= 0.0)
         }),
         Condition::SkillUsable => true,
     })
@@ -191,7 +186,9 @@ mod tests {
     }
     #[test]
     fn presets_are_opt_in_and_use_distinct_rule_definitions() {
-        assert!(configured_rules(&Poe1SkillsConfig::default()).unwrap().is_empty());
+        assert!(configured_rules(&Poe1SkillsConfig::default())
+            .unwrap()
+            .is_empty());
         let mut cfg = Poe1SkillsConfig::default();
         cfg.molten_shell.enabled = true;
         let rules = configured_rules(&cfg).unwrap();
@@ -202,10 +199,22 @@ mod tests {
     #[test]
     fn evaluates_life_buff_and_readiness_independently() {
         let r = rule();
-        assert_eq!(evaluate(&r, vitals(96), &empty(), Some(SkillReadiness::Usable)), RuleDecision::LifeAboveThreshold);
-        assert_eq!(evaluate(&r, vitals(95), &empty(), Some(SkillReadiness::Usable)), RuleDecision::Eligible);
-        assert_eq!(evaluate(&r, vitals(50), &empty(), None), RuleDecision::SkillUnavailable);
-        assert_eq!(evaluate(&r, vitals(50), &empty(), Some(SkillReadiness::NotUsable)), RuleDecision::SkillNotUsable);
+        assert_eq!(
+            evaluate(&r, vitals(96), &empty(), Some(SkillReadiness::Usable)),
+            RuleDecision::LifeAboveThreshold
+        );
+        assert_eq!(
+            evaluate(&r, vitals(95), &empty(), Some(SkillReadiness::Usable)),
+            RuleDecision::Eligible
+        );
+        assert_eq!(
+            evaluate(&r, vitals(50), &empty(), None),
+            RuleDecision::SkillUnavailable
+        );
+        assert_eq!(
+            evaluate(&r, vitals(50), &empty(), Some(SkillReadiness::NotUsable)),
+            RuleDecision::SkillNotUsable
+        );
         let mut state = empty();
         state.effects.push(Effect {
             name: MOLTEN_SHELL_BUFF.into(),
@@ -213,15 +222,27 @@ mod tests {
             buff_type: 0,
             time_left: 2.0,
         });
-        assert_eq!(evaluate(&r, vitals(20), &state, Some(SkillReadiness::Usable)), RuleDecision::AlreadyActive);
-        assert_eq!(evaluate(&r, vitals(0), &empty(), Some(SkillReadiness::Usable)), RuleDecision::InvalidVitals);
+        assert_eq!(
+            evaluate(&r, vitals(20), &state, Some(SkillReadiness::Usable)),
+            RuleDecision::AlreadyActive
+        );
+        assert_eq!(
+            evaluate(&r, vitals(0), &empty(), Some(SkillReadiness::Usable)),
+            RuleDecision::InvalidVitals
+        );
     }
     #[test]
     fn rules_without_life_threshold_are_supported() {
         let mut r = rule();
-        r.conditions = vec![Condition::BuffAbsent(MOLTEN_SHELL_BUFF), Condition::SkillUsable];
+        r.conditions = vec![
+            Condition::BuffAbsent(MOLTEN_SHELL_BUFF),
+            Condition::SkillUsable,
+        ];
         assert!(preconditions_met(&r, vitals(100)));
-        assert_eq!(evaluate(&r, vitals(100), &empty(), Some(SkillReadiness::Usable)), RuleDecision::Eligible);
+        assert_eq!(
+            evaluate(&r, vitals(100), &empty(), Some(SkillReadiness::Usable)),
+            RuleDecision::Eligible
+        );
     }
     #[test]
     fn attempt_guard_is_independent_of_other_actions() {

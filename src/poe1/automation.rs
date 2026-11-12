@@ -63,7 +63,9 @@ impl Policy {
     }
 
     fn guard_ready(&self, skill: SkillId, now: Instant) -> bool {
-        self.skill_attempts.get(&skill).is_none_or(|guard| guard.ready(now))
+        self.skill_attempts
+            .get(&skill)
+            .is_none_or(|guard| guard.ready(now))
     }
 
     fn mark_skill(&mut self, skill: SkillId, sent_at: Instant) {
@@ -166,11 +168,8 @@ impl GameAutomationPolicy for Policy {
         config: &Config,
         started: Instant,
     ) -> io::Result<TickOutcome> {
-        let mut state = match TickState::sample(
-            session,
-            process,
-            config.general.enable_in_hideout,
-        ) {
+        let mut state = match TickState::sample(session, process, config.general.enable_in_hideout)
+        {
             Ok(value) => value,
             Err(_) => return Ok(TickOutcome::Refresh),
         };
@@ -185,10 +184,9 @@ impl GameAutomationPolicy for Policy {
 
         let flask_demand = matches!(self.bindings.current(), BindingState::Ready(_))
             && enabled_demand(config, state.vitals);
-        let skill_demand = self
-            .skill_rules
-            .iter()
-            .any(|rule| self.guard_ready(rule.id, started) && preconditions_met(rule, state.vitals));
+        let skill_demand = self.skill_rules.iter().any(|rule| {
+            self.guard_ready(rule.id, started) && preconditions_met(rule, state.vitals)
+        });
         if !flask_demand && !skill_demand {
             self.run_tracker.reset();
             return Ok(TickOutcome::Status("ARMED"));
@@ -250,8 +248,12 @@ impl GameAutomationPolicy for Policy {
             } else {
                 None
             };
-            if evaluate(rule, state.vitals, state.effects(session, process)?, readiness)
-                == RuleDecision::Eligible
+            if evaluate(
+                rule,
+                state.vitals,
+                state.effects(session, process)?,
+                readiness,
+            ) == RuleDecision::Eligible
             {
                 skills.push(rule.clone());
             }
@@ -275,7 +277,8 @@ impl GameAutomationPolicy for Policy {
         }
 
         if let Some(candidate) = flask {
-            let outcome = self.send_flask(process, session, config, started, &preflight, candidate)?;
+            let outcome =
+                self.send_flask(process, session, config, started, &preflight, candidate)?;
             if outcome != TickOutcome::Status("ARMED") {
                 // Focus loss and stale shared state legitimately halt the tick.
                 return Ok(outcome);

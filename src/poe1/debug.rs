@@ -3,8 +3,8 @@ use std::io;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::movement::RUN_ANIMATION_ID;
 use super::config::Poe1SkillsConfig;
+use super::movement::RUN_ANIMATION_ID;
 use super::skill_rules::{configured_rules, evaluate, MOLTEN_SHELL_BUFF};
 use super::skills::SkillId;
 use crate::process::Process;

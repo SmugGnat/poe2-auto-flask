@@ -75,11 +75,7 @@ impl TickState {
         Ok(self.flasks.as_ref().expect("flasks were sampled"))
     }
 
-    pub fn animation(
-        &mut self,
-        session: &mut GameSession,
-        process: &Process,
-    ) -> io::Result<i32> {
+    pub fn animation(&mut self, session: &mut GameSession, process: &Process) -> io::Result<i32> {
         if let Some(value) = self.animation {
             return Ok(value);
         }
