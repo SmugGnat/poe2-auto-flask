@@ -101,6 +101,16 @@ impl GameSession {
         }
     }
 
+    pub fn poe1_molten_shell(
+        &mut self,
+        process: &Process,
+    ) -> io::Result<poe1::skills::SkillReadiness> {
+        match &mut self.reader {
+            Reader::Poe1(adapter) => adapter.molten_shell(process),
+            Reader::Poe2(_) => Err(unsupported()),
+        }
+    }
+
     pub fn poe1_nearby(&mut self, process: &Process) -> io::Result<poe1::nearby::NearbySnapshot> {
         match &mut self.reader {
             Reader::Poe1(adapter) => adapter.nearby(process),

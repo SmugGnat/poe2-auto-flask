@@ -10,6 +10,7 @@ use super::buffs::{EffectCache, EffectsSnapshot};
 use super::flasks::{FlaskCache, FlaskSnapshot};
 use super::movement::MotionCache;
 use super::nearby::{NearbyCache, NearbySnapshot};
+use super::skills::{SkillCache, SkillReadiness};
 use super::Probe;
 
 #[derive(Default)]
@@ -18,6 +19,7 @@ struct TickSnapshot {
     flasks: Option<FlaskSnapshot>,
     effects: Option<EffectsSnapshot>,
     animation: Option<i32>,
+    molten_shell: Option<SkillReadiness>,
 }
 
 pub struct Adapter {
@@ -26,6 +28,7 @@ pub struct Adapter {
     flask_cache: FlaskCache,
     effect_cache: EffectCache,
     motion_cache: MotionCache,
+    skill_cache: SkillCache,
     nearby_cache: NearbyCache,
 }
 
@@ -37,6 +40,7 @@ impl Adapter {
             flask_cache: FlaskCache::default(),
             effect_cache: EffectCache::default(),
             motion_cache: MotionCache::default(),
+            skill_cache: SkillCache::default(),
             nearby_cache: NearbyCache::default(),
         })
     }
@@ -68,6 +72,15 @@ impl Adapter {
 
     pub fn verify_animation(&mut self, process: &Process) -> io::Result<i32> {
         self.motion_cache.sample(process, &self.probe)
+    }
+
+    pub fn molten_shell(&mut self, process: &Process) -> io::Result<SkillReadiness> {
+        if let Some(state) = self.tick.molten_shell {
+            return Ok(state);
+        }
+        let state = self.skill_cache.sample(process, &self.probe)?;
+        self.tick.molten_shell = Some(state);
+        Ok(state)
     }
 
     pub fn nearby(&mut self, process: &Process) -> io::Result<NearbySnapshot> {
@@ -116,6 +129,7 @@ impl GameStateReader for Adapter {
         self.flask_cache.clear();
         self.effect_cache.clear();
         self.motion_cache.clear();
+        self.skill_cache.clear();
         self.nearby_cache.clear();
         self.probe = super::refresh(process, &self.probe)?;
         Ok(())

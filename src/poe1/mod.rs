@@ -18,6 +18,8 @@ mod offsets;
 mod reader;
 pub mod recovery;
 pub mod rotation;
+pub mod skill_rules;
+pub mod skills;
 pub mod types;
 
 pub(crate) use reader::{

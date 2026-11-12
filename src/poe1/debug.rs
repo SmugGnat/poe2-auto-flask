@@ -4,6 +4,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::movement::RUN_ANIMATION_ID;
+use super::skill_rules::{evaluate_molten_shell, DEFAULT_LIFE_THRESHOLD_PERCENT, MOLTEN_SHELL_BUFF};
 use crate::process::Process;
 use crate::session::GameSession;
 use windows_sys::Win32::Foundation::FILETIME;
@@ -134,6 +135,27 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                             .map(|e| e.name.as_str())
                             .collect::<Vec<_>>()
                             .join(", "),
+                    );
+                    let skill = session.poe1_molten_shell(process);
+                    let rule = evaluate_molten_shell(
+                        vitals,
+                        &buffs,
+                        skill.as_ref().ok().copied(),
+                        DEFAULT_LIFE_THRESHOLD_PERCENT,
+                    );
+                    println!(
+                        "  Molten Shell (read-only prototype): buff {} | skill {} | rule at {}% Life {:?}",
+                        if buffs.effects.iter().any(|effect| effect.name == MOLTEN_SHELL_BUFF && effect.time_left > 0.0) {
+                            "active"
+                        } else {
+                            "absent"
+                        },
+                        match &skill {
+                            Ok(state) => format!("{state:?}"),
+                            Err(error) => format!("unavailable ({error})"),
+                        },
+                        DEFAULT_LIFE_THRESHOLD_PERCENT,
+                        rule
                     );
                     if let Some(line) = cpu_meter.report() {
                         println!("  {line}");
