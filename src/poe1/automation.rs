@@ -557,6 +557,20 @@ fn requires_skill_readiness(rule: &SkillRule) -> bool {
         .any(|condition| matches!(condition, Condition::SkillUsable))
 }
 
+fn binding_label(state: &BindingState) -> String {
+    match state {
+        BindingState::Ready(keys) => format!(
+            "PoE1 flask keys: {}",
+            keys.iter()
+                .enumerate()
+                .map(|(i, k)| format!("{}={}", i + 1, k.label()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        BindingState::Unavailable(error) => format!("PoE1 bindings unavailable: {error}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -592,19 +606,5 @@ mod tests {
             conflicting_skill_bindings(&rules, &BindingState::Unavailable("unknown".into()))
                 .is_empty()
         );
-    }
-}
-
-fn binding_label(state: &BindingState) -> String {
-    match state {
-        BindingState::Ready(keys) => format!(
-            "PoE1 flask keys: {}",
-            keys.iter()
-                .enumerate()
-                .map(|(i, k)| format!("{}={}", i + 1, k.label()))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        BindingState::Unavailable(error) => format!("PoE1 bindings unavailable: {error}"),
     }
 }
