@@ -1,6 +1,11 @@
 //! PoE2's bounded, known-offset-first layout search used at attach/refresh.
 //! Both area and player-state readers use exactly the same candidate ordering.
-pub(super) fn prioritized_offsets(center: usize, start: usize, end: usize, step: usize) -> Vec<usize> {
+pub(super) fn prioritized_offsets(
+    center: usize,
+    start: usize,
+    end: usize,
+    step: usize,
+) -> Vec<usize> {
     let mut offsets = Vec::new();
     if center >= start && center <= end {
         offsets.push(center);
