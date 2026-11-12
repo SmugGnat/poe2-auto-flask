@@ -257,12 +257,8 @@ impl GameAutomationPolicy for Policy {
         };
         let mut skills = Vec::new();
         for rule in candidates {
-            let readiness = statuses
-                .as_ref()
-                .and_then(|all| all.get(&rule.id))
-                .copied();
-            if evaluate(&rule, state.vitals, &observed_effects, readiness)
-                == RuleDecision::Eligible
+            let readiness = statuses.as_ref().and_then(|all| all.get(&rule.id)).copied();
+            if evaluate(&rule, state.vitals, &observed_effects, readiness) == RuleDecision::Eligible
             {
                 skills.push(rule);
             }

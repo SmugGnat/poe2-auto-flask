@@ -80,7 +80,8 @@ impl Adapter {
         process: &Process,
         requested: &[SkillId],
     ) -> io::Result<std::collections::BTreeMap<SkillId, SkillReadiness>> {
-        self.skill_cache.sample_many(process, &self.probe, requested)
+        self.skill_cache
+            .sample_many(process, &self.probe, requested)
     }
 
     /// Bypass the within-tick cache for a fresh pre-input buff check.
@@ -94,7 +95,8 @@ impl Adapter {
         process: &Process,
         requested: &[SkillId],
     ) -> io::Result<std::collections::BTreeMap<SkillId, SkillReadiness>> {
-        self.skill_cache.sample_many(process, &self.probe, requested)
+        self.skill_cache
+            .sample_many(process, &self.probe, requested)
     }
 
     pub fn nearby(&mut self, process: &Process) -> io::Result<NearbySnapshot> {

@@ -121,20 +121,18 @@ impl SkillCache {
             if !plausible_ptr(row) {
                 return Err(invalid("PoE1 ActiveSkill definition pointer invalid"));
             }
-            let name = if let Some(name) = self.names.get(&row) {
-                name.clone()
-            } else {
+            if !self.names.contains_key(&row) {
                 if self.names.len() >= MAX_NAMES {
                     self.names.clear();
                 }
                 let p1 = read_ptr(process, row)?;
                 let name_ptr = read_ptr(process, p1)?;
                 let name = read_name(process, name_ptr)?;
-                self.names.insert(row, name.clone());
-                name
-            };
+                self.names.insert(row, name);
+            }
+            let name = self.names.get(&row).expect("skill name was resolved");
             for &skill in &wanted {
-                if skill.matches_internal_name(&name) {
+                if skill.matches_internal_name(name) {
                     if found
                         .insert(
                             skill,

@@ -103,7 +103,10 @@ impl TickState {
             .as_ref()
             .is_some_and(|value| requested.iter().any(|id| !value.contains_key(id)))
         {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "skills requested after Actor snapshot"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "skills requested after Actor snapshot",
+            ));
         }
         Ok(self.skills.as_ref().expect("skills sampled"))
     }
@@ -157,7 +160,10 @@ impl Preflight {
             .as_ref()
             .is_some_and(|value| requested.iter().any(|id| !value.contains_key(id)))
         {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "skills requested after preflight scan"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "skills requested after preflight scan",
+            ));
         }
         Ok(self.readiness.as_ref().expect("preflight skills sampled"))
     }

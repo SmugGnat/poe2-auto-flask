@@ -105,7 +105,8 @@ impl GameSession {
         &mut self,
         process: &Process,
         requested: &[poe1::skills::SkillId],
-    ) -> io::Result<std::collections::BTreeMap<poe1::skills::SkillId, poe1::skills::SkillReadiness>> {
+    ) -> io::Result<std::collections::BTreeMap<poe1::skills::SkillId, poe1::skills::SkillReadiness>>
+    {
         match &mut self.reader {
             Reader::Poe1(adapter) => adapter.skills(process, requested),
             Reader::Poe2(_) => Err(unsupported()),
@@ -153,7 +154,8 @@ impl GameSession {
         &mut self,
         process: &Process,
         requested: &[poe1::skills::SkillId],
-    ) -> io::Result<std::collections::BTreeMap<poe1::skills::SkillId, poe1::skills::SkillReadiness>> {
+    ) -> io::Result<std::collections::BTreeMap<poe1::skills::SkillId, poe1::skills::SkillReadiness>>
+    {
         match &mut self.reader {
             Reader::Poe1(adapter) => adapter.verify_skills(process, requested),
             Reader::Poe2(_) => Err(unsupported()),

@@ -78,10 +78,16 @@ pre-dispatch safety boundary. Flask and skill actions reuse the same preflight
 values, rather than re-reading vitals/chat/effects for each action separately.
 Foreground focus is still checked around each key, including the second action
 in a tick. PoE1's first registered skill is Molten Shell; each future preset
-adds its own conditions without another automation loop. If many skills are
-enabled simultaneously in the future, measure and consolidate their Actor
-skill scanning into one bulk snapshot before adding more repeated readers.
-Rechecking game focus, player identity, charges or area boundaries is a
+adds its own conditions without another automation loop. The skill reader now batches all requested preset IDs into a single
+Actor ActiveSkills traversal and a single cooldown traversal for the decision
+snapshot, and (only when selected) a fresh bulk pre-dispatch check. It
+inspects the character's current Actor skills, not the game's complete skill
+database. Static skill-definition names remain cached; live usability is
+read fresh. Rules whose cheap conditions fail trigger no skill scans. The
+currently configured preset is Molten Shell; the second skill ID in unit
+tests demonstrates independent result classification before additional
+presets are enabled. Do not infer hotbar assignment from presence in the
+Actor skill list. Rechecking game focus, player identity, charges or area boundaries is a
 deliberate fail-closed requirement. PoE2's debug and optimized auto readers are separate
 workloads, not duplicate work performed every tick. Some small helper functions
 retain per-game validation/error semantics rather than being generalized
