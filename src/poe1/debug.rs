@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use super::config::Poe1SkillsConfig;
 use super::movement::RUN_ANIMATION_ID;
-use super::skill_rules::{configured_rules, evaluate, MOLTEN_SHELL_BUFF};
+use super::skill_rules::{configured_rules, evaluate, BLOOD_RAGE_BUFF, MOLTEN_SHELL_BUFF};
 use super::skills::SkillId;
 use crate::process::Process;
 use crate::session::GameSession;
@@ -144,9 +144,11 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                             .collect::<Vec<_>>()
                             .join(", "),
                     );
-                    let skill = session
-                        .poe1_skills(process, &[SkillId::MoltenShell])
-                        .map(|snapshot| snapshot[&SkillId::MoltenShell]);
+                    // The debug reader shares one Actor pass for both actual
+                    // presets, even when only one is equipped.
+                    let skills = session.poe1_skills(process, &[SkillId::MoltenShell, SkillId::BloodRage]);
+                    let skill = skills.as_ref().map(|snapshot| snapshot[&SkillId::MoltenShell]);
+                    let blood_rage = skills.as_ref().map(|snapshot| snapshot[&SkillId::BloodRage]);
                     let rule = evaluate(
                         &diagnostic_rule,
                         vitals,
@@ -167,6 +169,22 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                         },
                         diagnostic_config.molten_shell.threshold_percent,
                         rule
+                    );
+                    println!(
+                        "  Blood Rage (read-only): buff {} | skill {}",
+                        if buffs
+                            .effects
+                            .iter()
+                            .any(|effect| effect.name == BLOOD_RAGE_BUFF && effect.time_left > 0.0)
+                        {
+                            "active"
+                        } else {
+                            "absent"
+                        },
+                        match &blood_rage {
+                            Ok(state) => format!("{state:?}"),
+                            Err(error) => format!("unavailable ({error})"),
+                        }
                     );
                     if let Some(line) = cpu_meter.report() {
                         println!("  {line}");
