@@ -805,8 +805,8 @@ mod tests {
 
     #[test]
     fn outstanding_life_input_does_not_suppress_nearby_utility_scanning() {
-        use crate::poe1::config::NearbyRule;
         use crate::poe1::buffs::Effect;
+        use crate::poe1::config::NearbyRule;
         let (mut config, mut vitals, mut flasks, mut effects) = setup();
         config.poe1.utility.granite = true;
         config
