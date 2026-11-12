@@ -11,7 +11,6 @@ use super::config::Poe1SkillsConfig;
 use super::skills::{SkillId, SkillReadiness};
 
 pub const MOLTEN_SHELL_BUFF: &str = "molten_shell_shield";
-pub const DEFAULT_LIFE_THRESHOLD_PERCENT: u8 = 95;
 const MIN_ATTEMPT_GAP: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
