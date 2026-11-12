@@ -261,7 +261,10 @@ impl Config {
         if shell.enabled {
             skills.push(summary_entry(
                 "Molten Shell",
-                &[format!("{}, Life <={}%", shell.key, shell.threshold_percent)],
+                &[format!(
+                    "{}, Life <={}%",
+                    shell.key, shell.threshold_percent
+                )],
             ));
         }
         let blood = &self.poe1.skills.blood_rage;
@@ -282,7 +285,11 @@ impl Config {
 
         format!(
             "Options : Hideout {}\nLife    : {}\nMana    : {}\n{}\n{}",
-            if self.general.enable_in_hideout { "ON" } else { "OFF" },
+            if self.general.enable_in_hideout {
+                "ON"
+            } else {
+                "OFF"
+            },
             threshold_summary(&self.health),
             threshold_summary(&self.mana),
             summary_group("Flasks", &flasks),
@@ -366,7 +373,10 @@ mod summary_tests {
         config.poe1.utility.quicksilver = true;
         config.poe1.utility.granite = true;
         config.poe1.quicksilver_min_run_ms = 500;
-        config.poe1.nearby.insert(FlaskType::Granite, NearbyRule::default());
+        config
+            .poe1
+            .nearby
+            .insert(FlaskType::Granite, NearbyRule::default());
         config.poe1.skills.molten_shell.enabled = true;
         config.poe1.skills.molten_shell.key = "R".into();
         config.poe1.skills.blood_rage.enabled = true;
@@ -393,7 +403,10 @@ mod summary_tests {
         config.mana.enabled = false;
         config.general.enable_in_hideout = true;
         config.poe1.quicksilver_min_run_ms = 500;
-        config.poe1.nearby.insert(FlaskType::Granite, NearbyRule::default());
+        config
+            .poe1
+            .nearby
+            .insert(FlaskType::Granite, NearbyRule::default());
 
         assert_eq!(
             config.poe1_summary(),
