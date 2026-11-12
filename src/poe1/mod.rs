@@ -24,3 +24,11 @@ pub(crate) use reader::{
     invalid, plausible_ptr, probe, read_metadata, read_player_id, read_ptr, refresh, sample_vitals,
     Probe,
 };
+
+/// Executable names accepted by the PoE1 process discovery code.
+pub(crate) const PROCESS_NAMES: &[&str] = &[
+    "PathOfExileSteam.exe",
+    "PathOfExile.exe",
+    "PathOfExile_x64.exe",
+    "PathOfExile_KG.exe",
+];

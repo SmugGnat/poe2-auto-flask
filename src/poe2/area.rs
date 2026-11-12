@@ -1,6 +1,7 @@
 //! PoE2 WorldData/WorldArea reader. Shared area data lives at crate::area.
 use std::io;
 
+use super::layout::prioritized_offsets;
 use super::offsets::area::*;
 use super::Probe;
 use crate::area::AreaInfo;
@@ -121,33 +122,6 @@ fn read_u64_from(bytes: &[u8], offset: usize) -> u64 {
             .try_into()
             .expect("validated 8-byte field"),
     )
-}
-
-fn prioritized_offsets(center: usize, start: usize, end: usize, step: usize) -> Vec<usize> {
-    let mut offsets = Vec::new();
-    if center >= start && center <= end {
-        offsets.push(center);
-    }
-
-    let mut distance = step;
-    while center.saturating_sub(distance) >= start || center.saturating_add(distance) <= end {
-        if let Some(lower) = center.checked_sub(distance) {
-            if lower >= start && lower <= end {
-                offsets.push(lower);
-            }
-        }
-        if let Some(upper) = center.checked_add(distance) {
-            if upper >= start && upper <= end {
-                offsets.push(upper);
-            }
-        }
-        distance = match distance.checked_add(step) {
-            Some(next) => next,
-            None => break,
-        };
-    }
-
-    offsets
 }
 
 #[cfg(test)]
