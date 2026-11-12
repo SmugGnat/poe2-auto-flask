@@ -151,6 +151,7 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                         &diagnostic_rule,
                         vitals,
                         &buffs,
+                        None,
                         skill.as_ref().ok().copied(),
                     );
                     println!(

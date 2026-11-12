@@ -8,15 +8,19 @@ use crate::input::KeyBinding;
 
 use super::buffs::EffectsSnapshot;
 use super::config::Poe1SkillsConfig;
+use super::nearby::NearbySnapshot;
 use super::skills::{SkillId, SkillReadiness};
 
 pub const MOLTEN_SHELL_BUFF: &str = "molten_shell_shield";
+pub const BLOOD_RAGE_BUFF: &str = "blood_rage";
 const MIN_ATTEMPT_GAP: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Condition {
     LifeAtOrBelow(u8),
+    LifeAtOrAbove(u8),
     BuffAbsent(&'static str),
+    NearbyMonsters { radius: u16, minimum_count: u16 },
     SkillUsable,
 }
 
@@ -42,6 +46,25 @@ pub fn configured_rules(config: &Poe1SkillsConfig) -> io::Result<Vec<SkillRule>>
             ],
         });
     }
+    let blood = &config.blood_rage;
+    if blood.enabled {
+        let mut conditions = vec![
+            Condition::LifeAtOrAbove(blood.min_life_percent),
+            Condition::BuffAbsent(BLOOD_RAGE_BUFF),
+        ];
+        if blood.require_nearby_monsters {
+            conditions.push(Condition::NearbyMonsters {
+                radius: blood.nearby_radius,
+                minimum_count: blood.nearby_minimum_count,
+            });
+        }
+        conditions.push(Condition::SkillUsable);
+        rules.push(SkillRule {
+            id: SkillId::BloodRage,
+            key: blood.binding()?,
+            conditions,
+        });
+    }
     Ok(rules)
 }
 
@@ -49,7 +72,9 @@ pub fn configured_rules(config: &Poe1SkillsConfig) -> io::Result<Vec<SkillRule>>
 pub enum RuleDecision {
     InvalidVitals,
     LifeAboveThreshold,
+    LifeBelowThreshold,
     AlreadyActive,
+    NotEnoughNearbyMonsters,
     SkillUnavailable,
     SkillNotUsable,
     Eligible,
@@ -58,7 +83,8 @@ pub enum RuleDecision {
 pub fn preconditions_met(rule: &SkillRule, vitals: LiveVitals) -> bool {
     rule.conditions.iter().all(|condition| match condition {
         Condition::LifeAtOrBelow(threshold) => life_at_or_below(vitals, *threshold),
-        Condition::BuffAbsent(_) | Condition::SkillUsable => true,
+        Condition::LifeAtOrAbove(threshold) => life_at_or_above(vitals, *threshold),
+        Condition::BuffAbsent(_) | Condition::NearbyMonsters { .. } | Condition::SkillUsable => true,
     })
 }
 
@@ -71,6 +97,8 @@ pub fn observations_allow(rule: &SkillRule, vitals: LiveVitals, effects: &Effect
     }
     rule.conditions.iter().all(|condition| match *condition {
         Condition::LifeAtOrBelow(threshold) => life_at_or_below(vitals, threshold),
+        Condition::LifeAtOrAbove(threshold) => life_at_or_above(vitals, threshold),
+        Condition::NearbyMonsters { .. } => true,
         Condition::BuffAbsent(name) => !effects.effects.iter().any(|effect| {
             effect.name == name && (!effect.time_left.is_finite() || effect.time_left >= 0.0)
         }),
@@ -78,10 +106,36 @@ pub fn observations_allow(rule: &SkillRule, vitals: LiveVitals, effects: &Effect
     })
 }
 
+/// Evaluate proximity conditions from the existing cached monster census.
+/// Unknown/unavailable nearby state never authorizes a gated skill.
+pub fn nearby_conditions_met(rule: &SkillRule, nearby: Option<&NearbySnapshot>) -> bool {
+    rule.conditions.iter().all(|condition| match *condition {
+        Condition::NearbyMonsters {
+            radius,
+            minimum_count,
+        } => {
+            (1..=150).contains(&radius)
+                && (1..=512).contains(&minimum_count)
+                && nearby.is_some_and(|snapshot| {
+                    snapshot.counts_at(f32::from(radius)).into_iter().sum::<usize>()
+                        >= usize::from(minimum_count)
+                })
+        }
+        _ => true,
+    })
+}
+
+pub fn requires_nearby(rule: &SkillRule) -> bool {
+    rule.conditions
+        .iter()
+        .any(|condition| matches!(condition, Condition::NearbyMonsters { .. }))
+}
+
 pub fn evaluate(
     rule: &SkillRule,
     vitals: LiveVitals,
     effects: &EffectsSnapshot,
+    nearby: Option<&NearbySnapshot>,
     readiness: Option<SkillReadiness>,
 ) -> RuleDecision {
     let max = vitals.health.usable_max();
@@ -97,6 +151,19 @@ pub fn evaluate(
                 }
                 if !life_at_or_below(vitals, threshold) {
                     return RuleDecision::LifeAboveThreshold;
+                }
+            }
+            Condition::LifeAtOrAbove(threshold) => {
+                if !(1..=100).contains(&threshold) {
+                    return RuleDecision::InvalidVitals;
+                }
+                if !life_at_or_above(vitals, threshold) {
+                    return RuleDecision::LifeBelowThreshold;
+                }
+            }
+            Condition::NearbyMonsters { .. } => {
+                if !nearby_conditions_met(rule, nearby) {
+                    return RuleDecision::NotEnoughNearbyMonsters;
                 }
             }
             Condition::BuffAbsent(name) => {
@@ -125,6 +192,16 @@ fn life_at_or_below(vitals: LiveVitals, threshold: u8) -> bool {
         && max > 0
         && current <= max
         && i64::from(current) * 100 <= i64::from(max) * i64::from(threshold)
+}
+
+fn life_at_or_above(vitals: LiveVitals, threshold: u8) -> bool {
+    let max = vitals.health.usable_max();
+    let current = vitals.health.current;
+    (1..=100).contains(&threshold)
+        && current > 0
+        && max > 0
+        && current <= max
+        && i64::from(current) * 100 >= i64::from(max) * i64::from(threshold)
 }
 
 #[derive(Debug, Default)]
@@ -199,19 +276,19 @@ mod tests {
     fn evaluates_life_buff_and_readiness_independently() {
         let r = rule();
         assert_eq!(
-            evaluate(&r, vitals(96), &empty(), Some(SkillReadiness::Usable)),
+            evaluate(&r, vitals(96), &empty(), None, Some(SkillReadiness::Usable)),
             RuleDecision::LifeAboveThreshold
         );
         assert_eq!(
-            evaluate(&r, vitals(95), &empty(), Some(SkillReadiness::Usable)),
+            evaluate(&r, vitals(95), &empty(), None, Some(SkillReadiness::Usable)),
             RuleDecision::Eligible
         );
         assert_eq!(
-            evaluate(&r, vitals(50), &empty(), None),
+            evaluate(&r, vitals(50), &empty(), None, None),
             RuleDecision::SkillUnavailable
         );
         assert_eq!(
-            evaluate(&r, vitals(50), &empty(), Some(SkillReadiness::NotUsable)),
+            evaluate(&r, vitals(50), &empty(), None, Some(SkillReadiness::NotUsable)),
             RuleDecision::SkillNotUsable
         );
         let mut state = empty();
@@ -222,11 +299,11 @@ mod tests {
             time_left: 2.0,
         });
         assert_eq!(
-            evaluate(&r, vitals(20), &state, Some(SkillReadiness::Usable)),
+            evaluate(&r, vitals(20), &state, None, Some(SkillReadiness::Usable)),
             RuleDecision::AlreadyActive
         );
         assert_eq!(
-            evaluate(&r, vitals(0), &empty(), Some(SkillReadiness::Usable)),
+            evaluate(&r, vitals(0), &empty(), None, Some(SkillReadiness::Usable)),
             RuleDecision::InvalidVitals
         );
     }
@@ -239,7 +316,7 @@ mod tests {
         ];
         assert!(preconditions_met(&r, vitals(100)));
         assert_eq!(
-            evaluate(&r, vitals(100), &empty(), Some(SkillReadiness::Usable)),
+            evaluate(&r, vitals(100), &empty(), None, Some(SkillReadiness::Usable)),
             RuleDecision::Eligible
         );
     }
@@ -257,6 +334,67 @@ mod tests {
         assert!(!observations_allow(&r, vitals(50), &effects));
         assert!(observations_allow(&r, vitals(50), &empty()));
         assert!(!observations_allow(&r, vitals(100), &empty()));
+    }
+
+    #[test]
+    fn blood_rage_nearby_and_life_conditions_are_independent() {
+        use super::super::nearby::{NearbyMonster, Rarity};
+        let mut settings = Poe1SkillsConfig::default();
+        settings.blood_rage.enabled = true;
+        let rule = configured_rules(&settings).unwrap().remove(0);
+        assert_eq!(rule.id, SkillId::BloodRage);
+        assert!(!preconditions_met(&rule, vitals(79)));
+        assert!(preconditions_met(&rule, vitals(80)));
+        let snapshot = NearbySnapshot {
+            nearby: vec![NearbyMonster {
+                rarity: Rarity::Normal,
+                distance_squared: 20.0 * 20.0,
+            }],
+            ..NearbySnapshot::default()
+        };
+        assert!(!nearby_conditions_met(&rule, None));
+        assert!(nearby_conditions_met(&rule, Some(&snapshot)));
+        assert_eq!(
+            evaluate(&rule, vitals(79), &empty(), Some(&snapshot), Some(SkillReadiness::Usable)),
+            RuleDecision::LifeBelowThreshold
+        );
+        assert_eq!(
+            evaluate(&rule, vitals(80), &empty(), None, Some(SkillReadiness::Usable)),
+            RuleDecision::NotEnoughNearbyMonsters
+        );
+        assert_eq!(
+            evaluate(&rule, vitals(80), &empty(), Some(&snapshot), Some(SkillReadiness::Usable)),
+            RuleDecision::Eligible
+        );
+        let mut buffed = empty();
+        buffed.effects.push(Effect {
+            name: BLOOD_RAGE_BUFF.into(),
+            flask_slot: None,
+            buff_type: 0,
+            time_left: 8.0,
+        });
+        assert_eq!(
+            evaluate(&rule, vitals(100), &buffed, Some(&snapshot), Some(SkillReadiness::Usable)),
+            RuleDecision::AlreadyActive
+        );
+        settings.blood_rage.require_nearby_monsters = false;
+        let without_nearby = configured_rules(&settings).unwrap().remove(0);
+        assert!(!requires_nearby(&without_nearby));
+        assert_eq!(
+            evaluate(&without_nearby, vitals(80), &empty(), None, Some(SkillReadiness::Usable)),
+            RuleDecision::Eligible
+        );
+    }
+
+    #[test]
+    fn two_skill_presets_produce_different_condition_sets() {
+        let mut config = Poe1SkillsConfig::default();
+        config.molten_shell.enabled = true;
+        config.blood_rage.enabled = true;
+        let rules = configured_rules(&config).unwrap();
+        assert_eq!(rules.len(), 2);
+        assert!(!requires_nearby(&rules[0]));
+        assert!(requires_nearby(&rules[1]));
     }
 
     #[test]
