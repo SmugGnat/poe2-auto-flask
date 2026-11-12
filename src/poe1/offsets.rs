@@ -63,6 +63,16 @@ pub(super) const CHAT_BACKGROUND_COLOR: usize = 0x288;
 // From movement.rs:
 pub(super) const ACTOR_ANIMATION_ID: usize = 0x248;
 
+// Actor active-skill and cooldown structures (2026-09 GameHelper candidate layout).
+pub(super) const ACTOR_SKILLS: usize = 0x6F0;
+pub(super) const ACTOR_COOLDOWNS: usize = 0x708;
+pub(super) const SKILL_DETAIL_ID: usize = 0x40;
+pub(super) const SKILL_DETAIL_GRANTED_ROW: usize = 0x48;
+pub(super) const SKILL_DETAIL_CANNOT_USE: usize = 0xB1;
+pub(super) const COOLDOWN_SKILL_ID: usize = 0x3C;
+pub(super) const COOLDOWN_USES: usize = 0x30;
+pub(super) const COOLDOWN_VECTOR: usize = 0x10;
+
 // From charge_cost.rs:
 pub(super) const STATS_DATA_PTR: usize = 0x20;
 pub(super) const STATS_VECTOR: usize = 0xF0;

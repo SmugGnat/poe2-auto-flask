@@ -6,16 +6,12 @@ use std::io;
 use crate::entity::resolve_component;
 use crate::process::Process;
 
+use super::offsets::{
+    ACTOR_COOLDOWNS, ACTOR_SKILLS, COOLDOWN_SKILL_ID, COOLDOWN_USES, COOLDOWN_VECTOR,
+    SKILL_DETAIL_CANNOT_USE, SKILL_DETAIL_GRANTED_ROW, SKILL_DETAIL_ID,
+};
 use super::{invalid, plausible_ptr, read_player_id, read_ptr, Probe};
 
-const ACTOR_SKILLS: usize = 0x6F0;
-const ACTOR_COOLDOWNS: usize = 0x708;
-const SKILL_DETAIL_ID: usize = 0x40;
-const SKILL_DETAIL_GRANTED_ROW: usize = 0x48;
-const SKILL_DETAIL_CANNOT_USE: usize = 0xB1;
-const COOLDOWN_SKILL_ID: usize = 0x3C;
-const COOLDOWN_USES: usize = 0x30;
-const COOLDOWN_VECTOR: usize = 0x10;
 const MAX_SKILLS: usize = 128;
 const MAX_NAMES: usize = 256;
 const NAME_UNITS: usize = 128;
