@@ -21,8 +21,6 @@ const NAME_UNITS: usize = 128;
 pub enum SkillId {
     MoltenShell,
     BloodRage,
-    #[cfg(test)]
-    EnduringCry,
 }
 
 impl SkillId {
@@ -30,8 +28,6 @@ impl SkillId {
         match self {
             Self::MoltenShell => "Molten Shell",
             Self::BloodRage => "Blood Rage",
-            #[cfg(test)]
-            Self::EnduringCry => "Enduring Cry",
         }
     }
 
@@ -44,8 +40,6 @@ impl SkillId {
             Self::BloodRage => {
                 name.eq_ignore_ascii_case("BloodRage") || name.eq_ignore_ascii_case("blood_rage")
             }
-            #[cfg(test)]
-            Self::EnduringCry => name.eq_ignore_ascii_case("EnduringCry"),
         }
     }
 }
@@ -290,17 +284,17 @@ mod tests {
 
     #[test]
     fn one_snapshot_classifies_multiple_requested_skills() {
-        let requested = BTreeSet::from([SkillId::MoltenShell, SkillId::EnduringCry]);
+        let requested = BTreeSet::from([SkillId::MoltenShell, SkillId::BloodRage]);
         let found = BTreeMap::from([
             (SkillId::MoltenShell, (3u32, false)),
-            (SkillId::EnduringCry, (8u32, false)),
+            (SkillId::BloodRage, (8u32, false)),
         ]);
         let snapshot = classify(&requested, &found, &HashSet::from([3u32]));
         assert_eq!(snapshot[&SkillId::MoltenShell], SkillReadiness::NotUsable);
-        assert_eq!(snapshot[&SkillId::EnduringCry], SkillReadiness::Usable);
+        assert_eq!(snapshot[&SkillId::BloodRage], SkillReadiness::Usable);
         let absent = classify(&requested, &BTreeMap::new(), &HashSet::new());
         assert_eq!(absent[&SkillId::MoltenShell], SkillReadiness::NotFound);
-        assert_eq!(absent[&SkillId::EnduringCry], SkillReadiness::NotFound);
+        assert_eq!(absent[&SkillId::BloodRage], SkillReadiness::NotFound);
     }
 
     #[test]
