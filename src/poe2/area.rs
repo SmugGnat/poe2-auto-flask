@@ -1,7 +1,7 @@
 //! PoE2 WorldData/WorldArea reader. Shared area data lives at crate::area.
 use std::io;
 
-use super::VitalsProbe;
+use super::Probe;
 use crate::area::AreaInfo;
 use crate::process::Process;
 
@@ -24,7 +24,7 @@ const AREA_ROW_READ_LEN: usize = 0x16;
 const MAX_AREA_ID_CHARS: usize = 128;
 const MAX_AREA_NAME_CHARS: usize = 192;
 
-pub fn resolve_area_info(process: &Process, vitals: &VitalsProbe) -> io::Result<AreaInfo> {
+pub fn resolve_area_info(process: &Process, vitals: &Probe) -> io::Result<AreaInfo> {
     for offset in prioritized_offsets(
         IN_GAME_WORLD_DATA,
         WORLD_DATA_SEARCH_START,

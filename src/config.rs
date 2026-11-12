@@ -84,7 +84,7 @@ impl Default for FlaskConfig {
 }
 
 impl Config {
-    pub fn summary(&self) -> String {
+    pub fn poe2_summary(&self) -> String {
         format!(
             "{} | {} | Hideout {}",
             flask_summary("Life", &self.health),

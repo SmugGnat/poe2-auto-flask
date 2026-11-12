@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::io;
 
 use crate::entity::resolve_component;
-use crate::poe2::VitalsProbe;
+use super::Probe;
 use crate::process::Process;
 
 const ENTITY_ID: usize = 0x88;
@@ -70,7 +70,7 @@ pub struct FlaskLockProbe {
     definition_cache: HashMap<usize, bool>,
 }
 
-pub fn resolve_flask_probe(process: &Process, vitals: &VitalsProbe) -> io::Result<FlaskProbe> {
+pub fn resolve_flask_probe(process: &Process, vitals: &Probe) -> io::Result<FlaskProbe> {
     let (player_id, buffs_component) = resolve_player_buffs(process, vitals)?;
     let probe = FlaskProbe {
         local_player: vitals.local_player,
@@ -85,7 +85,7 @@ pub fn resolve_flask_probe(process: &Process, vitals: &VitalsProbe) -> io::Resul
 
 pub fn resolve_flask_lock_probe(
     process: &Process,
-    vitals: &VitalsProbe,
+    vitals: &Probe,
 ) -> io::Result<FlaskLockProbe> {
     let (player_id, buffs_component) = resolve_player_buffs(process, vitals)?;
     let mut probe = FlaskLockProbe {
@@ -100,7 +100,7 @@ pub fn resolve_flask_lock_probe(
     Ok(probe)
 }
 
-fn resolve_player_buffs(process: &Process, vitals: &VitalsProbe) -> io::Result<(u32, usize)> {
+fn resolve_player_buffs(process: &Process, vitals: &Probe) -> io::Result<(u32, usize)> {
     let player_id = read_u32(process, vitals.local_player + ENTITY_ID)?;
     if player_id == 0 || player_id == u32::MAX {
         return Err(io::Error::new(

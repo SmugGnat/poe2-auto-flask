@@ -16,10 +16,10 @@ use crate::entity::resolve_component;
 use crate::process::{PeSection, Process};
 
 // Common resource values live in game_state; PoE2 owns only layout and parsing.
-pub use crate::game_state::{LiveVitals, VitalPool};
+use crate::game_state::{LiveVitals, VitalPool};
 
 #[derive(Debug)]
-pub struct VitalsProbe {
+pub struct Probe {
     pub text_section: PeSection,
     pub aob_match_count: usize,
     pub game_state_slot: usize,
@@ -39,7 +39,7 @@ pub struct VitalsProbe {
     pub energy_shield: Option<VitalPool>,
 }
 
-pub fn probe_vitals(process: &Process) -> io::Result<VitalsProbe> {
+pub fn probe(process: &Process) -> io::Result<Probe> {
     let text_section = process.find_pe_section(".text")?;
     let matches =
         process.scan_pattern(text_section.address, text_section.size, &GAME_STATE_PATTERN)?;
@@ -69,9 +69,9 @@ pub fn probe_vitals(process: &Process) -> io::Result<VitalsProbe> {
 }
 
 // Re-resolve after an area or player transition without rescanning the executable section.
-pub fn refresh_vitals(process: &Process, previous: &VitalsProbe) -> io::Result<VitalsProbe> {
+pub fn refresh(process: &Process, previous: &Probe) -> io::Result<Probe> {
     let Some(game_state) = read_ptr(process, previous.game_state_slot) else {
-        return probe_vitals(process);
+        return probe(process);
     };
 
     match probe_from_game_state_root(
@@ -84,7 +84,7 @@ pub fn refresh_vitals(process: &Process, previous: &VitalsProbe) -> io::Result<V
         Ok(probe) => Ok(probe),
         Err(error) => {
             if read_ptr(process, previous.game_state_slot).is_none() {
-                probe_vitals(process)
+                probe(process)
             } else {
                 Err(error)
             }
@@ -94,7 +94,7 @@ pub fn refresh_vitals(process: &Process, previous: &VitalsProbe) -> io::Result<V
 
 // Area and player identity checks make stale pointers fail closed. Each VitalStruct is read in one
 // compact block instead of several separate process reads.
-pub fn sample_vitals(process: &Process, probe: &VitalsProbe) -> io::Result<LiveVitals> {
+pub fn sample_vitals(process: &Process, probe: &Probe) -> io::Result<LiveVitals> {
     let area_instance = read_ptr(process, probe.in_game_state + probe.area_instance_offset)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "AreaInstance is unavailable"))?;
     if area_instance != probe.area_instance {
@@ -169,7 +169,7 @@ fn probe_from_game_state_match(
     instruction: usize,
     aob_match_count: usize,
     text_section: PeSection,
-) -> io::Result<VitalsProbe> {
+) -> io::Result<Probe> {
     let displacement = process.read_i32(instruction + 3)? as i64;
     let game_state_slot = add_signed(instruction + 7, displacement)?;
     let game_state = read_ptr(process, game_state_slot).ok_or_else(|| {
@@ -194,7 +194,7 @@ fn probe_from_game_state_root(
     game_state: usize,
     aob_match_count: usize,
     text_section: PeSection,
-) -> io::Result<VitalsProbe> {
+) -> io::Result<Probe> {
     let states = in_game_state_candidates(process, game_state);
     if states.is_empty() {
         return Err(io::Error::new(
@@ -280,7 +280,7 @@ fn try_player_chain(
     in_game_state: usize,
     area_instance_offset: usize,
     local_player_offset: usize,
-) -> Option<VitalsProbe> {
+) -> Option<Probe> {
     let area_instance = read_ptr(process, in_game_state + area_instance_offset)?;
     let local_player = read_ptr(process, area_instance + local_player_offset)?;
     let metadata = read_metadata(process, local_player)?;
@@ -295,7 +295,7 @@ fn try_player_chain(
     let energy_shield =
         resolve_vital_offset_allow_zero(process, life_component, LIFE_ENERGY_SHIELD);
 
-    Some(VitalsProbe {
+    Some(Probe {
         text_section: text_section.clone(),
         aob_match_count,
         game_state_slot,

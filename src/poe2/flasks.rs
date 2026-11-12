@@ -2,7 +2,7 @@
 use std::io;
 
 use crate::entity::resolve_component;
-use crate::poe2::VitalsProbe;
+use super::Probe;
 use crate::process::Process;
 
 const PLAYER_INFO_LOCAL_PLAYER: usize = 0x20;
@@ -79,7 +79,7 @@ impl FlaskChargeCache {
 
 pub fn resolve_flask_inventory_probe(
     process: &Process,
-    vitals: &VitalsProbe,
+    vitals: &Probe,
 ) -> io::Result<FlaskInventoryProbe> {
     let player_info_offset = vitals
         .local_player_offset

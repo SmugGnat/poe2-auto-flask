@@ -124,7 +124,7 @@ impl Policy {
     }
 }
 
-pub fn run_auto(
+pub fn run(
     process: &Process,
     session: GameSession,
     config_manager: &mut ConfigManager,
@@ -134,7 +134,9 @@ pub fn run_auto(
 }
 
 impl GameAutomationPolicy for Policy {
-    fn banner(&self, _config: &Config) {
+    fn banner(&self, config: &Config) {
+        println!("Connected to Path of Exile 2.");
+        println!("{}", config.poe2_summary());
         println!("{}", self.bindings.current().summary());
         println!("Press F11 to arm/disarm while PoE2 is focused. Ctrl+C exits.\n");
     }
@@ -142,7 +144,7 @@ impl GameAutomationPolicy for Policy {
     fn on_config_reload(&mut self, event: ConfigReload, config: &Config) {
         match event {
             ConfigReload::Unchanged => {}
-            ConfigReload::Reloaded => println!("Config reloaded: {}", config.summary()),
+            ConfigReload::Reloaded => println!("Config reloaded: {}", config.poe2_summary()),
             ConfigReload::Removed => {
                 println!("Config: config.toml removed; keeping previous settings.");
             }
