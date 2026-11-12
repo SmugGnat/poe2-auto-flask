@@ -194,11 +194,10 @@ impl GameAutomationPolicy for Policy {
 
         // Shared state readers run once per tick, regardless of which policy
         // requests a flask, a skill, or both.
-        if state.chat(session, process).is_err() {
-            return Ok(TickOutcome::Refresh);
-        }
-        if state.chat(session, process)? {
-            return Ok(TickOutcome::Status("PAUSED (chat or focus)"));
+        match state.chat(session, process) {
+            Ok(true) => return Ok(TickOutcome::Status("PAUSED (chat or focus)")),
+            Ok(false) => {}
+            Err(_) => return Ok(TickOutcome::Refresh),
         }
         let effects = match state.effects(session, process) {
             Ok(value) => value,
@@ -241,7 +240,7 @@ impl GameAutomationPolicy for Policy {
                     Ok(value) => Some(value),
                     Err(error) => {
                         eprintln!("PoE1 {} state unavailable: {error}", rule.id.label());
-                        self.defer_skill(rule.id, started);
+                        self.skill_attempts.entry(rule.id).or_default().defer(started);
                         continue;
                     }
                 }
