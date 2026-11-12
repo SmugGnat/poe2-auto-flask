@@ -240,7 +240,10 @@ impl GameAutomationPolicy for Policy {
                     Ok(value) => Some(value),
                     Err(error) => {
                         eprintln!("PoE1 {} state unavailable: {error}", rule.id.label());
-                        self.skill_attempts.entry(rule.id).or_default().defer(started);
+                        self.skill_attempts
+                            .entry(rule.id)
+                            .or_default()
+                            .defer(started);
                         continue;
                     }
                 }
