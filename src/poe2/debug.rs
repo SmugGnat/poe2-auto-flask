@@ -11,9 +11,9 @@ use super::flasks::{
     resolve_flask_inventory_probe, sample_flask_charges, FlaskChargeSnapshot, FlaskInventoryProbe,
 };
 use super::{refresh, sample_vitals, Probe};
-use crate::game_state::{LiveVitals, VitalPool};
 use crate::area::AreaInfo;
 use crate::config::Config;
+use crate::game_state::{LiveVitals, VitalPool};
 use crate::process::Process;
 
 const DEBUG_POLL_INTERVAL: Duration = Duration::from_millis(250);

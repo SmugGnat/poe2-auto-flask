@@ -2,8 +2,8 @@
 use std::collections::HashMap;
 use std::io;
 
-use crate::entity::resolve_component;
 use super::Probe;
+use crate::entity::resolve_component;
 use crate::process::Process;
 
 const ENTITY_ID: usize = 0x88;
@@ -83,10 +83,7 @@ pub fn resolve_flask_probe(process: &Process, vitals: &Probe) -> io::Result<Flas
     Ok(probe)
 }
 
-pub fn resolve_flask_lock_probe(
-    process: &Process,
-    vitals: &Probe,
-) -> io::Result<FlaskLockProbe> {
+pub fn resolve_flask_lock_probe(process: &Process, vitals: &Probe) -> io::Result<FlaskLockProbe> {
     let (player_id, buffs_component) = resolve_player_buffs(process, vitals)?;
     let mut probe = FlaskLockProbe {
         local_player: vitals.local_player,

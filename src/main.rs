@@ -246,4 +246,3 @@ fn print_wine_process_exit_notice(game: Game) {
     println!("{} exited.", game.name());
     println!("On Proton/Wine, restart the game first, then relaunch poe2-auto-flask.");
 }
-

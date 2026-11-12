@@ -1,8 +1,8 @@
 //! PoE2-specific two-slot flask inventory and charge sampling.
 use std::io;
 
-use crate::entity::resolve_component;
 use super::Probe;
+use crate::entity::resolve_component;
 use crate::process::Process;
 
 const PLAYER_INFO_LOCAL_PLAYER: usize = 0x20;
