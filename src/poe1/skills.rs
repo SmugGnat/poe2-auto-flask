@@ -1,6 +1,6 @@
 //! Read-only PoE1 Actor skill availability probe. Offsets are candidates from
 //! the archived 2026-09 GameHelper snapshot and require live validation.
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io;
 
 use crate::entity::resolve_component;
@@ -20,12 +20,16 @@ const NAME_UNITS: usize = 128;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SkillId {
     MoltenShell,
+    #[cfg(test)]
+    EnduringCry,
 }
 
 impl SkillId {
     pub fn label(self) -> &'static str {
         match self {
             Self::MoltenShell => "Molten Shell",
+            #[cfg(test)]
+            Self::EnduringCry => "Enduring Cry",
         }
     }
 
@@ -35,6 +39,8 @@ impl SkillId {
                 name.eq_ignore_ascii_case("MoltenShell")
                     || name.eq_ignore_ascii_case("molten_shell_barrier")
             }
+            #[cfg(test)]
+            Self::EnduringCry => name.eq_ignore_ascii_case("EnduringCry"),
         }
     }
 }
@@ -58,12 +64,22 @@ impl SkillCache {
         self.names.clear();
     }
 
-    pub fn sample(
+    /// Inspect the character's Actor ActiveSkills vector exactly once for
+    /// every requested preset, then inspect cooldowns once. No game-wide
+    /// skill database enumeration occurs here.
+    pub fn sample_many(
         &mut self,
         process: &Process,
         probe: &Probe,
-        skill: SkillId,
-    ) -> io::Result<SkillReadiness> {
+        requested: &[SkillId],
+    ) -> io::Result<BTreeMap<SkillId, SkillReadiness>> {
+        let wanted: BTreeSet<SkillId> = requested.iter().copied().collect();
+        if wanted.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        if wanted.len() > MAX_SKILLS {
+            return Err(invalid("PoE1 requested skill count exceeds limit"));
+        }
         if read_player_id(process, probe.local_player)? != probe.player_id {
             self.clear();
             return Err(io::Error::new(
@@ -80,15 +96,18 @@ impl SkillCache {
                 addr
             }
         };
-        let skill_header = process.read_bytes(actor + ACTOR_SKILLS, 16)?;
-        let first = u64_at(&skill_header, 0) as usize;
-        let count = vector_count(first, u64_at(&skill_header, 8) as usize, 16, MAX_SKILLS)?;
+        let header = process.read_bytes(actor + ACTOR_SKILLS, 16)?;
+        let first = u64_at(&header, 0) as usize;
+        let count = vector_count(first, u64_at(&header, 8) as usize, 16, MAX_SKILLS)?;
         let list = if count == 0 {
             Vec::new()
         } else {
             process.read_bytes(first, count * 16)?
         };
-        let mut found = None;
+
+        // Game skill ID and the Actor's base unusable flag. The static
+        // definition name is cached across ticks, not the live usability.
+        let mut found: BTreeMap<SkillId, (u32, bool)> = BTreeMap::new();
         for entry in list.chunks_exact(16) {
             let details_ptr = u64_at(entry, 0) as usize;
             if !plausible_ptr(details_ptr) {
@@ -102,8 +121,8 @@ impl SkillCache {
             if !plausible_ptr(row) {
                 return Err(invalid("PoE1 ActiveSkill definition pointer invalid"));
             }
-            let name = if let Some(cached) = self.names.get(&row) {
-                cached.clone()
+            let name = if let Some(name) = self.names.get(&row) {
+                name.clone()
             } else {
                 if self.names.len() >= MAX_NAMES {
                     self.names.clear();
@@ -114,48 +133,85 @@ impl SkillCache {
                 self.names.insert(row, name.clone());
                 name
             };
-            if !skill.matches_internal_name(&name) {
-                continue;
+            for &skill in &wanted {
+                if skill.matches_internal_name(&name) {
+                    if found
+                        .insert(
+                            skill,
+                            (
+                                u32_at(&details, SKILL_DETAIL_ID),
+                                details[SKILL_DETAIL_CANNOT_USE] != 0,
+                            ),
+                        )
+                        .is_some()
+                    {
+                        // Duplicated matching entries may have different
+                        // cooldowns/bindings. Unknown must never mean usable.
+                        return Err(invalid(format!(
+                            "multiple {} skill entries found",
+                            skill.label()
+                        )));
+                    }
+                }
             }
-            let id = u32_at(&details, SKILL_DETAIL_ID);
-            let unavailable = details[SKILL_DETAIL_CANNOT_USE] != 0;
-            if found.is_some() {
-                // Ambiguous skills cannot authorize a key press.
-                return Err(invalid(format!(
-                    "multiple {} skill entries found",
-                    skill.label()
-                )));
-            }
-            found = Some((id, unavailable));
         }
-        let Some((id, unavailable)) = found else {
-            return Ok(SkillReadiness::NotFound);
-        };
-        if unavailable {
-            return Ok(SkillReadiness::NotUsable);
+
+        // No cooldown read is necessary when every requested skill is
+        // absent or the Actor already reports it unusable.
+        if !found.values().any(|(_, unavailable)| !unavailable) {
+            return Ok(classify(&wanted, &found, &HashSet::new()));
         }
+
         let header = process.read_bytes(actor + ACTOR_COOLDOWNS, 16)?;
         let first = u64_at(&header, 0) as usize;
         let count = vector_count(first, u64_at(&header, 8) as usize, 0x48, MAX_SKILLS)?;
-        let cooldowns = if count == 0 {
+        let records = if count == 0 {
             Vec::new()
         } else {
             process.read_bytes(first, count * 0x48)?
         };
-        for record in cooldowns.chunks_exact(0x48) {
-            if u32_at(record, COOLDOWN_SKILL_ID) != id {
+        let relevant_ids: HashSet<u32> = found
+            .values()
+            .filter(|(_, unavailable)| !unavailable)
+            .map(|(id, _)| *id)
+            .collect();
+        let mut blocked = HashSet::new();
+        for record in records.chunks_exact(0x48) {
+            let id = u32_at(record, COOLDOWN_SKILL_ID);
+            if !relevant_ids.contains(&id) {
                 continue;
             }
             let max_uses = u32_at(record, COOLDOWN_USES);
-            let active_first = u64_at(record, COOLDOWN_VECTOR) as usize;
-            let active_last = u64_at(record, COOLDOWN_VECTOR + 8) as usize;
-            let active = vector_count(active_first, active_last, 16, MAX_SKILLS)?;
+            let first = u64_at(record, COOLDOWN_VECTOR) as usize;
+            let last = u64_at(record, COOLDOWN_VECTOR + 8) as usize;
+            let active = vector_count(first, last, 16, MAX_SKILLS)?;
             if max_uses == 0 || active >= max_uses as usize {
-                return Ok(SkillReadiness::NotUsable);
+                blocked.insert(id);
             }
         }
-        Ok(SkillReadiness::Usable)
+        Ok(classify(&wanted, &found, &blocked))
     }
+}
+
+/// Small pure resolution function: matches and cooldowns are collected
+/// once; every requested preset receives its independent status.
+fn classify(
+    wanted: &BTreeSet<SkillId>,
+    found: &BTreeMap<SkillId, (u32, bool)>,
+    blocked: &HashSet<u32>,
+) -> BTreeMap<SkillId, SkillReadiness> {
+    wanted
+        .iter()
+        .map(|id| {
+            let status = match found.get(id) {
+                None => SkillReadiness::NotFound,
+                Some((_, true)) => SkillReadiness::NotUsable,
+                Some((game_id, false)) if blocked.contains(game_id) => SkillReadiness::NotUsable,
+                Some(_) => SkillReadiness::Usable,
+            };
+            (*id, status)
+        })
+        .collect()
 }
 
 fn read_name(process: &Process, address: usize) -> io::Result<String> {
@@ -219,6 +275,21 @@ mod tests {
         assert!(SkillId::MoltenShell.matches_internal_name("molten_shell_barrier"));
         assert!(!SkillId::MoltenShell.matches_internal_name("VaalMoltenShell"));
         assert!(!SkillId::MoltenShell.matches_internal_name("molten_shell_shield"));
+    }
+
+    #[test]
+    fn one_snapshot_classifies_multiple_requested_skills() {
+        let requested = BTreeSet::from([SkillId::MoltenShell, SkillId::EnduringCry]);
+        let found = BTreeMap::from([
+            (SkillId::MoltenShell, (3u32, false)),
+            (SkillId::EnduringCry, (8u32, false)),
+        ]);
+        let snapshot = classify(&requested, &found, &HashSet::from([3u32]));
+        assert_eq!(snapshot[&SkillId::MoltenShell], SkillReadiness::NotUsable);
+        assert_eq!(snapshot[&SkillId::EnduringCry], SkillReadiness::Usable);
+        let absent = classify(&requested, &BTreeMap::new(), &HashSet::new());
+        assert_eq!(absent[&SkillId::MoltenShell], SkillReadiness::NotFound);
+        assert_eq!(absent[&SkillId::EnduringCry], SkillReadiness::NotFound);
     }
 
     #[test]
