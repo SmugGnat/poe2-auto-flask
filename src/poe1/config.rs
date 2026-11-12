@@ -97,13 +97,19 @@ impl BloodRageConfig {
 
     pub fn validate(&self) -> io::Result<()> {
         if !(1..=100).contains(&self.min_life_percent) {
-            return Err(invalid("poe1.skills.blood_rage.min_life_percent must be 1..=100"));
+            return Err(invalid(
+                "poe1.skills.blood_rage.min_life_percent must be 1..=100",
+            ));
         }
         if !(1..=150).contains(&self.nearby_radius) {
-            return Err(invalid("poe1.skills.blood_rage.nearby_radius must be 1..=150"));
+            return Err(invalid(
+                "poe1.skills.blood_rage.nearby_radius must be 1..=150",
+            ));
         }
         if !(1..=512).contains(&self.nearby_minimum_count) {
-            return Err(invalid("poe1.skills.blood_rage.nearby_minimum_count must be 1..=512"));
+            return Err(invalid(
+                "poe1.skills.blood_rage.nearby_minimum_count must be 1..=512",
+            ));
         }
         self.binding()?;
         Ok(())
@@ -283,7 +289,10 @@ impl Config {
         let blood = &self.poe1.skills.blood_rage;
         if blood.enabled {
             let nearby = if blood.require_nearby_monsters {
-                format!("{} within {}", blood.nearby_minimum_count, blood.nearby_radius)
+                format!(
+                    "{} within {}",
+                    blood.nearby_minimum_count, blood.nearby_radius
+                )
             } else {
                 "OFF".to_string()
             };
@@ -304,7 +313,9 @@ impl Poe1Config {
             && self.skills.blood_rage.enabled
             && self.skills.molten_shell.binding()? == self.skills.blood_rage.binding()?
         {
-            return Err(invalid("enabled PoE1 skill presets cannot use the same key"));
+            return Err(invalid(
+                "enabled PoE1 skill presets cannot use the same key",
+            ));
         }
         let ms = self.quicksilver_min_run_ms;
         if ms != 0 && !(100..=5000).contains(&ms) {

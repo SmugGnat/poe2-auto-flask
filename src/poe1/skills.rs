@@ -42,8 +42,7 @@ impl SkillId {
                     || name.eq_ignore_ascii_case("molten_shell_barrier")
             }
             Self::BloodRage => {
-                name.eq_ignore_ascii_case("BloodRage")
-                    || name.eq_ignore_ascii_case("blood_rage")
+                name.eq_ignore_ascii_case("BloodRage") || name.eq_ignore_ascii_case("blood_rage")
             }
             #[cfg(test)]
             Self::EnduringCry => name.eq_ignore_ascii_case("EnduringCry"),

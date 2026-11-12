@@ -537,7 +537,10 @@ radius = 60
         )
         .unwrap();
         assert!(parsed.poe1.skills.blood_rage.enabled);
-        assert_eq!(parsed.poe1.skills.blood_rage.binding().unwrap().vk, u16::from(b'T'));
+        assert_eq!(
+            parsed.poe1.skills.blood_rage.binding().unwrap().vk,
+            u16::from(b'T')
+        );
         assert_eq!(
             crate::poe1::skill_rules::configured_rules(&parsed.poe1.skills)
                 .unwrap()
@@ -555,7 +558,10 @@ radius = 60
             "nearby_minimum_count = 513",
         ] {
             let config = format!("[poe1.skills.blood_rage]\n{invalid}\n");
-            assert!(Config::parse(Path::new("test.toml"), &config).is_err(), "{invalid}");
+            assert!(
+                Config::parse(Path::new("test.toml"), &config).is_err(),
+                "{invalid}"
+            );
         }
         let duplicate = "[poe1.skills.molten_shell]\nenabled = true\nkey = \"R\"\n[poe1.skills.blood_rage]\nenabled = true\nkey = \"R\"\n";
         let distinct = "[poe1.skills.molten_shell]\nenabled = true\nkey = \"R\"\n[poe1.skills.blood_rage]\nenabled = true\nkey = \"T\"\n";

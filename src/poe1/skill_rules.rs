@@ -84,7 +84,9 @@ pub fn preconditions_met(rule: &SkillRule, vitals: LiveVitals) -> bool {
     rule.conditions.iter().all(|condition| match condition {
         Condition::LifeAtOrBelow(threshold) => life_at_or_below(vitals, *threshold),
         Condition::LifeAtOrAbove(threshold) => life_at_or_above(vitals, *threshold),
-        Condition::BuffAbsent(_) | Condition::NearbyMonsters { .. } | Condition::SkillUsable => true,
+        Condition::BuffAbsent(_) | Condition::NearbyMonsters { .. } | Condition::SkillUsable => {
+            true
+        }
     })
 }
 
@@ -117,7 +119,10 @@ pub fn nearby_conditions_met(rule: &SkillRule, nearby: Option<&NearbySnapshot>) 
             (1..=150).contains(&radius)
                 && (1..=512).contains(&minimum_count)
                 && nearby.is_some_and(|snapshot| {
-                    snapshot.counts_at(f32::from(radius)).into_iter().sum::<usize>()
+                    snapshot
+                        .counts_at(f32::from(radius))
+                        .into_iter()
+                        .sum::<usize>()
                         >= usize::from(minimum_count)
                 })
         }
@@ -288,7 +293,13 @@ mod tests {
             RuleDecision::SkillUnavailable
         );
         assert_eq!(
-            evaluate(&r, vitals(50), &empty(), None, Some(SkillReadiness::NotUsable)),
+            evaluate(
+                &r,
+                vitals(50),
+                &empty(),
+                None,
+                Some(SkillReadiness::NotUsable)
+            ),
             RuleDecision::SkillNotUsable
         );
         let mut state = empty();
@@ -316,7 +327,13 @@ mod tests {
         ];
         assert!(preconditions_met(&r, vitals(100)));
         assert_eq!(
-            evaluate(&r, vitals(100), &empty(), None, Some(SkillReadiness::Usable)),
+            evaluate(
+                &r,
+                vitals(100),
+                &empty(),
+                None,
+                Some(SkillReadiness::Usable)
+            ),
             RuleDecision::Eligible
         );
     }
@@ -355,15 +372,33 @@ mod tests {
         assert!(!nearby_conditions_met(&rule, None));
         assert!(nearby_conditions_met(&rule, Some(&snapshot)));
         assert_eq!(
-            evaluate(&rule, vitals(79), &empty(), Some(&snapshot), Some(SkillReadiness::Usable)),
+            evaluate(
+                &rule,
+                vitals(79),
+                &empty(),
+                Some(&snapshot),
+                Some(SkillReadiness::Usable)
+            ),
             RuleDecision::LifeBelowThreshold
         );
         assert_eq!(
-            evaluate(&rule, vitals(80), &empty(), None, Some(SkillReadiness::Usable)),
+            evaluate(
+                &rule,
+                vitals(80),
+                &empty(),
+                None,
+                Some(SkillReadiness::Usable)
+            ),
             RuleDecision::NotEnoughNearbyMonsters
         );
         assert_eq!(
-            evaluate(&rule, vitals(80), &empty(), Some(&snapshot), Some(SkillReadiness::Usable)),
+            evaluate(
+                &rule,
+                vitals(80),
+                &empty(),
+                Some(&snapshot),
+                Some(SkillReadiness::Usable)
+            ),
             RuleDecision::Eligible
         );
         let mut buffed = empty();
@@ -374,14 +409,26 @@ mod tests {
             time_left: 8.0,
         });
         assert_eq!(
-            evaluate(&rule, vitals(100), &buffed, Some(&snapshot), Some(SkillReadiness::Usable)),
+            evaluate(
+                &rule,
+                vitals(100),
+                &buffed,
+                Some(&snapshot),
+                Some(SkillReadiness::Usable)
+            ),
             RuleDecision::AlreadyActive
         );
         settings.blood_rage.require_nearby_monsters = false;
         let without_nearby = configured_rules(&settings).unwrap().remove(0);
         assert!(!requires_nearby(&without_nearby));
         assert_eq!(
-            evaluate(&without_nearby, vitals(80), &empty(), None, Some(SkillReadiness::Usable)),
+            evaluate(
+                &without_nearby,
+                vitals(80),
+                &empty(),
+                None,
+                Some(SkillReadiness::Usable)
+            ),
             RuleDecision::Eligible
         );
     }
