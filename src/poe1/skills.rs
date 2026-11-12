@@ -48,6 +48,9 @@ impl SkillId {
 pub enum SkillReadiness {
     NotFound,
     NotUsable,
+    /// Multiple Actor entries match the same preset. Refuse to guess which
+    /// key/cooldown entry belongs to the configured action.
+    Ambiguous,
     Usable,
 }
 
@@ -107,6 +110,7 @@ impl SkillCache {
         // Game skill ID and the Actor's base unusable flag. The static
         // definition name is cached across ticks, not the live usability.
         let mut found: BTreeMap<SkillId, (u32, bool)> = BTreeMap::new();
+        let mut ambiguous = BTreeSet::new();
         for entry in list.chunks_exact(16) {
             let details_ptr = u64_at(entry, 0) as usize;
             if !plausible_ptr(details_ptr) {
@@ -134,30 +138,25 @@ impl SkillCache {
                 if !skill.matches_internal_name(name) {
                     continue;
                 }
-                if found
-                    .insert(
-                        skill,
-                        (
-                            u32_at(&details, SKILL_DETAIL_ID),
-                            details[SKILL_DETAIL_CANNOT_USE] != 0,
-                        ),
-                    )
-                    .is_some()
-                {
-                    // Duplicated matching entries may have different
-                    // cooldowns/bindings. Unknown must never mean usable.
-                    return Err(invalid(format!(
-                        "multiple {} skill entries found",
-                        skill.label()
-                    )));
-                }
+                record_match(
+                    &mut found,
+                    &mut ambiguous,
+                    skill,
+                    (
+                        u32_at(&details, SKILL_DETAIL_ID),
+                        details[SKILL_DETAIL_CANNOT_USE] != 0,
+                    ),
+                );
             }
         }
 
         // No cooldown read is necessary when every requested skill is
         // absent or the Actor already reports it unusable.
-        if !found.values().any(|(_, unavailable)| !unavailable) {
-            return Ok(classify(&wanted, &found, &HashSet::new()));
+        if !found
+            .iter()
+            .any(|(id, (_, unavailable))| !unavailable && !ambiguous.contains(id))
+        {
+            return Ok(classify(&wanted, &found, &ambiguous, &HashSet::new()));
         }
 
         let header = process.read_bytes(actor + ACTOR_COOLDOWNS, 16)?;
@@ -169,9 +168,9 @@ impl SkillCache {
             process.read_bytes(first, count * 0x48)?
         };
         let relevant_ids: HashSet<u32> = found
-            .values()
-            .filter(|(_, unavailable)| !unavailable)
-            .map(|(id, _)| *id)
+            .iter()
+            .filter(|(skill, (_, unavailable))| !unavailable && !ambiguous.contains(skill))
+            .map(|(_, (game_id, _))| *game_id)
             .collect();
         let mut blocked = HashSet::new();
         for record in records.chunks_exact(0x48) {
@@ -187,7 +186,20 @@ impl SkillCache {
                 blocked.insert(id);
             }
         }
-        Ok(classify(&wanted, &found, &blocked))
+        Ok(classify(&wanted, &found, &ambiguous, &blocked))
+    }
+}
+
+/// Keep duplicate detection local to a preset: a duplicated Blood Rage
+/// must never suppress a distinct, unambiguous Molten Shell.
+fn record_match(
+    found: &mut BTreeMap<SkillId, (u32, bool)>,
+    ambiguous: &mut BTreeSet<SkillId>,
+    skill: SkillId,
+    observed: (u32, bool),
+) {
+    if found.insert(skill, observed).is_some() {
+        ambiguous.insert(skill);
     }
 }
 
@@ -196,12 +208,14 @@ impl SkillCache {
 fn classify(
     wanted: &BTreeSet<SkillId>,
     found: &BTreeMap<SkillId, (u32, bool)>,
+    ambiguous: &BTreeSet<SkillId>,
     blocked: &HashSet<u32>,
 ) -> BTreeMap<SkillId, SkillReadiness> {
     wanted
         .iter()
         .map(|id| {
             let status = match found.get(id) {
+                _ if ambiguous.contains(id) => SkillReadiness::Ambiguous,
                 None => SkillReadiness::NotFound,
                 Some((_, true)) => SkillReadiness::NotUsable,
                 Some((game_id, false)) if blocked.contains(game_id) => SkillReadiness::NotUsable,
@@ -289,12 +303,31 @@ mod tests {
             (SkillId::MoltenShell, (3u32, false)),
             (SkillId::BloodRage, (8u32, false)),
         ]);
-        let snapshot = classify(&requested, &found, &HashSet::from([3u32]));
+        let snapshot = classify(&requested, &found, &BTreeSet::new(), &HashSet::from([3u32]));
         assert_eq!(snapshot[&SkillId::MoltenShell], SkillReadiness::NotUsable);
         assert_eq!(snapshot[&SkillId::BloodRage], SkillReadiness::Usable);
-        let absent = classify(&requested, &BTreeMap::new(), &HashSet::new());
+        let absent = classify(&requested, &BTreeMap::new(), &BTreeSet::new(), &HashSet::new());
         assert_eq!(absent[&SkillId::MoltenShell], SkillReadiness::NotFound);
         assert_eq!(absent[&SkillId::BloodRage], SkillReadiness::NotFound);
+    }
+
+    #[test]
+    fn duplicated_skill_fails_closed_without_poisoning_other_requested_skills() {
+        let wanted = BTreeSet::from([SkillId::MoltenShell, SkillId::BloodRage]);
+        let mut found = BTreeMap::new();
+        let mut ambiguous = BTreeSet::new();
+        record_match(&mut found, &mut ambiguous, SkillId::MoltenShell, (3, false));
+        record_match(&mut found, &mut ambiguous, SkillId::BloodRage, (8, false));
+        record_match(&mut found, &mut ambiguous, SkillId::BloodRage, (9, true));
+
+        let statuses = classify(&wanted, &found, &ambiguous, &HashSet::new());
+        assert_eq!(statuses[&SkillId::MoltenShell], SkillReadiness::Usable);
+        assert_eq!(statuses[&SkillId::BloodRage], SkillReadiness::Ambiguous);
+        // Even if cooldown entries use different IDs, ambiguous entries are
+        // denied, and the unambiguous skill retains its own cooldown state.
+        let cooling = classify(&wanted, &found, &ambiguous, &HashSet::from([3u32]));
+        assert_eq!(cooling[&SkillId::MoltenShell], SkillReadiness::NotUsable);
+        assert_eq!(cooling[&SkillId::BloodRage], SkillReadiness::Ambiguous);
     }
 
     #[test]

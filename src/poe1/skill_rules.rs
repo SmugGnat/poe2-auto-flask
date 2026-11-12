@@ -182,7 +182,9 @@ pub fn evaluate(
             Condition::SkillUsable => match readiness {
                 Some(SkillReadiness::Usable) => {}
                 Some(SkillReadiness::NotUsable) => return RuleDecision::SkillNotUsable,
-                Some(SkillReadiness::NotFound) | None => return RuleDecision::SkillUnavailable,
+                Some(SkillReadiness::Ambiguous | SkillReadiness::NotFound) | None => {
+                    return RuleDecision::SkillUnavailable;
+                }
             },
         }
     }
@@ -442,6 +444,20 @@ mod tests {
         assert_eq!(rules.len(), 2);
         assert!(!requires_nearby(&rules[0]));
         assert!(requires_nearby(&rules[1]));
+    }
+
+    #[test]
+    fn ambiguous_actor_readiness_never_authorizes_any_skill_rule() {
+        let mut settings = Poe1SkillsConfig::default();
+        settings.blood_rage.enabled = true;
+        let rule = configured_rules(&settings).unwrap().remove(0);
+        // Disable the optional proximity predicate to isolate readiness.
+        let mut rule = rule;
+        rule.conditions.retain(|condition| !matches!(condition, Condition::NearbyMonsters { .. }));
+        assert_eq!(
+            evaluate(&rule, vitals(100), &empty(), None, Some(SkillReadiness::Ambiguous)),
+            RuleDecision::SkillUnavailable
+        );
     }
 
     #[test]
