@@ -20,7 +20,7 @@ pub struct TickState {
     effects: Option<EffectsSnapshot>,
     flasks: Option<FlaskSnapshot>,
     animation: Option<i32>,
-    skills: BTreeMap<SkillId, SkillReadiness>,
+    skills: Option<BTreeMap<SkillId, SkillReadiness>>,
     nearby: Option<NearbySnapshot>,
 }
 
@@ -39,7 +39,7 @@ impl TickState {
             effects: None,
             flasks: None,
             animation: None,
-            skills: BTreeMap::new(),
+            skills: None,
             nearby: None,
         })
     }
@@ -84,18 +84,28 @@ impl TickState {
         Ok(value)
     }
 
-    pub fn skill(
+    /// One bulk Actor snapshot for all rules passing cheap conditions.
+    /// Additional requested skill IDs in the same tick are rejected rather
+    /// than silently returning a partial or stale status.
+    pub fn skills(
         &mut self,
         session: &mut GameSession,
         process: &Process,
-        id: SkillId,
-    ) -> io::Result<SkillReadiness> {
-        if let Some(value) = self.skills.get(&id) {
-            return Ok(*value);
+        requested: &[SkillId],
+    ) -> io::Result<&BTreeMap<SkillId, SkillReadiness>> {
+        if requested.is_empty() {
+            return Ok(self.skills.get_or_insert_with(BTreeMap::new));
         }
-        let value = session.poe1_skill_readiness(process, id)?;
-        self.skills.insert(id, value);
-        Ok(value)
+        if self.skills.as_ref().is_none_or(|value| value.is_empty()) {
+            self.skills = Some(session.poe1_skills(process, requested)?);
+        } else if self
+            .skills
+            .as_ref()
+            .is_some_and(|value| requested.iter().any(|id| !value.contains_key(id)))
+        {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "skills requested after Actor snapshot"));
+        }
+        Ok(self.skills.as_ref().expect("skills sampled"))
     }
 
     pub fn nearby(
@@ -117,7 +127,7 @@ pub struct Preflight {
     pub vitals: LiveVitals,
     pub chat: bool,
     pub effects: EffectsSnapshot,
-    readiness: BTreeMap<SkillId, SkillReadiness>,
+    readiness: Option<BTreeMap<SkillId, SkillReadiness>>,
 }
 
 impl Preflight {
@@ -126,21 +136,29 @@ impl Preflight {
             vitals: session.poe1_verify_vitals(process)?,
             chat: session.poe1_chat_active(process)?,
             effects: session.poe1_verify_effects(process)?,
-            readiness: BTreeMap::new(),
+            readiness: None,
         })
     }
 
-    pub fn skill(
+    /// One fresh Actor skill scan for all selected skill action candidates.
+    pub fn skills(
         &mut self,
         session: &mut GameSession,
         process: &Process,
-        id: SkillId,
-    ) -> io::Result<SkillReadiness> {
-        if let Some(value) = self.readiness.get(&id) {
-            return Ok(*value);
+        requested: &[SkillId],
+    ) -> io::Result<&BTreeMap<SkillId, SkillReadiness>> {
+        if requested.is_empty() {
+            return Ok(self.readiness.get_or_insert_with(BTreeMap::new));
         }
-        let value = session.poe1_verify_skill_readiness(process, id)?;
-        self.readiness.insert(id, value);
-        Ok(value)
+        if self.readiness.as_ref().is_none_or(|value| value.is_empty()) {
+            self.readiness = Some(session.poe1_verify_skills(process, requested)?);
+        } else if self
+            .readiness
+            .as_ref()
+            .is_some_and(|value| requested.iter().any(|id| !value.contains_key(id)))
+        {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "skills requested after preflight scan"));
+        }
+        Ok(self.readiness.as_ref().expect("preflight skills sampled"))
     }
 }

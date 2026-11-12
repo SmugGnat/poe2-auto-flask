@@ -144,7 +144,9 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                             .collect::<Vec<_>>()
                             .join(", "),
                     );
-                    let skill = session.poe1_skill_readiness(process, SkillId::MoltenShell);
+                    let skill = session
+                        .poe1_skills(process, &[SkillId::MoltenShell])
+                        .map(|snapshot| snapshot[&SkillId::MoltenShell]);
                     let rule = evaluate(
                         &diagnostic_rule,
                         vitals,

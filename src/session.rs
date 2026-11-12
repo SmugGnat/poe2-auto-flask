@@ -101,13 +101,13 @@ impl GameSession {
         }
     }
 
-    pub fn poe1_skill_readiness(
+    pub fn poe1_skills(
         &mut self,
         process: &Process,
-        skill: poe1::skills::SkillId,
-    ) -> io::Result<poe1::skills::SkillReadiness> {
+        requested: &[poe1::skills::SkillId],
+    ) -> io::Result<std::collections::BTreeMap<poe1::skills::SkillId, poe1::skills::SkillReadiness>> {
         match &mut self.reader {
-            Reader::Poe1(adapter) => adapter.skill_readiness(process, skill),
+            Reader::Poe1(adapter) => adapter.skills(process, requested),
             Reader::Poe2(_) => Err(unsupported()),
         }
     }
@@ -149,13 +149,13 @@ impl GameSession {
     }
 
     /// Fresh PoE1 skill-usability check. Does not reuse the tick snapshot.
-    pub fn poe1_verify_skill_readiness(
+    pub fn poe1_verify_skills(
         &mut self,
         process: &Process,
-        skill: poe1::skills::SkillId,
-    ) -> io::Result<poe1::skills::SkillReadiness> {
+        requested: &[poe1::skills::SkillId],
+    ) -> io::Result<std::collections::BTreeMap<poe1::skills::SkillId, poe1::skills::SkillReadiness>> {
         match &mut self.reader {
-            Reader::Poe1(adapter) => adapter.verify_skill_readiness(process, skill),
+            Reader::Poe1(adapter) => adapter.verify_skills(process, requested),
             Reader::Poe2(_) => Err(unsupported()),
         }
     }

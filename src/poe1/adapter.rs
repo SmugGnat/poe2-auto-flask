@@ -1,6 +1,5 @@
 //! PoE1-specific game-state adapter. Owns PoE1 pointers, specialized
 //! snapshots and demand-driven reader caches, independently of PoE2.
-use std::collections::BTreeMap;
 use std::io;
 
 use crate::area::AreaInfo;
@@ -20,7 +19,6 @@ struct TickSnapshot {
     flasks: Option<FlaskSnapshot>,
     effects: Option<EffectsSnapshot>,
     animation: Option<i32>,
-    skills: BTreeMap<SkillId, SkillReadiness>,
 }
 
 pub struct Adapter {
@@ -75,18 +73,14 @@ impl Adapter {
         self.motion_cache.sample(process, &self.probe)
     }
 
-    /// Game-specific snapshot of one supported skill. Cached for this decision tick.
-    pub fn skill_readiness(
+    /// All requested skills from one bounded Actor scan. Per-tick results
+    /// are held by PoE1 TickState, not re-read by this adapter.
+    pub fn skills(
         &mut self,
         process: &Process,
-        skill: SkillId,
-    ) -> io::Result<SkillReadiness> {
-        if let Some(state) = self.tick.skills.get(&skill) {
-            return Ok(*state);
-        }
-        let state = self.skill_cache.sample(process, &self.probe, skill)?;
-        self.tick.skills.insert(skill, state);
-        Ok(state)
+        requested: &[SkillId],
+    ) -> io::Result<std::collections::BTreeMap<SkillId, SkillReadiness>> {
+        self.skill_cache.sample_many(process, &self.probe, requested)
     }
 
     /// Bypass the within-tick cache for a fresh pre-input buff check.
@@ -95,12 +89,12 @@ impl Adapter {
     }
 
     /// Bypass the within-tick cache before authorizing skill input.
-    pub fn verify_skill_readiness(
+    pub fn verify_skills(
         &mut self,
         process: &Process,
-        skill: SkillId,
-    ) -> io::Result<SkillReadiness> {
-        self.skill_cache.sample(process, &self.probe, skill)
+        requested: &[SkillId],
+    ) -> io::Result<std::collections::BTreeMap<SkillId, SkillReadiness>> {
+        self.skill_cache.sample_many(process, &self.probe, requested)
     }
 
     pub fn nearby(&mut self, process: &Process) -> io::Result<NearbySnapshot> {
