@@ -1,13 +1,14 @@
-//! PoE1 flask *policy* for the shared automation engine. Memory reads
-//! are delegated to the validated GameSession's PoE1 adapter, not performed
-//! by the scheduler. The tested Life/Mana/utility decision rules are unchanged.
+//! PoE1 flask and defensive skill policy for the shared 100ms engine.
+//! Both action paths are independent within a tick, and all game memory
+//! reads remain in GameSession's validated PoE1 adapter.
 use std::io;
 use std::time::{Duration, Instant};
 
 use crate::action::{dispatch, ActionRequest, Dispatch, DispatchError};
 use crate::config::{Config, ConfigManager, ConfigReload};
 use crate::engine::{GameAutomationPolicy, TickOutcome};
-use crate::input::is_process_foreground;
+use crate::game_state::LiveVitals;
+use crate::input::{is_process_foreground, KeyBinding};
 use crate::process::Process;
 use crate::session::GameSession;
 
@@ -18,10 +19,12 @@ use super::decision::{
 };
 use super::movement::{RunTracker, RUN_ANIMATION_ID};
 use super::rotation::FlaskRotation;
+use super::skill_rules::{evaluate_molten_shell, needs_molten_shell, MoltenShellDecision, SkillAttemptGuard};
+use super::skills::SkillReadiness;
 use super::types::FlaskType;
 
 pub fn run(process: &Process, session: GameSession, manager: &mut ConfigManager) -> io::Result<()> {
-    let policy = Policy::new()?;
+    let policy = Policy::new(manager.current())?;
     crate::engine::run(process, session, manager, policy)
 }
 
@@ -30,15 +33,19 @@ struct Policy {
     activation_guard: ActivationGuard,
     rotation: FlaskRotation,
     run_tracker: RunTracker,
+    skill_key: Option<KeyBinding>,
+    skill_attempt: SkillAttemptGuard,
 }
 
 impl Policy {
-    fn new() -> io::Result<Self> {
+    fn new(config: &Config) -> io::Result<Self> {
         Ok(Self {
             bindings: BindingManager::load()?,
             activation_guard: ActivationGuard::default(),
             rotation: FlaskRotation::default(),
             run_tracker: RunTracker::default(),
+            skill_key: configured_skill_key(config)?,
+            skill_attempt: SkillAttemptGuard::default(),
         })
     }
 }
@@ -54,6 +61,8 @@ impl GameAutomationPolicy for Policy {
     fn on_config_reload(&mut self, event: ConfigReload, config: &Config) {
         match event {
             ConfigReload::Reloaded => {
+                // ConfigManager has already validated the new key.
+                self.skill_key = configured_skill_key(config).ok().flatten();
                 self.run_tracker.reset();
                 self.rotation.reset();
                 println!("PoE1 config reloaded: {}", config.poe1_summary());
@@ -72,6 +81,10 @@ impl GameAutomationPolicy for Policy {
     }
 
     fn bindings_pause(&self) -> Option<&'static str> {
+        // A missing flask binding must not block an independently configured skill.
+        if self.skill_key.is_some() {
+            return None;
+        }
         match self.bindings.current() {
             BindingState::Ready(_) => None,
             BindingState::Unavailable(_) => Some("PAUSED (PoE1 keybindings unavailable)"),
@@ -140,11 +153,46 @@ impl GameAutomationPolicy for Policy {
             self.run_tracker.reset();
             return Ok(TickOutcome::Status("PAUSED (dead)"));
         }
-        if !enabled_demand(config, vitals) {
+        let shell = &config.poe1.skills.molten_shell;
+        let wants_skill = self.skill_key.is_some()
+            && self.skill_attempt.ready(started)
+            && needs_molten_shell(vitals, shell.threshold_percent);
+        let wants_flask = matches!(self.bindings.current(), BindingState::Ready(_))
+            && enabled_demand(config, vitals);
+
+        if !wants_flask && !wants_skill {
             self.run_tracker.reset();
             return Ok(TickOutcome::Status("ARMED"));
         }
+        // Each policy path can independently send one action. The paths share
+        // the same engine tick, but neither borrows the other's attempt guard.
+        if wants_flask {
+            let outcome = self.tick_flask(process, session, config, started, vitals)?;
+            if outcome != TickOutcome::Status("ARMED") {
+                return Ok(outcome);
+            }
+        } else {
+            self.run_tracker.reset();
+        }
+        if wants_skill {
+            let outcome = self.tick_molten_shell(process, session, config)?;
+            if outcome != TickOutcome::Status("ARMED") {
+                return Ok(outcome);
+            }
+        }
+        Ok(TickOutcome::Status("ARMED"))
+    }
+}
 
+impl Policy {
+    fn tick_flask(
+        &mut self,
+        process: &Process,
+        session: &mut GameSession,
+        config: &Config,
+        started: Instant,
+        vitals: LiveVitals,
+    ) -> io::Result<TickOutcome> {
         // Optional Quicksilver-only movement confirmation. Only a game
         // policy knows when animation data is actually needed.
         let moving_ms = config.poe1.quicksilver_min_run_ms;
@@ -290,9 +338,91 @@ impl GameAutomationPolicy for Policy {
         }
         Ok(TickOutcome::Status("ARMED"))
     }
-}
 
-impl Policy {
+    fn tick_molten_shell(
+        &mut self,
+        process: &Process,
+        session: &mut GameSession,
+        config: &Config,
+    ) -> io::Result<TickOutcome> {
+        let key = match self.skill_key {
+            Some(key) => key,
+            None => return Ok(TickOutcome::Status("ARMED")),
+        };
+        // Config key collisions are detected against the game's current
+        // bindings. A collision disables ONLY the skill path.
+        if let BindingState::Ready(flasks) = self.bindings.current() {
+            if flasks.contains(&key) {
+                return Ok(TickOutcome::Status("ARMED"));
+            }
+        }
+        if session.poe1_chat_active(process)? {
+            return Ok(TickOutcome::Status("PAUSED (chat or focus)"));
+        }
+        let effects = session.poe1_effects(process)?;
+        if blocks_grace_period(effects)
+            || effects.effects.iter().any(|effect| {
+                effect.name == super::skill_rules::MOLTEN_SHELL_BUFF
+                    && (!effect.time_left.is_finite() || effect.time_left >= 0.0)
+            })
+        {
+            return Ok(TickOutcome::Status("ARMED"));
+        }
+
+        // This reader is used only after Life/buff/attempt checks succeed.
+        let readiness = session.poe1_molten_shell(process)?;
+        let vitals = session.vitals(process)?;
+        if evaluate_molten_shell(
+            vitals,
+            session.poe1_effects(process)?,
+            Some(readiness),
+            config.poe1.skills.molten_shell.threshold_percent,
+        ) != MoltenShellDecision::Eligible
+        {
+            return Ok(TickOutcome::Status("ARMED"));
+        }
+
+        let mut paused = false;
+        let dispatched = dispatch(process, ActionRequest::skill(key), || {
+            let fresh_vitals = session.poe1_verify_vitals(process)?;
+            if fresh_vitals.health.current <= 0 || session.poe1_chat_active(process)? {
+                paused = true;
+                return Ok(None);
+            }
+            let fresh_effects = session.poe1_verify_effects(process)?;
+            if blocks_grace_period(&fresh_effects) {
+                return Ok(None);
+            }
+            let fresh_readiness = session.poe1_verify_molten_shell(process)?;
+            if evaluate_molten_shell(
+                fresh_vitals,
+                &fresh_effects,
+                Some(fresh_readiness),
+                config.poe1.skills.molten_shell.threshold_percent,
+            ) == MoltenShellDecision::Eligible
+            {
+                Ok(Some(()))
+            } else {
+                Ok(None)
+            }
+        });
+
+        match dispatched {
+            Ok(Dispatch::Sent { sent_at, .. }) => {
+                self.skill_attempt.mark(sent_at);
+                println!("Molten Shell -> {}", key.label());
+            }
+            Ok(Dispatch::Skipped) if paused || !is_process_foreground(process.pid()) => {
+                return Ok(TickOutcome::Status("PAUSED (chat or focus)"));
+            }
+            Ok(Dispatch::Skipped) => {}
+            Err(DispatchError::Validation(_)) => return Ok(TickOutcome::Refresh),
+            Err(DispatchError::Input(error)) => return Err(error),
+        }
+        Ok(TickOutcome::Status("ARMED"))
+    }
+
+ {
     fn ready_keys(&self) -> io::Result<[crate::input::KeyBinding; 5]> {
         match self.bindings.current() {
             BindingState::Ready(keys) => Ok(*keys),
@@ -315,5 +445,14 @@ fn binding_label(state: &BindingState) -> String {
                 .join(", ")
         ),
         BindingState::Unavailable(error) => format!("PoE1 bindings unavailable: {error}"),
+    }
+}
+
+fn configured_skill_key(config: &Config) -> io::Result<Option<KeyBinding>> {
+    let shell = &config.poe1.skills.molten_shell;
+    if shell.enabled {
+        shell.binding().map(Some)
+    } else {
+        Ok(None)
     }
 }

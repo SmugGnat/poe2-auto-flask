@@ -83,6 +83,16 @@ impl Adapter {
         Ok(state)
     }
 
+    /// Bypass the within-tick cache for a fresh pre-input buff check.
+    pub fn verify_effects(&mut self, process: &Process) -> io::Result<EffectsSnapshot> {
+        super::buffs::sample(process, &self.probe, &mut self.effect_cache)
+    }
+
+    /// Bypass the within-tick cache before authorizing skill input.
+    pub fn verify_molten_shell(&mut self, process: &Process) -> io::Result<SkillReadiness> {
+        self.skill_cache.sample(process, &self.probe)
+    }
+
     pub fn nearby(&mut self, process: &Process) -> io::Result<NearbySnapshot> {
         self.nearby_cache.sample(process, &self.probe)
     }

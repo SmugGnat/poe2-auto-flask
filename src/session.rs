@@ -139,6 +139,25 @@ impl GameSession {
         }
     }
 
+    /// Fresh PoE1 status-effect read; used only immediately before skill input.
+    pub fn poe1_verify_effects(&mut self, process: &Process) -> io::Result<EffectsSnapshot> {
+        match &mut self.reader {
+            Reader::Poe1(adapter) => adapter.verify_effects(process),
+            Reader::Poe2(_) => Err(unsupported()),
+        }
+    }
+
+    /// Fresh PoE1 skill-usability check. Does not reuse the tick snapshot.
+    pub fn poe1_verify_molten_shell(
+        &mut self,
+        process: &Process,
+    ) -> io::Result<poe1::skills::SkillReadiness> {
+        match &mut self.reader {
+            Reader::Poe1(adapter) => adapter.verify_molten_shell(process),
+            Reader::Poe2(_) => Err(unsupported()),
+        }
+    }
+
     /// Existing PoE2-specialized probes remain accessible for its proven
     /// automation policy; they migrate during the later engine stage.
     pub fn poe2_probe(&self) -> io::Result<&Poe2Probe> {
