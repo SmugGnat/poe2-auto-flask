@@ -63,7 +63,8 @@ pub struct NearbySnapshot {
     pub candidate_monsters: usize,
     pub nearby: Vec<NearbyMonster>,
     /// Wall time for the most recent full scan (not CPU time). Includes
-    /// Wine/ReadProcessMemory latency; no sampling when --nearby is absent.
+    /// Wine/ReadProcessMemory latency; sampling requires debug --nearby or
+    /// an explicitly enabled proximity-gated PoE1 utility flask.
     pub scan_wall: Duration,
 }
 

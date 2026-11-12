@@ -1,5 +1,5 @@
-//! Bounded five-slot PoE1 flask reader. Charge-cost values are reported raw
-//! until verified in-game with charge-usage modifiers; NO automation uses them.
+//! Bounded five-slot PoE1 flask reader. Reports raw charges and independently
+//! validated effective per-use cost. Automation refuses unverified costs.
 use std::io;
 
 use super::charge_cost;

@@ -175,7 +175,7 @@ The `GameAutomationPolicy` interface owns the game-specific choices:
 - `src/poe1/automation.rs`: five-slot flask inventory, activation settling,
   duplicate rotation, Low Life emergency instant recovery, conditional
   utility proximity and movement, pre-send chat/identity/threshold validation.
-- `src/automation.rs`: existing PoE2 two-slot Life/Mana decisions,
+- `src/poe2/automation.rs`: existing PoE2 two-slot Life/Mana decisions,
   charge and buff locks, unchanged 1000ms post-send guard and three-sample
   transient read tolerance, plus PoE2 binding-mode handling.
 
@@ -185,9 +185,8 @@ specialized charge/lock probes are retained for now to avoid a separate
 behavioral migration. The common scheduler only invokes the policy after
 focus, bindings and session refresh gates have succeeded. Each game keeps
 its own fail-closed policy and final input validations. No new per-tick
-process-memory scans or config fields are introduced. This stage **does not**
-yet unify all action types or provide automatic game selection; those belong
-to later milestones.
+process-memory scans or config fields are introduced. This milestone originally preceded the shared dispatcher and automatic game
+selection; both are implemented in the current codebase.
 
 ## PoE1 bounded offset recovery — architecture milestone 2
 
@@ -276,21 +275,22 @@ The gate only affects Quicksilver; it never prevents Life, Mana or another utili
 - `--game poe1 --debug` reads state only. It reports Life/Mana/ES, area, chat open/closed, base flask type, charges, raw/effective charge cost, active effects and Actor movement.
 - **Live-tested successfully on a user's Steam Proton setup:** Life/Mana/ES and unreserved totals, area changes, five flask slots, matching player buffs, active Utility Flask effects, 26%-reduced Life flask cost (raw 15 → effective 11), chat detection, automatic PoE1 keybindings, Quicksilver and Life automation, F11 arming, focus and town/hideout protection, config reload, and optional ~750 ms Run gate.
 - **Still needing broader live testing:** all 18 utility types, duplicate Life/Mana/utility selection, unusual/unique flask modifier behavior, gamepad input, other movement skills, and PoE2 end-to-end regression. Automated CI tests cannot prove future game versions preserve memory offsets.
-- The reference C# snapshot is deliberately excluded from this feature branch and from distributions. Any future inclusion requires licensing/provenance verification.
+- The reference C# snapshot is deliberately excluded from the Rust source and distributions. Any future inclusion requires licensing/provenance verification.
 
 ## Experimental read-only nearby-monster census
 
-GameHelper's reference `NearbyMonsterInfo` uses the already-maintained awake entity collection to count monsters by Normal/Magic/Rare/Unique rarity in two distance circles. This app does **not** maintain a game-wide entity collection, so a full entity tracker would be an unnecessary baseline cost. Its new experimental census runs **only** with an explicit diagnostic flag:
+GameHelper's reference `NearbyMonsterInfo` uses the already-maintained awake entity collection to count monsters by Normal/Magic/Rare/Unique rarity in two distance circles. This app does **not** maintain a game-wide entity collection, so a full entity tracker would be an unnecessary baseline cost. Its experimental census runs on explicit request: as read-only diagnostics
+or for an enabled PoE1 utility proximity rule. The diagnostic command is:
 
 ```fish
-./poe2-auto-flask-linux-x86_64.AppImage --game poe1 --debug --nearby
+./poe2-auto-flask-x86_64.AppImage --game poe1 --debug --nearby
 ```
 
 The `--nearby` command-line flag is **diagnostic-only** and requires PoE1 `--debug`; it does not activate flasks. Separately, an explicitly configured `[poe1.nearby.<type>]` condition may request the same bounded census for that utility flask during normal PoE1 automation. With no such configured condition, normal PoE1 and PoE2 automation do not scan monsters.
 
 When enabled, the reader traverses only the PoE1 **awake** entity map (not sleeping or world decorations), with a hard limit of **1,500 map nodes** and **512 nearby monsters**. It caches static entity type/component addresses for the current area, limits remote rescans to once per **750 ms**, and groups the surviving monsters by rarity and proximity. It excludes dead/friendly/untargetable entities and known noncombat categories, including Harbingers and Tormented Spirits. It shows counts in **60** and **100 grid units** (same coordinate convention as GameHelper's circle distances). It fails closed on malformed/changing maps or invalid state; no partial result authorizes automation.
 
-**Live validation (2026-11-11):** Normal, Magic, and Rare proximity counts were consistent with gameplay and friendly entities were excluded. During Kitava's Act 10 boss encounter, one Unique was counted before becoming vulnerable and the heart then appeared as a second Unique while still immune to damage. This is consistent with PoE's distinct attackable phases (Kitava and exposed Heart) and demonstrates that the current life/targetable flags are **not sufficient to prove an enemy can currently be damaged**. This is not fixed by pretending Unique always means combat: the reader remains diagnostic-only. Before enabling proximity-gated flasks, treat Unique-only rules conservatively and consider specific noncombat/invulnerable state checks (especially phased bosses). <https://www.poewiki.net/wiki/Kitava,_the_Insatiable>
+**Live validation (2026-11-11):** Normal, Magic, and Rare proximity counts were consistent with gameplay and friendly entities were excluded. During Kitava's Act 10 boss encounter, one Unique was counted before becoming vulnerable and the heart then appeared as a second Unique while still immune to damage. This is consistent with PoE's distinct attackable phases (Kitava and exposed Heart) and demonstrates that the current life/targetable flags are **not sufficient to prove an enemy can currently be damaged**. This is not fixed by pretending Unique always means combat: the scanner is experimental and optional proximity-gated utility use may fire during an invulnerable boss phase. Before enabling proximity-gated flasks, treat Unique-only rules conservatively and consider specific noncombat/invulnerable state checks (especially phased bosses). <https://www.poewiki.net/wiki/Kitava,_the_Insatiable>
 
 **Performance instrumentation:** Normal PoE1 `--debug` and `--debug --nearby` now both report `Helper CPU: X% of one core (Y ms CPU / 5.0s wall)` at roughly five-second intervals, measured with Windows `GetProcessTimes` inside the helper under Proton. `--nearby` additionally prints `Nearby last full scan: Z ms wall` beside the rarity counts. This wall time includes cross-process read latency and **is not the scanner's CPU time**. The CPU percentage covers the helper's entire process (including logs and all readers), not PoE or the Wine server process. It is relative to one logical core, not system-wide Task Manager percentage; compare the two modes at similar monster density and area. Metrics are diagnostic-only and cannot trigger a flask. Under unsupported Wine configurations the CPU measure explicitly prints unavailable.
 
@@ -329,6 +329,10 @@ Windows helper CI (Rust 1.85 MSRV): `cargo fmt --all -- --check`, `cargo clippy 
 
 Linux launcher CI: formatting, Clippy, unit tests, release build and AppImage packaging. The final successful multi-branch development build before consolidation was GitHub Actions run **42961739151** (56 Windows helper tests and 7 Linux launcher tests passed).
 
-## Development workflow
+## Current development workflow
 
-Keep **one** active feature branch, `feature/poe1-support`. Commit subsequent fixes and enhancements to it; no new per-milestone branches or draft PRs. Preserve `main`, `develop`, and local uncommitted GUI work until explicitly asked to merge.
+The PoE1 feature branch was squash-merged into `develop` and subsequently released
+on `main` as v0.8.0. After that release, cross-game naming/layout cleanup
+takes place on **`develop` only**. Keep the public `main` branch and its
+release tags untouched until the next release is explicitly approved.
+See [Source layout and runtime audit](SOURCE_LAYOUT.md) for current module ownership.
