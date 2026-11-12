@@ -26,6 +26,7 @@ pub struct Poe1Config {
 #[serde(default)]
 pub struct Poe1SkillsConfig {
     pub molten_shell: MoltenShellConfig,
+    pub blood_rage: BloodRageConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -49,30 +50,7 @@ impl Default for MoltenShellConfig {
 
 impl MoltenShellConfig {
     pub fn binding(&self) -> io::Result<KeyBinding> {
-        let key = self.key.trim().to_ascii_uppercase();
-        let vk = match key.as_bytes() {
-            [value] if value.is_ascii_uppercase() || value.is_ascii_digit() => u16::from(*value),
-            _ => {
-                let number = key
-                    .strip_prefix('F')
-                    .and_then(|rest| rest.parse::<u16>().ok())
-                    .ok_or_else(|| {
-                        invalid("poe1.skills.molten_shell.key must be A-Z, 0-9 or F1-F12")
-                    })?;
-                if !(1..=12).contains(&number) {
-                    return Err(invalid(
-                        "poe1.skills.molten_shell.key must be A-Z, 0-9 or F1-F12",
-                    ));
-                }
-                0x6F + number
-            }
-        };
-        if vk == 0x7A {
-            return Err(invalid(
-                "poe1.skills.molten_shell.key cannot be F11 (arm toggle)",
-            ));
-        }
-        KeyBinding::from_poe(vk, 0)
+        skill_binding(&self.key, "poe1.skills.molten_shell.key")
     }
 
     pub fn validate(&self) -> io::Result<()> {
@@ -84,6 +62,74 @@ impl MoltenShellConfig {
         self.binding()?;
         Ok(())
     }
+}
+
+/// Optional self-damaging buff preset. Nearby monsters are required by
+/// default so Blood Rage doesn't activate automatically while idle.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct BloodRageConfig {
+    pub enabled: bool,
+    pub key: String,
+    pub min_life_percent: u8,
+    pub require_nearby_monsters: bool,
+    pub nearby_radius: u16,
+    pub nearby_minimum_count: u16,
+}
+
+impl Default for BloodRageConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            key: "T".to_string(),
+            min_life_percent: 80,
+            require_nearby_monsters: true,
+            nearby_radius: 60,
+            nearby_minimum_count: 1,
+        }
+    }
+}
+
+impl BloodRageConfig {
+    pub fn binding(&self) -> io::Result<KeyBinding> {
+        skill_binding(&self.key, "poe1.skills.blood_rage.key")
+    }
+
+    pub fn validate(&self) -> io::Result<()> {
+        if !(1..=100).contains(&self.min_life_percent) {
+            return Err(invalid("poe1.skills.blood_rage.min_life_percent must be 1..=100"));
+        }
+        if !(1..=150).contains(&self.nearby_radius) {
+            return Err(invalid("poe1.skills.blood_rage.nearby_radius must be 1..=150"));
+        }
+        if !(1..=512).contains(&self.nearby_minimum_count) {
+            return Err(invalid("poe1.skills.blood_rage.nearby_minimum_count must be 1..=512"));
+        }
+        self.binding()?;
+        Ok(())
+    }
+}
+
+fn skill_binding(key: &str, config_path: &str) -> io::Result<KeyBinding> {
+    let key = key.trim().to_ascii_uppercase();
+    let invalid_format = || invalid(format!("{config_path} must be A-Z, 0-9 or F1-F12"));
+    let vk = match key.as_bytes() {
+        [value] if value.is_ascii_uppercase() || value.is_ascii_digit() => u16::from(*value),
+        _ => {
+            let number = key
+                .strip_prefix('F')
+                .and_then(|rest| rest.parse::<u16>().ok())
+                .ok_or_else(invalid_format)?;
+            if !(1..=12).contains(&number) {
+                return Err(invalid_format());
+            }
+            0x6F + number
+        }
+    };
+    if vk == 0x7A {
+        return Err(invalid(format!("{config_path} cannot be F11 (arm toggle)")));
+    }
+    KeyBinding::from_poe(vk, 0)
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -226,21 +272,40 @@ impl Config {
         } else {
             format!("{base} | Nearby {}", rules.join(", "))
         };
+        let mut base = base;
         let shell = &self.poe1.skills.molten_shell;
         if shell.enabled {
-            format!(
-                "{base} | Molten Shell <= {}% ({})",
+            base.push_str(&format!(
+                " | Molten Shell <= {}% ({})",
                 shell.threshold_percent, shell.key
-            )
-        } else {
-            base
+            ));
         }
+        let blood = &self.poe1.skills.blood_rage;
+        if blood.enabled {
+            let nearby = if blood.require_nearby_monsters {
+                format!("{} within {}", blood.nearby_minimum_count, blood.nearby_radius)
+            } else {
+                "OFF".to_string()
+            };
+            base.push_str(&format!(
+                " | Blood Rage >= {}% ({}, nearby {})",
+                blood.min_life_percent, blood.key, nearby
+            ));
+        }
+        base
     }
 }
 
 impl Poe1Config {
     pub(crate) fn validate(&self) -> io::Result<()> {
         self.skills.molten_shell.validate()?;
+        self.skills.blood_rage.validate()?;
+        if self.skills.molten_shell.enabled
+            && self.skills.blood_rage.enabled
+            && self.skills.molten_shell.binding()? == self.skills.blood_rage.binding()?
+        {
+            return Err(invalid("enabled PoE1 skill presets cannot use the same key"));
+        }
         let ms = self.quicksilver_min_run_ms;
         if ms != 0 && !(100..=5000).contains(&ms) {
             return Err(invalid(

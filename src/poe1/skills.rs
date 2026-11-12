@@ -20,6 +20,7 @@ const NAME_UNITS: usize = 128;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SkillId {
     MoltenShell,
+    BloodRage,
     #[cfg(test)]
     EnduringCry,
 }
@@ -28,6 +29,7 @@ impl SkillId {
     pub fn label(self) -> &'static str {
         match self {
             Self::MoltenShell => "Molten Shell",
+            Self::BloodRage => "Blood Rage",
             #[cfg(test)]
             Self::EnduringCry => "Enduring Cry",
         }
@@ -38,6 +40,10 @@ impl SkillId {
             Self::MoltenShell => {
                 name.eq_ignore_ascii_case("MoltenShell")
                     || name.eq_ignore_ascii_case("molten_shell_barrier")
+            }
+            Self::BloodRage => {
+                name.eq_ignore_ascii_case("BloodRage")
+                    || name.eq_ignore_ascii_case("blood_rage")
             }
             #[cfg(test)]
             Self::EnduringCry => name.eq_ignore_ascii_case("EnduringCry"),
@@ -274,6 +280,13 @@ mod tests {
         assert!(SkillId::MoltenShell.matches_internal_name("molten_shell_barrier"));
         assert!(!SkillId::MoltenShell.matches_internal_name("VaalMoltenShell"));
         assert!(!SkillId::MoltenShell.matches_internal_name("molten_shell_shield"));
+    }
+
+    #[test]
+    fn blood_rage_uses_an_exact_name_not_a_similar_skill() {
+        assert!(SkillId::BloodRage.matches_internal_name("BloodRage"));
+        assert!(SkillId::BloodRage.matches_internal_name("blood_rage"));
+        assert!(!SkillId::BloodRage.matches_internal_name("blood_rage_leech"));
     }
 
     #[test]

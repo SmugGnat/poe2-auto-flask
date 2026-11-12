@@ -58,12 +58,25 @@ iron = false
 
 # PoE1 defensive skill presets are separately configurable. Skills are
 # disabled by default and share the existing 100 ms loop with flask rules.
-# The same key must be bound to Molten Shell in game. Only A-Z, 0-9,
-# F1-F10 and F12 are supported for this initial preset; F11 is reserved.
+# Each skill key must match its in-game binding. Only A-Z, 0-9,
+# F1-F10 and F12 are supported; F11 is reserved. Enabled skills
+# must use different keys.
 # The skill rule cannot run in town, or in hideouts unless permitted above.
 [poe1.skills.molten_shell]
 enabled = false
 threshold_percent = 95
 key = "Q"
+
+# Blood Rage maintains its duration through kills, so don't repeatedly
+# cast it while its buff is active. Requiring nearby monsters by default
+# avoids starting the self-damage effect while standing alone.
+# Proximity reuses the existing throttled 750ms PoE1 monster census.
+[poe1.skills.blood_rage]
+enabled = false
+key = "T"
+min_life_percent = 80
+require_nearby_monsters = true
+nearby_radius = 60
+nearby_minimum_count = 1
 
 # Existing PoE2 operation is unchanged: two slots, F11, 100 ms polling.
