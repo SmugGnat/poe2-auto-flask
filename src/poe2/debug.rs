@@ -2,17 +2,17 @@ use std::io;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::area::AreaInfo;
 use super::area::resolve_area_info;
 use super::buffs::{
     resolve_flask_lock_probe, resolve_flask_probe, sample_flask_effects, sample_flask_locks,
     FlaskLockProbe, FlaskLocks, FlaskProbe,
 };
-use crate::config::Config;
 use super::flasks::{
     resolve_flask_inventory_probe, sample_flask_charges, FlaskChargeSnapshot, FlaskInventoryProbe,
 };
 use super::{refresh_vitals, sample_vitals, LiveVitals, VitalPool, VitalsProbe};
+use crate::area::AreaInfo;
+use crate::config::Config;
 use crate::process::Process;
 
 const DEBUG_POLL_INTERVAL: Duration = Duration::from_millis(250);

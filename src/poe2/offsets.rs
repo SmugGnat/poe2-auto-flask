@@ -60,4 +60,3 @@ pub(super) const VITAL_CURRENT: usize = 0x30;
 pub(super) const VITAL_READ_LEN: usize = VITAL_CURRENT + 4 - VITAL_RESERVED_FLAT;
 
 pub(super) const MAX_METADATA_CHARS: usize = 256;
-

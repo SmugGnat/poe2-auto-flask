@@ -73,4 +73,3 @@ pub(crate) fn invalid(path: &Path, message: impl Into<String>) -> io::Error {
         format!("{}: {}", path.display(), message.into()),
     )
 }
-

@@ -3,17 +3,17 @@
 use std::io;
 use std::time::{Duration, Instant};
 
-use crate::action::{dispatch, ActionRequest, Dispatch, DispatchError};
-use crate::area::AreaInfo;
 use super::area::resolve_area_info;
 use super::bindings::{BindingManager, BindingReload, GameBindings};
 use super::buffs::{resolve_flask_lock_probe, sample_flask_locks, FlaskLockProbe, FlaskLocks};
-use crate::config::{Config, ConfigManager, ConfigReload, FlaskConfig};
-use crate::engine::{GameAutomationPolicy, TickOutcome};
 use super::flasks::{
     resolve_flask_inventory_probe, sample_flask_charges_fast, FlaskChargeCache,
     FlaskChargeSnapshot, FlaskChargeState, FlaskInventoryProbe,
 };
+use crate::action::{dispatch, ActionRequest, Dispatch, DispatchError};
+use crate::area::AreaInfo;
+use crate::config::{Config, ConfigManager, ConfigReload, FlaskConfig};
+use crate::engine::{GameAutomationPolicy, TickOutcome};
 use crate::input::KeyBinding;
 use crate::game_state::VitalPool;
 use crate::process::Process;

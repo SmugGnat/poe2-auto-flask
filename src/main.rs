@@ -18,11 +18,11 @@ use std::io;
 use std::thread;
 use std::time::Duration;
 
-use poe2::automation::run_auto;
 use config::{Config, ConfigManager, ConfigStartup};
-use poe2::debug::run_debug;
 use game::Game;
 use platform::running_under_wine;
+use poe2::automation::run_auto;
+use poe2::debug::run_debug;
 use process::Process;
 use session::GameSession;
 
