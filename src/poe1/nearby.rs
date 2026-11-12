@@ -1,7 +1,7 @@
-//! EXPERIMENTAL read-only PoE1 awake-monster census.
-//! Only explicitly enabled, proximity-gated PoE1 utility-flask policies
-//! consume this reader in automation. --debug --nearby also enables it for
-//! read-only diagnostics; normal policies without proximity rules never scan.
+//! Experimental read-only PoE1 awake-monster census.
+//! Proximity-gated utility flasks and skill presets reuse the same throttled
+//! snapshot in automation. --debug --nearby can also inspect it; policies
+//! without an eligible proximity gate never initiate a scan.
 //! Bounded std::map walk; cache entity component pointers within an area.
 use std::collections::{HashMap, HashSet};
 use std::io;

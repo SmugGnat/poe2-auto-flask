@@ -40,8 +40,8 @@ Its long decision and activation test suites are separated into
 PoE1 also owns `state.rs` (one demand-driven tick snapshot and shared
 pre-dispatch verification), `skills.rs` (validated Actor skill readiness)
 and `skill_rules.rs` (skill IDs, declarative conditions, preset registry
-and per-skill attempt guards). Molten Shell is the first registered preset,
-not a special scheduler branch.
+and per-skill attempt guards). Molten Shell and Blood Rage are registered
+presets, not skill-specific scheduler branches.
 
 ## Terminology
 
@@ -64,9 +64,9 @@ not a special scheduler branch.
 | Shared engine | One 100ms tick, process/config check every 1s, bindings every 2s, retry on stale pointers | No duplicate automation loop or game-memory parser |
 | Shared session | Cache common vitals once per decision tick; PoE1 adapter caches area/flask/effect/animation snapshots per tick | Avoids multiple full reads of the same cached PoE1 snapshot |
 | PoE1 decision / pre-send | One demand-driven `TickState` caches vitals/area/chat/effects and selected game observations. A single fresh `Preflight` verifies vitals/chat/effects once for all candidates; dispatch checks focus for every key | Avoids repeating full memory reads/validation independently for each action while retaining a safety boundary |
-| PoE1 flask reader | Checks identity/inventory shape and live charge state; caches item identities and component/modifier classification | Identity/charge reads are required to fail closed on equipment or area changes |
-| PoE1 optional skill rules | `configured_rules` registers enabled presets; pure conditions select eligible skills from `TickState`. Skill-readiness is requested only after cheaper conditions pass | No skill Actor scan when all skill presets are disabled; flask and skill candidates can both dispatch in one 100ms tick |
-| PoE1 proximity | On-demand bounded awake-monster walk; caches static component addresses and throttles scans to once per 750ms | No global entity tracker; off when there is no eligible configured rule |
+| PoE1 flask reader | Checks identity/inventory shape and live charge state; caches item identities and component/modifier classification | Identity changes and memory I/O failures trigger refresh; isolated malformed flask inventory skips only flasks after a fresh identity/vitals check |
+| PoE1 optional skill rules | `configured_rules` registers enabled presets; pure conditions select eligible skills from `TickState`. Skill-readiness is requested only after cheaper conditions pass | No Actor scan when skill presets are disabled; ambiguous duplicate Actor entries deny only the affected skill; flask and skills can dispatch in one 100ms tick |
+| PoE1 proximity | On-demand bounded awake-monster walk; caches static component addresses and throttles scans to once per 750ms | Shared by flask and skill proximity policies; 750ms refresh retained by design |
 | PoE2 auto | Samples existing two-slot status locks and charges, caches charge-component locations, enforces a 1000ms guard | Existing fast reader preserved without new per-tick overhead |
 | PoE2 debug | Uses a deliberately fuller reader for detailed effects/inventory diagnostics | Runs in read-only debug mode, **not** in addition to fast auto sampling |
 | PoE2 layout | Shared one identical known-offset-first helper previously repeated in two modules | Actual source duplication removed without changing search order |
@@ -76,24 +76,25 @@ The application deliberately samples some values twice only when an action is
 actually selected: once for the tick decision, then once for the shared
 pre-dispatch safety boundary. Flask and skill actions reuse the same preflight
 values, rather than re-reading vitals/chat/effects for each action separately.
-Foreground focus is still checked around each key, including the second action
-in a tick. PoE1's first registered skill is Molten Shell; each future preset
-adds its own conditions without another automation loop. The skill reader now batches all requested preset IDs into a single
-Actor ActiveSkills traversal and a single cooldown traversal for the decision
-snapshot, and (only when selected) a fresh bulk pre-dispatch check. It
-inspects the character's current Actor skills, not the game's complete skill
-database. Static skill-definition names remain cached; live usability is
-read fresh. Rules whose cheap conditions fail trigger no skill scans. The
-configured skill presets are Molten Shell (maximum Life threshold) and Blood
-Rage (minimum Life threshold, absent buff, and optional nearby-monster gate).
-Blood Rage reuses the same throttled nearby census already provided to
-utility-flask conditions, with no additional Actor scan per skill. Unknown
-nearby state fails closed and blocks only that proximity-gated skill. Do not infer hotbar assignment from presence in the
-Actor skill list. Rechecking game focus, player identity, charges or area boundaries is a
-deliberate fail-closed requirement. PoE2's debug and optimized auto readers are separate
-workloads, not duplicate work performed every tick. Some small helper functions
-retain per-game validation/error semantics rather than being generalized
-prematurely.
+Foreground focus is still checked around each key, including subsequent
+actions in the same tick. New skill presets add conditions without another
+automation loop. The Actor reader batches requested skill IDs into one
+ActiveSkills and one cooldown traversal for the tick, and another bulk
+scan only for selected actions before dispatch. Duplicate entries for one
+skill deny that skill without suppressing other valid skill candidates.
+
+Molten Shell has a maximum-Life threshold; Blood Rage has a minimum-Life
+threshold, absent-buff and optional nearby-monster conditions. They reuse
+the same throttled 750ms monster census used by nearby-gated flasks, with
+no forced fresh monster scan before input. Unknown nearby state fails
+closed. Configured skill keys must match in-game bindings; conflicts with
+flask keys are warned only on startup/config/binding changes, not per tick.
+
+Changed player identity or memory I/O failure still refreshes the session.
+An isolated malformed flask-inventory observation may suppress only flasks
+after a fresh player/vitals check. No stale game state may authorize input.
+PoE2's debug and optimized auto readers are separate workloads; per-game
+validation semantics are not generalized without a genuine shared need.
 
 The earlier PoE1 live map measurement (Life/Quicksilver/Granite and nearby
 scanning enabled) used approximately 0.44% of one logical CPU core on average

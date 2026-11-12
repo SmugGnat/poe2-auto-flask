@@ -1,5 +1,6 @@
-//! Read-only PoE1 Actor skill availability probe. Offsets are candidates from
-//! the archived 2026-09 GameHelper snapshot and require live validation.
+//! Read-only PoE1 Actor skill availability probe. Offsets derive from the
+//! archived 2026-09 GameHelper snapshot; Molten Shell and Blood Rage were
+//! verified in live PoE1 testing, but future game updates may change them.
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io;
 

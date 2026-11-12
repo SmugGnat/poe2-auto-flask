@@ -1,4 +1,5 @@
-//! PoE1 milestone-1 diagnostics. This module NEVER sends input to the game.
+//! Read-only PoE1 diagnostics for flasks, status effects and skill presets.
+//! This module NEVER sends input to the game.
 use std::io;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -162,7 +163,7 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                         skill.as_ref().ok().copied(),
                     );
                     println!(
-                        "  Molten Shell (read-only prototype): buff {} | skill {} | rule at {}% Life {:?}",
+                        "  Molten Shell (read-only): buff {} | skill {} | rule at {}% Life {:?}",
                         if buffs.effects.iter().any(|effect| effect.name == MOLTEN_SHELL_BUFF && effect.time_left > 0.0) {
                             "active"
                         } else {
