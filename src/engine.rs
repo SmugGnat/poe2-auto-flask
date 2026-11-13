@@ -25,9 +25,7 @@ const REFRESH_RETRY: Duration = Duration::from_millis(250);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TickOutcome {
     Status(&'static str),
-    /// A read became stale; invalidate and reconnect the session.
-    Refresh,
-    /// A read failed and needs a refresh; retain its reason for diagnostics.
+    /// A read failed; invalidate and reconnect while retaining its reason.
     RefreshFailed(String),
     /// Keep the last status when a game intentionally tolerates transient
     /// read failures (PoE2's existing three-sample policy).
@@ -191,11 +189,6 @@ pub fn run<P: GameAutomationPolicy>(
                 failures.clear();
                 show(&mut status, next);
             }
-            TickOutcome::Refresh => {
-                needs_refresh = true;
-                next_refresh = started + REFRESH_RETRY;
-                show(&mut status, policy.waiting_status());
-            }
             TickOutcome::RefreshFailed(reason) => {
                 failures.warn("Live", &reason);
                 needs_refresh = true;
@@ -276,7 +269,10 @@ mod tests {
 
     #[test]
     fn policy_can_retry_without_clearing_state_or_request_refresh() {
-        assert_ne!(TickOutcome::Unchanged, TickOutcome::Refresh);
+        assert_ne!(
+            TickOutcome::Unchanged,
+            TickOutcome::RefreshFailed("stale state".to_owned())
+        );
         assert_eq!(TickOutcome::Status("ARMED"), TickOutcome::Status("ARMED"));
     }
 }
