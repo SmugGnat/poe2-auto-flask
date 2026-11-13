@@ -56,9 +56,15 @@ mod tests {
         let start = Instant::now();
         let mut monitor = FailureMonitor::default();
         assert!(!monitor.should_warn(start, "player unavailable"));
-        assert!(!monitor.should_warn(start + WARNING_GRACE - Duration::from_millis(1), "player unavailable"));
+        assert!(!monitor.should_warn(
+            start + WARNING_GRACE - Duration::from_millis(1),
+            "player unavailable"
+        ));
         assert!(monitor.should_warn(start + WARNING_GRACE, "player unavailable"));
-        assert!(!monitor.should_warn(start + WARNING_GRACE + Duration::from_secs(60), "player unavailable"));
+        assert!(!monitor.should_warn(
+            start + WARNING_GRACE + Duration::from_secs(60),
+            "player unavailable"
+        ));
     }
 
     #[test]
@@ -68,8 +74,14 @@ mod tests {
         assert!(!monitor.should_warn(start, "old layout"));
         assert!(monitor.should_warn(start + WARNING_GRACE, "old layout"));
         assert!(!monitor.should_warn(start + WARNING_GRACE + Duration::from_secs(1), "new layout"));
-        assert!(monitor.should_warn(start + WARNING_GRACE + CHANGED_REASON_COOLDOWN, "new layout"));
+        assert!(monitor.should_warn(
+            start + WARNING_GRACE + CHANGED_REASON_COOLDOWN,
+            "new layout"
+        ));
         monitor.clear();
-        assert!(!monitor.should_warn(start + WARNING_GRACE + CHANGED_REASON_COOLDOWN + Duration::from_secs(1), "new layout"));
+        assert!(!monitor.should_warn(
+            start + WARNING_GRACE + CHANGED_REASON_COOLDOWN + Duration::from_secs(1),
+            "new layout"
+        ));
     }
 }

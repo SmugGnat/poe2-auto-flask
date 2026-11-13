@@ -378,7 +378,7 @@ impl GameAutomationPolicy for Policy {
                 Ok(Dispatch::Skipped) => {}
                 Err(DispatchError::Validation(error)) => {
                     return Ok(TickOutcome::RefreshFailed(error.to_string()));
-                },
+                }
                 Err(DispatchError::Input(error)) => {
                     self.defer_skill(rule.id, started);
                     eprintln!("PoE1 {} input failed: {error}", rule.id.label());
@@ -512,8 +512,8 @@ impl Policy {
             }
             Ok(Dispatch::Skipped) => {}
             Err(DispatchError::Validation(error)) => {
-                    return Ok(TickOutcome::RefreshFailed(error.to_string()));
-                },
+                return Ok(TickOutcome::RefreshFailed(error.to_string()));
+            }
             Err(DispatchError::Input(error)) => return Err(error),
         }
         Ok(TickOutcome::Status("ARMED"))
