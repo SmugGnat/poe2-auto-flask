@@ -2,6 +2,7 @@ mod action;
 mod area;
 mod bindings;
 mod config;
+mod diagnostics;
 mod engine;
 mod entity;
 mod file_watch;
@@ -19,6 +20,7 @@ use std::thread;
 use std::time::Duration;
 
 use config::{ConfigManager, ConfigStartup};
+use diagnostics::FailureMonitor;
 use game::Game;
 use platform::running_under_wine;
 use process::Process;
@@ -202,6 +204,7 @@ fn wait_for_process(under_wine: bool, game: Game) -> io::Result<Option<Process>>
 fn wait_for_game_state(process: &Process, game: Game) -> io::Result<Option<GameSession>> {
     let mut notice_shown = false;
     let mut signature_failures = 0u32;
+    let mut failures = FailureMonitor::default();
 
     loop {
         if !process.is_alive().unwrap_or(false) {
@@ -214,7 +217,10 @@ fn wait_for_game_state(process: &Process, game: Game) -> io::Result<Option<GameS
                 if error.kind() == io::ErrorKind::NotFound {
                     signature_failures = signature_failures.saturating_add(1);
                     if signature_failures >= SIGNATURE_RETRY_LIMIT {
-                        return Err(error);
+                        return Err(io::Error::new(
+                            error.kind(),
+                            format!("{error} (game update may require a new GameState signature)"),
+                        ));
                     }
                 } else {
                     signature_failures = 0;
@@ -224,6 +230,7 @@ fn wait_for_game_state(process: &Process, game: Game) -> io::Result<Option<GameS
                     println!("Status: WAITING FOR GAME STATE");
                     notice_shown = true;
                 }
+                failures.warn("Startup", &error.to_string());
                 thread::sleep(GAME_STATE_RETRY_INTERVAL);
             }
         }
