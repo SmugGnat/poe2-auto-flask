@@ -116,7 +116,7 @@ impl Policy {
     fn bad_sample(&mut self, error: io::Error) -> TickOutcome {
         self.bad_samples = self.bad_samples.saturating_add(1);
         if error.kind() == io::ErrorKind::Interrupted || self.bad_samples >= BAD_SAMPLE_LIMIT {
-            TickOutcome::Refresh
+            TickOutcome::RefreshFailed(error.to_string())
         } else {
             // Preserve PoE2's historical tolerance of transient read errors.
             TickOutcome::Unchanged
@@ -228,7 +228,8 @@ impl GameAutomationPolicy for Policy {
             return Ok(
                 match self.runtime.area_instance_is_current(process, session) {
                     Ok(true) => TickOutcome::Status(status),
-                    Ok(false) | Err(_) => TickOutcome::Refresh,
+                    Ok(false) => TickOutcome::RefreshFailed("PoE2 AreaInstance changed".to_owned()),
+                    Err(error) => TickOutcome::RefreshFailed(error.to_string()),
                 },
             );
         }
