@@ -9,6 +9,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::config::{Config, ConfigManager, ConfigReload};
+use crate::diagnostics::FailureMonitor;
 use crate::input::{is_process_foreground, master_toggle_down};
 use crate::process::Process;
 use crate::session::GameSession;
@@ -21,11 +22,13 @@ const REFRESH_RETRY: Duration = Duration::from_millis(250);
 
 /// Outcome of one game-policy decision tick. Parsing and deciding are kept
 /// outside the engine. Only the policy may authorize a key press.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TickOutcome {
     Status(&'static str),
     /// A read became stale; invalidate and reconnect the session.
     Refresh,
+    /// A read failed and needs a refresh; retain its reason for diagnostics.
+    RefreshFailed(String),
     /// Keep the last status when a game intentionally tolerates transient
     /// read failures (PoE2's existing three-sample policy).
     Unchanged,
@@ -91,6 +94,7 @@ pub fn run<P: GameAutomationPolicy>(
     policy.banner(config_manager.current());
     let mut latch = ArmLatch::default();
     let mut status = None;
+    let mut failures = FailureMonitor::default();
     let mut needs_refresh = false;
     let mut next_refresh = Instant::now();
     let mut next_config_reload = Instant::now() + CONFIG_RELOAD;
@@ -132,11 +136,13 @@ pub fn run<P: GameAutomationPolicy>(
             );
         }
         if !latch.armed {
+            failures.clear();
             policy.on_inactive();
             nap(started);
             continue;
         }
         if !focused {
+            failures.clear();
             needs_refresh = true;
             policy.on_focus_lost();
             show(&mut status, policy.focus_status());
@@ -144,6 +150,7 @@ pub fn run<P: GameAutomationPolicy>(
             continue;
         }
         if let Some(reason) = policy.bindings_pause() {
+            failures.clear();
             policy.on_inactive();
             show(&mut status, reason);
             nap(started);
@@ -164,7 +171,8 @@ pub fn run<P: GameAutomationPolicy>(
                     needs_refresh = false;
                     policy.after_refresh();
                 }
-                Err(_) => {
+                Err(error) => {
+                    failures.warn("Reconnect", &error.to_string());
                     if !process.is_alive().unwrap_or(false) {
                         return Ok(());
                     }
@@ -179,8 +187,17 @@ pub fn run<P: GameAutomationPolicy>(
         session.begin_tick();
         let outcome = policy.tick(process, &mut session, config_manager.current(), started)?;
         match outcome {
-            TickOutcome::Status(next) => show(&mut status, next),
+            TickOutcome::Status(next) => {
+                failures.clear();
+                show(&mut status, next);
+            }
             TickOutcome::Refresh => {
+                needs_refresh = true;
+                next_refresh = started + REFRESH_RETRY;
+                show(&mut status, policy.waiting_status());
+            }
+            TickOutcome::RefreshFailed(reason) => {
+                failures.warn("Live", &reason);
                 needs_refresh = true;
                 next_refresh = started + REFRESH_RETRY;
                 show(&mut status, policy.waiting_status());
