@@ -177,7 +177,7 @@ impl GameAutomationPolicy for Policy {
         let mut state = match TickState::sample(session, process, config.general.enable_in_hideout)
         {
             Ok(value) => value,
-            Err(_) => return Ok(TickOutcome::Refresh),
+            Err(error) => return Ok(TickOutcome::RefreshFailed(error.to_string())),
         };
         if !state.area_allowed {
             self.run_tracker.reset();
@@ -203,11 +203,11 @@ impl GameAutomationPolicy for Policy {
         match state.chat(session, process) {
             Ok(true) => return Ok(TickOutcome::Status("PAUSED (chat or focus)")),
             Ok(false) => {}
-            Err(_) => return Ok(TickOutcome::Refresh),
+            Err(error) => return Ok(TickOutcome::RefreshFailed(error.to_string())),
         }
         let effects = match state.effects(session, process) {
             Ok(value) => value,
-            Err(_) => return Ok(TickOutcome::Refresh),
+            Err(error) => return Ok(TickOutcome::RefreshFailed(error.to_string())),
         };
         if blocks_grace_period(effects) {
             return Ok(TickOutcome::Status("ARMED"));
@@ -227,10 +227,11 @@ impl GameAutomationPolicy for Policy {
                     // unclassified errors remain session-wide refresh events.
                     // Only a flask-local malformed inventory may be skipped,
                     // and only after a fresh player/vitals verification.
-                    if !can_skip_flask_read_error(&error, skill_demand)
-                        || session.poe1_verify_vitals(process).is_err()
-                    {
-                        return Ok(TickOutcome::Refresh);
+                    if !can_skip_flask_read_error(&error, skill_demand) {
+                        return Ok(TickOutcome::RefreshFailed(error.to_string()));
+                    }
+                    if let Err(error) = session.poe1_verify_vitals(process) {
+                        return Ok(TickOutcome::RefreshFailed(error.to_string()));
                     }
                     if !self.flask_read_warning {
                         eprintln!(
@@ -315,7 +316,7 @@ impl GameAutomationPolicy for Policy {
         // dispatched key still performs its own immediate focus checks.
         let mut preflight = match Preflight::sample(session, process) {
             Ok(value) => value,
-            Err(_) => return Ok(TickOutcome::Refresh),
+            Err(error) => return Ok(TickOutcome::RefreshFailed(error.to_string())),
         };
         if preflight.chat || preflight.vitals.health.current <= 0 {
             return Ok(TickOutcome::Status("PAUSED (chat or focus)"));
@@ -375,7 +376,9 @@ impl GameAutomationPolicy for Policy {
                     return Ok(TickOutcome::Status("PAUSED (chat or focus)"));
                 }
                 Ok(Dispatch::Skipped) => {}
-                Err(DispatchError::Validation(_)) => return Ok(TickOutcome::Refresh),
+                Err(DispatchError::Validation(error)) => {
+                    return Ok(TickOutcome::RefreshFailed(error.to_string()));
+                },
                 Err(DispatchError::Input(error)) => {
                     self.defer_skill(rule.id, started);
                     eprintln!("PoE1 {} input failed: {error}", rule.id.label());
@@ -508,7 +511,9 @@ impl Policy {
                 return Ok(TickOutcome::Status("PAUSED (chat or focus)"));
             }
             Ok(Dispatch::Skipped) => {}
-            Err(DispatchError::Validation(_)) => return Ok(TickOutcome::Refresh),
+            Err(DispatchError::Validation(error)) => {
+                    return Ok(TickOutcome::RefreshFailed(error.to_string()));
+                },
             Err(DispatchError::Input(error)) => return Err(error),
         }
         Ok(TickOutcome::Status("ARMED"))
