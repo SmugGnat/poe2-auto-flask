@@ -313,6 +313,15 @@ pub(crate) fn invalid(message: impl Into<String>) -> io::Error {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::{Config, ConfigManager, ConfigStartup, DEFAULT_CONFIG_TEXT};
+    use crate::poe1::types::FlaskType;
+
+    static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
+
     #[test]
     fn writhing_jar_toggle_and_optional_nearby_parse_independently() {
         use super::Config;
