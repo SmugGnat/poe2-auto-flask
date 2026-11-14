@@ -3,10 +3,11 @@ use crate::config::Config;
 use crate::game_state::LiveVitals;
 
 use super::buffs::EffectsSnapshot;
+use super::config::NearbyRule;
 use super::flasks::{FlaskSnapshot, FLASK_SLOT_COUNT};
 use super::nearby::NearbySnapshot;
 use super::rotation::FlaskRotation;
-use super::types::{FlaskType, UTILITY_TYPES};
+use super::types::{FlaskType, UniqueFlask, UTILITY_TYPES};
 
 #[cfg(test)]
 pub fn choose_action(
@@ -134,6 +135,23 @@ fn choose_action_internal(
             return Some(slot);
         }
     }
+    // The Writhing Jar is a hybrid base, but its worm-spawning use is independent
+    // of missing Life or Mana. Generic hybrid recovery is intentionally excluded.
+    let jar = UniqueFlask::WrithingJar;
+    if config.poe1.unique.enabled(jar)
+        && config
+            .poe1
+            .unique_conditions
+            .get(&jar)
+            .and_then(|conditions| conditions.nearby)
+            .filter(|rule| rule.enabled)
+            .is_none_or(|rule| nearby_matches(&rule, nearby))
+    {
+        if let Some(slot) = best_unique_slot(jar, flasks, effects, rotation) {
+            return Some(slot);
+        }
+    }
+
     for kind in UTILITY_TYPES {
         if kind == FlaskType::Quicksilver
             && config.poe1.quicksilver_min_run_ms != 0
@@ -143,14 +161,7 @@ fn choose_action_internal(
         }
         if config.poe1.utility.enabled(kind) {
             if let Some(rule) = config.poe1.nearby.get(&kind).filter(|rule| rule.enabled) {
-                let matches = nearby.is_some_and(|census| {
-                    let counts = census.counts_at(f32::from(rule.radius));
-                    counts[rule.minimum_rarity.first_index()..]
-                        .iter()
-                        .sum::<usize>()
-                        >= usize::from(rule.minimum_count)
-                });
-                if !matches {
+                if !nearby_matches(rule, nearby) {
                     continue;
                 }
             }
@@ -162,7 +173,17 @@ fn choose_action_internal(
     None
 }
 
-/// Return true only when a usable equipped utility needs a nearby scan.
+fn nearby_matches(rule: &NearbyRule, nearby: Option<&NearbySnapshot>) -> bool {
+    nearby.is_some_and(|census| {
+        let counts = census.counts_at(f32::from(rule.radius));
+        counts[rule.minimum_rarity.first_index()..]
+            .iter()
+            .sum::<usize>()
+            >= usize::from(rule.minimum_count)
+    })
+}
+
+/// Return true only when a usable equipped optional flask needs a nearby scan.
 /// Fast-path Life/Mana without scanning so emergency recovery is never delayed.
 #[cfg(test)]
 pub fn needs_nearby(
@@ -196,9 +217,24 @@ pub fn needs_nearby_guarded(
     .is_some_and(|slot| {
         flasks.slots[slot]
             .as_ref()
-            .is_some_and(|flask| matches!(flask.flask_type, FlaskType::Life | FlaskType::Mana))
+            .is_some_and(|flask| {
+                matches!(flask.flask_type, FlaskType::Life | FlaskType::Mana)
+                    || flask.unique == Some(UniqueFlask::WrithingJar)
+            })
     }) {
         return false;
+    }
+    let jar = UniqueFlask::WrithingJar;
+    if config.poe1.unique.enabled(jar)
+        && config
+            .poe1
+            .unique_conditions
+            .get(&jar)
+            .and_then(|conditions| conditions.nearby)
+            .is_some_and(|rule| rule.enabled)
+        && best_unique_slot(jar, flasks, effects, None).is_some()
+    {
+        return true;
     }
     UTILITY_TYPES.into_iter().any(|kind| {
         config.poe1.utility.enabled(kind)
@@ -254,6 +290,17 @@ fn best_life_slot(
     }
     best_eligible_slot(FlaskType::Life, flasks, rotation, |slot, flask| {
         !effects.slots_active[slot] && flask.recovery.instant_at_life(health)
+    })
+}
+
+fn best_unique_slot(
+    kind: UniqueFlask,
+    flasks: &FlaskSnapshot,
+    effects: &EffectsSnapshot,
+    rotation: Option<&FlaskRotation>,
+) -> Option<usize> {
+    best_eligible_slot(FlaskType::Hybrid, flasks, rotation, |slot, flask| {
+        flask.unique == Some(kind) && !effects.slots_active[slot]
     })
 }
 
@@ -322,6 +369,7 @@ pub fn enabled_demand(config: &Config, vitals: LiveVitals) -> bool {
                         .percentage()
                         .is_some_and(|pct| pct <= config.mana.threshold_percent)
             }))
+        || config.poe1.unique.writhing_jar
         || UTILITY_TYPES
             .into_iter()
             .any(|kind| config.poe1.utility.enabled(kind))

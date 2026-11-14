@@ -496,10 +496,13 @@ impl Policy {
                         validated,
                         &candidate.flasks,
                     );
+                    if flask.unique.is_some() {
+                        self.activation_guard.mark_unique(slot, &candidate.flasks);
+                    }
                     self.rotation.record(slot, flask.flask_type);
                     println!(
                         "{} flask (slot {}) -> {} | charges {} | effective cost {}",
-                        flask.flask_type.name(),
+                        flask.unique.map_or(flask.flask_type.name(), |kind| kind.name()),
                         slot + 1,
                         key.label(),
                         flask.current_charges,

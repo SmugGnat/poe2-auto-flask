@@ -5,11 +5,13 @@ use crate::game_state::VitalPool;
 use crate::poe1::decision::choose_action;
 use crate::poe1::flasks::FlaskSlot;
 use crate::poe1::recovery::RecoveryKind;
+use crate::poe1::types::UniqueFlask;
 
 fn slot(kind: FlaskType, charges: i32) -> Option<FlaskSlot> {
     Some(FlaskSlot {
         item_path: String::new(),
         flask_type: kind,
+        unique: None,
         current_charges: charges,
         raw_per_use: 15,
         effective_per_use: Some(15),
@@ -341,4 +343,35 @@ fn reset_clears_unacknowledged_resource_attempt() {
     guard.mark(3, FlaskType::Life, sent, vitals, &flasks);
     guard.reset();
     assert_eq!(choose(&config, vitals, &flasks, &mut guard, sent), Some(3));
+}
+
+#[test]
+fn unique_waits_for_charge_spend_before_repeating() {
+    let (mut config, mut vitals, mut flasks, _) = setup();
+    vitals.health.current = 100;
+    vitals.mana.as_mut().unwrap().current = 100;
+    config.poe1.unique.writhing_jar = true;
+    flasks.slots[1] = slot(FlaskType::Hybrid, 40);
+    flasks.slots[1].as_mut().unwrap().unique = Some(UniqueFlask::WrithingJar);
+    let mut guard = ActivationGuard::default();
+    let sent = Instant::now();
+    assert_eq!(choose(&config, vitals, &flasks, &mut guard, sent), Some(1));
+    guard.mark(1, FlaskType::Hybrid, sent, vitals, &flasks);
+    guard.mark_unique(1, &flasks);
+    assert_eq!(
+        choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_secs(5)),
+        None
+    );
+    flasks.slots[1].as_mut().unwrap().current_charges = 25;
+    assert_eq!(
+        choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(400)),
+        Some(1)
+    );
+    guard.mark(1, FlaskType::Hybrid, sent + Duration::from_millis(400), vitals, &flasks);
+    guard.mark_unique(1, &flasks);
+    flasks.slots[1].as_mut().unwrap().unique = None;
+    assert_eq!(
+        choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_secs(5)),
+        None
+    );
 }

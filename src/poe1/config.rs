@@ -5,7 +5,7 @@ use std::io;
 
 use serde::Deserialize;
 
-use super::types::FlaskType;
+use super::types::{FlaskType, UniqueFlask};
 use crate::config::{invalid, Config, FlaskConfig};
 use crate::input::KeyBinding;
 
@@ -13,6 +13,10 @@ use crate::input::KeyBinding;
 #[serde(default)]
 pub struct Poe1Config {
     pub utility: Poe1UtilityConfig,
+    pub unique: Poe1UniqueConfig,
+    /// Optional gates are stored separately from Boolean unique toggles,
+    /// because TOML cannot use the same key as both a bool and a table.
+    pub unique_conditions: BTreeMap<UniqueFlask, UniqueConditions>,
     pub skills: Poe1SkillsConfig,
     /// Optional type-specific proximity requirements. Absent = no scan/gate.
     pub nearby: BTreeMap<FlaskType, NearbyRule>,
@@ -187,6 +191,26 @@ impl Poe1UtilityConfig {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Poe1UniqueConfig {
+    pub writhing_jar: bool,
+}
+
+impl Poe1UniqueConfig {
+    pub fn enabled(&self, kind: UniqueFlask) -> bool {
+        match kind {
+            UniqueFlask::WrithingJar => self.writhing_jar,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UniqueConditions {
+    pub nearby: Option<NearbyRule>,
+}
+
 /// Ordering is cumulative: Rare permits Rare or Unique, Normal permits all four.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -254,6 +278,27 @@ impl Config {
                 ));
             }
             flasks.push(summary_entry(kind.name(), &gates));
+        }
+
+        for unique in [UniqueFlask::WrithingJar] {
+            if !self.poe1.unique.enabled(unique) {
+                continue;
+            }
+            let mut gates = Vec::new();
+            if let Some(rule) = self
+                .poe1
+                .unique_conditions
+                .get(&unique)
+                .and_then(|conditions| conditions.nearby)
+                .filter(|rule| rule.enabled)
+            {
+                gates.push(nearby_summary(
+                    rule.minimum_count,
+                    rule.minimum_rarity,
+                    rule.radius,
+                ));
+            }
+            flasks.push(summary_entry(unique.name(), &gates));
         }
 
         let mut skills = Vec::new();
@@ -357,6 +402,15 @@ impl Poe1Config {
                 )));
             }
         }
+        for (kind, conditions) in &self.unique_conditions {
+            if let Some(rule) = conditions.nearby {
+                if !(1..=150).contains(&rule.radius) || !(1..=512).contains(&rule.minimum_count) {
+                    return Err(invalid(format!(
+                        "poe1.unique_conditions.{kind:?}.nearby requires radius 1..=150 and minimum_count 1..=512"
+                    )));
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -364,6 +418,22 @@ impl Poe1Config {
 #[cfg(test)]
 mod summary_tests {
     use super::*;
+
+    #[test]
+    fn unique_status_keeps_optional_nearby_gate_with_its_owner() {
+        let mut config = Config::default();
+        config.poe1.unique.writhing_jar = true;
+        assert!(config.poe1_summary().contains("Flasks  : Writhing Jar\nSkills"));
+        config.poe1.unique_conditions.insert(
+            UniqueFlask::WrithingJar,
+            UniqueConditions {
+                nearby: Some(NearbyRule::default()),
+            },
+        );
+        assert!(config
+            .poe1_summary()
+            .contains("Flasks  : Writhing Jar [nearby >=1 Normal+ @60]"));
+    }
 
     #[test]
     fn grouped_status_keeps_all_conditions_with_their_owners() {

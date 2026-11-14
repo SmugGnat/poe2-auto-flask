@@ -3,11 +3,13 @@ use super::*;
 use crate::game_state::VitalPool;
 use crate::poe1::flasks::FlaskSlot;
 use crate::poe1::recovery::RecoveryKind;
+use crate::poe1::types::UniqueFlask;
 
 fn slot(kind: FlaskType, charges: i32, cost: Option<i32>) -> Option<FlaskSlot> {
     Some(FlaskSlot {
         item_path: "Metadata/Items/Flasks/Test".into(),
         flask_type: kind,
+        unique: None,
         current_charges: charges,
         raw_per_use: 15,
         effective_per_use: cost,
@@ -552,4 +554,87 @@ fn rejects_dead_or_ci_like_health() {
         choose_action(&config, vitals, &flasks, &effects, true),
         None
     );
+}
+
+#[test]
+fn writhing_jar_is_opt_in_and_does_not_use_generic_hybrid_recovery() {
+    let (mut config, mut vitals, mut flasks, effects) = setup();
+    vitals.health.current = 100;
+    vitals.mana.as_mut().unwrap().current = 100;
+    flasks.slots[1] = slot(FlaskType::Hybrid, 40, Some(16));
+    // An ordinary Hallowed Hybrid Flask cannot activate even with enough charges.
+    config.poe1.unique.writhing_jar = true;
+    assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+    flasks.slots[1].as_mut().unwrap().unique = Some(UniqueFlask::WrithingJar);
+    config.poe1.unique.writhing_jar = false;
+    assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+    config.poe1.unique.writhing_jar = true;
+    assert!(enabled_demand(&config, vitals));
+    assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(1));
+    flasks.slots[1].as_mut().unwrap().current_charges = 15;
+    assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+    flasks.slots[1].as_mut().unwrap().effective_per_use = None;
+    assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+}
+
+#[test]
+fn writhing_jar_nearby_gate_is_optional_and_uses_shared_census() {
+    use crate::poe1::config::{MinimumRarity, NearbyRule, UniqueConditions};
+    use crate::poe1::nearby::{NearbyMonster, Rarity};
+    use std::time::Duration;
+
+    let (mut config, mut vitals, mut flasks, mut effects) = setup();
+    vitals.health.current = 100;
+    vitals.mana.as_mut().unwrap().current = 100;
+    config.poe1.unique.writhing_jar = true;
+    flasks.slots[2] = slot(FlaskType::Hybrid, 40, Some(16));
+    flasks.slots[2].as_mut().unwrap().unique = Some(UniqueFlask::WrithingJar);
+    // No configured proximity: eligible without any census.
+    assert_eq!(choose_action_with_nearby(&config, vitals, &flasks, &effects, true, None), Some(2));
+    assert!(!needs_nearby(&config, vitals, &flasks, &effects, true));
+    config.poe1.unique_conditions.insert(
+        UniqueFlask::WrithingJar,
+        UniqueConditions {
+            nearby: Some(NearbyRule {
+                enabled: true,
+                radius: 60,
+                minimum_count: 1,
+                minimum_rarity: MinimumRarity::Normal,
+            }),
+        },
+    );
+    assert!(needs_nearby(&config, vitals, &flasks, &effects, true));
+    assert_eq!(choose_action_with_nearby(&config, vitals, &flasks, &effects, true, None), None);
+    let census = NearbySnapshot {
+        awake_nodes: 1,
+        candidate_monsters: 1,
+        scan_wall: Duration::ZERO,
+        nearby: vec![NearbyMonster {
+            rarity: Rarity::Normal,
+            distance_squared: 40.0 * 40.0,
+        }],
+    };
+    assert_eq!(
+        choose_action_with_nearby(&config, vitals, &flasks, &effects, true, Some(&census)),
+        Some(2)
+    );
+    // Active effect or pending send blocks the same slot.
+    effects.slots_active[2] = true;
+    assert_eq!(
+        choose_action_with_nearby(&config, vitals, &flasks, &effects, true, Some(&census)),
+        None
+    );
+    effects.slots_active[2] = false;
+    config.poe1.unique_conditions.get_mut(&UniqueFlask::WrithingJar).unwrap().nearby.as_mut().unwrap().enabled = false;
+    assert_eq!(choose_action_with_nearby(&config, vitals, &flasks, &effects, true, None), Some(2));
+}
+
+#[test]
+fn life_recovery_keeps_priority_over_enabled_writhing_jar() {
+    let (mut config, vitals, mut flasks, effects) = setup();
+    config.poe1.unique.writhing_jar = true;
+    flasks.slots[0] = slot(FlaskType::Hybrid, 40, Some(16));
+    flasks.slots[0].as_mut().unwrap().unique = Some(UniqueFlask::WrithingJar);
+    flasks.slots[1] = slot(FlaskType::Life, 40, Some(15));
+    assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(1));
 }

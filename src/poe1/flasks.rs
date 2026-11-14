@@ -5,7 +5,7 @@ use std::io;
 use super::charge_cost;
 use super::offsets::*;
 use super::recovery::RecoveryKind;
-use super::types::FlaskType;
+use super::types::{FlaskType, UniqueFlask};
 use super::{invalid, plausible_ptr, read_metadata, read_ptr, Probe};
 use crate::entity::resolve_component;
 use crate::process::Process;
@@ -19,6 +19,7 @@ const MAX_CHARGES: i32 = 100_000;
 pub struct FlaskSlot {
     pub item_path: String,
     pub flask_type: FlaskType,
+    pub unique: Option<UniqueFlask>,
     pub current_charges: i32,
     pub raw_per_use: i32,
     pub effective_per_use: Option<i32>,
@@ -46,6 +47,7 @@ struct CachedItem {
     item_path: String,
     local_charge_multiplier: Option<f64>,
     recovery: RecoveryKind,
+    unique: Option<UniqueFlask>,
 }
 
 #[derive(Debug, Default)]
@@ -162,6 +164,9 @@ pub fn sample(
             let mods = charge_cost::inspect_flask_modifiers(process, entity).ok();
             let local_charge_multiplier = mods.map(|value| value.charge_multiplier);
             let recovery = mods.map_or(RecoveryKind::Gradual, |value| value.recovery);
+            let unique = mods.and_then(|value| value.unique);
+            // The worm modifier can only authorize a hybrid-flask special policy.
+            let unique = unique.filter(|_| FlaskType::from_metadata(&item_path) == FlaskType::Hybrid);
             cache.slots[slot] = Some(CachedItem {
                 inventory_item,
                 entity,
@@ -169,6 +174,7 @@ pub fn sample(
                 item_path,
                 local_charge_multiplier,
                 recovery,
+                unique,
             });
         }
         let cached = cache.slots[slot].as_ref().expect("item cached above");
@@ -195,6 +201,7 @@ pub fn sample(
             .and_then(|(player, local)| charge_cost::effective_cost(per_use, player, local).ok());
         result.slots[slot] = Some(FlaskSlot {
             flask_type: FlaskType::from_metadata(&cached.item_path),
+            unique: cached.unique,
             item_path: cached.item_path.clone(),
             current_charges: current,
             raw_per_use: per_use,
@@ -267,6 +274,7 @@ mod tests {
             item_path: "Metadata/Items/Flasks/Flask".into(),
             local_charge_multiplier: Some(1.0),
             recovery: RecoveryKind::Gradual,
+            unique: None,
         });
         cache.clear();
         assert!(cache.inventory.is_none());
@@ -277,6 +285,7 @@ mod tests {
         let mut slot = FlaskSlot {
             item_path: "Metadata/Items/Flasks/FlaskLife11".into(),
             flask_type: FlaskType::Life,
+            unique: None,
             current_charges: 50,
             raw_per_use: 15,
             effective_per_use: None,

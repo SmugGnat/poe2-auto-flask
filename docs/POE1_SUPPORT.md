@@ -342,3 +342,42 @@ on `main` as v0.8.0. After that release, cross-game naming/layout cleanup
 takes place on **`develop` only**. Keep the public `main` branch and its
 release tags untouched until the next release is explicitly approved.
 See [Source layout and runtime audit](SOURCE_LAYOUT.md) for current module ownership.
+
+## Writhing Jar unique flask (develop)
+
+PoE1-only, **disabled by default**. The Writhing Jar is a unique Hallowed Hybrid Flask.
+The optional policy identifies its worm-spawning modifier family `SummonsWormsOnUse`
+from the cached flask Mods.dat walk, instead of identifying every Hallowed Hybrid Flask
+as a Jar. The exact live Mods.dat identifier should be checked in game with `--debug`
+before relying on automatic activation. Missing or unrecognized mods fail closed.
+
+```toml
+[poe1.unique]
+writhing_jar = true
+```
+
+When enabled and positively identified, The Writhing Jar activates when it has at least
+one **verified effective charge cost** available, even at full Life and Mana, subject
+to the normal town/hideout, alive, focus, chat, grace-period, disarmed and preflight
+checks. Life/Mana recovery has higher priority. Other hybrid flasks remain manual-only.
+
+Optional proximity requirements share the same throttled (750 ms) monster census
+as utility flasks:
+
+```toml
+[poe1.unique_conditions.writhing_jar.nearby]
+enabled = true
+radius = 60
+minimum_count = 1
+minimum_rarity = "normal"
+```
+
+The nearby table is separate from the Boolean toggle because TOML cannot have
+both `writhing_jar = true` and `[poe1.unique.writhing_jar.nearby]` at once.
+Absent or `enabled = false` means **charges-only** activation. An unavailable
+census fails closed only when proximity is enabled.
+
+After a successfully sent Jar key, the helper waits to observe reduced charges
+before allowing another Jar activation; a lost input cannot repeat indefinitely
+on the normal utility settling timer. The current 350 ms per-slot utility
+settling remains active. No extra per-tick modifier walk was added.

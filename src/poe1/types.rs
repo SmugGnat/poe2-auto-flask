@@ -28,6 +28,36 @@ pub enum FlaskType {
     Unknown,
 }
 
+/// Unique identity comes from an equipped item modifier, not its base type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UniqueFlask {
+    WrithingJar,
+}
+
+impl UniqueFlask {
+    /// PoEDB's worm-spawning Mods.dat family, not the translated item name.
+    /// Accept a numeric tier, but never arbitrary suffixes or partial names.
+    pub fn from_mod_id(name: &str) -> Option<Self> {
+        let suffix = name.strip_prefix("SummonsWormsOnUse")?;
+        if suffix.is_empty()
+            || (!suffix.starts_with('0')
+                && !suffix.is_empty()
+                && suffix.bytes().all(|b| b.is_ascii_digit()))
+        {
+            Some(Self::WrithingJar)
+        } else {
+            None
+        }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::WrithingJar => "Writhing Jar",
+        }
+    }
+}
+
 pub const UTILITY_TYPES: [FlaskType; 18] = [
     FlaskType::Quicksilver,
     FlaskType::Granite,
@@ -183,5 +213,31 @@ mod tests {
             F::from_metadata("Metadata/Items/Flasks/FlaskManaOops"),
             F::Unknown
         );
+    }
+}
+
+#[cfg(test)]
+mod unique_tests {
+    use super::UniqueFlask;
+
+    #[test]
+    fn only_the_exact_worm_modifier_family_identifies_writhing_jar() {
+        assert_eq!(
+            UniqueFlask::from_mod_id("SummonsWormsOnUse"),
+            Some(UniqueFlask::WrithingJar)
+        );
+        assert_eq!(
+            UniqueFlask::from_mod_id("SummonsWormsOnUse1"),
+            Some(UniqueFlask::WrithingJar)
+        );
+        for bad in [
+            "OtherSummonsWormsOnUse",
+            "SummonsWormsOnUseOther",
+            "SummonsWormsOnUse01",
+            "LocalFlaskChargesUsed",
+            "",
+        ] {
+            assert_eq!(UniqueFlask::from_mod_id(bad), None);
+        }
     }
 }

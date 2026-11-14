@@ -117,7 +117,10 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                                 "  Flask {}: {} ({}) | charges {} | raw cost {} | effective cost {} | effect {} | recovery {}",
                                 index + 1,
                                 flask.item_path,
-                                flask.flask_type.name(),
+                                flask.unique.map_or_else(
+                                    || flask.flask_type.name().to_string(),
+                                    |kind| format!("{} ({})", kind.name(), flask.flask_type.name()),
+                                ),
                                 flask.current_charges,
                                 flask.raw_per_use,
                                 flask.effective_per_use.map_or_else(|| "unavailable".into(), |v| v.to_string()),

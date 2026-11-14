@@ -313,14 +313,49 @@ pub(crate) fn invalid(message: impl Into<String>) -> io::Error {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::path::{Path, PathBuf};
-    use std::sync::atomic::{AtomicU64, Ordering};
+    #[test]
+    fn writhing_jar_toggle_and_optional_nearby_parse_independently() {
+        use super::Config;
+        use crate::poe1::types::UniqueFlask;
+        use std::path::Path;
 
-    use super::{Config, ConfigManager, ConfigStartup, DEFAULT_CONFIG_TEXT};
-    use crate::poe1::types::FlaskType;
+        let enabled =
+            Config::parse(Path::new("test.toml"), "[poe1.unique]\nwrithing_jar = true\n")
+                .unwrap();
+        assert!(enabled.poe1.unique.writhing_jar);
+        assert!(enabled.poe1.unique_conditions.is_empty());
 
-    static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
+        let gated = Config::parse(
+            Path::new("test.toml"),
+            concat!(
+                "[poe1.unique]\nwrithing_jar = true\n",
+                "[poe1.unique_conditions.writhing_jar.nearby]\n",
+                "enabled = true\nradius = 60\nminimum_count = 1\nminimum_rarity = \"normal\"\n"
+            ),
+        )
+        .unwrap();
+        assert!(gated.poe1.unique.writhing_jar);
+        assert!(
+            gated
+                .poe1
+                .unique_conditions
+                .get(&UniqueFlask::WrithingJar)
+                .unwrap()
+                .nearby
+                .unwrap()
+                .enabled
+        );
+        assert!(Config::parse(
+            Path::new("test.toml"),
+            "[poe1.unique_conditions.writhing_jar.nearby]\nradius = 151\n"
+        )
+        .is_err());
+        assert!(Config::parse(
+            Path::new("test.toml"),
+            "[poe1.unique]\nunknown_unique = true\n"
+        )
+        .is_err());
+    }
 
     #[test]
     fn bundled_default_config_matches_built_in_defaults() {

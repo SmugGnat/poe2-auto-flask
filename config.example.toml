@@ -14,7 +14,7 @@ threshold_percent = 30.0
 # PoE1 uses the same Life/Mana percentage thresholds above; percentages are based on the
 # unreserved pool. Quicksilver and other supported utility-flask types are opt-in.
 # No per-slot keys are needed: both games read their own production_Config.ini.
-# Unknown utility bases and hybrid flasks remain manual-only in this milestone.
+# Unknown utility bases and ordinary hybrid flasks remain manual-only in this milestone.
 [poe1]
 # 0 = use Quicksilver as before. 750 = require 750 ms of continuously
 # observed Run animation before using Quicksilver; does not restrict Life/Mana.
@@ -55,6 +55,22 @@ iron = false
 # A Rare minimum also matches Unique bosses; boss intro phases may be counted
 # before the enemy is damageable. An unavailable census blocks only gated
 # utility flasks, not emergency Life/Mana recovery.
+
+# Unique flasks are opt-in. Writhing Jar is identified from its worm-spawning
+# equipped modifier, not by hybrid-flask base type. It fires as soon as its
+# verified effective charge cost is available (existing safety gates apply).
+# It is NOT used as an ordinary Life/Mana hybrid flask.
+[poe1.unique]
+writhing_jar = false
+
+# Optional nearby condition for Writhing Jar (disabled by omission).
+# Keep this separate from [poe1.unique]: TOML keys cannot be both Boolean
+# toggles and nested tables. The nearby census reuses the existing 750 ms cache.
+# [poe1.unique_conditions.writhing_jar.nearby]
+# enabled = true
+# radius = 60
+# minimum_count = 1
+# minimum_rarity = "normal"
 
 # PoE1 defensive skill presets are separately configurable. Skills are
 # disabled by default and share the existing 100 ms loop with flask rules.
