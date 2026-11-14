@@ -15,7 +15,7 @@ mod poe2;
 mod process;
 mod session;
 
-use std::io;
+use std::io::{self, IsTerminal, Write};
 use std::thread;
 use std::time::Duration;
 
@@ -38,7 +38,7 @@ enum Mode {
 
 struct Options {
     mode: Mode,
-    game: Game,
+    game: Option<Game>,
     nearby_debug: bool,
 }
 
@@ -54,7 +54,7 @@ fn main() {
 
 fn parse_options() -> Options {
     let mut mode = Mode::Auto;
-    let mut game = Game::Poe2;
+    let mut game = None;
     let mut mode_seen = false;
     let mut nearby_debug = false;
     let mut game_seen = false;
@@ -73,13 +73,13 @@ fn parse_options() -> Options {
             "--game" if !game_seen => {
                 game_seen = true;
                 let value = args.next().unwrap_or_else(|| fail_usage());
-                game = value.parse().unwrap_or_else(|_| fail_usage());
+                game = Some(value.parse().unwrap_or_else(|_| fail_usage()));
             }
             "--help" | "-h" => print_help_and_exit(),
             _ => fail_usage(),
         }
     }
-    if nearby_debug && (mode != Mode::Debug || game != Game::Poe1) {
+    if nearby_debug && (mode != Mode::Debug || game == Some(Game::Poe2)) {
         fail_usage();
     }
     Options {
@@ -91,7 +91,7 @@ fn parse_options() -> Options {
 
 fn print_help_and_exit() -> ! {
     println!("Usage: poe2-auto-flask.exe [--auto | --debug] [--game poe1|poe2] [--nearby]");
-    println!("  --game   Select game (default: poe2)");
+    println!("  --game   Explicit game selection (Windows detects automatically if omitted)");
     println!("  --auto   Run selected game's automation (default; starts disarmed)");
     println!("  --debug  Read-only diagnostics for the selected game");
     println!("  --nearby Experimental PoE1 monster census in --debug only (may cost CPU)");
@@ -111,19 +111,25 @@ fn run(options: Options) -> io::Result<()> {
         game,
         nearby_debug,
     } = options;
-    println!(
-        "Selected {} (Steam AppID {}).",
-        game.name(),
-        game.steam_app_id()
-    );
     let mut config_manager = ConfigManager::load_default()?;
     print_config_startup(config_manager.startup());
     let under_wine = running_under_wine();
 
     loop {
-        let Some(process) = wait_for_process(under_wine, game)? else {
+        let Some((process, game)) = wait_for_process(under_wine, game)? else {
             return Ok(());
         };
+        if nearby_debug && game != Game::Poe1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "--nearby is only available for PoE1; use --game poe1 to select explicitly",
+            ));
+        }
+        println!(
+            "Selected {} (Steam AppID {}).",
+            game.name(),
+            game.steam_app_id()
+        );
 
         if let Err(error) = process.validate_pe_headers() {
             if !process.is_alive().unwrap_or(false) {
@@ -169,12 +175,39 @@ fn run(options: Options) -> io::Result<()> {
     }
 }
 
-fn wait_for_process(under_wine: bool, game: Game) -> io::Result<Option<Process>> {
+fn wait_for_process(
+    under_wine: bool,
+    requested_game: Option<Game>,
+) -> io::Result<Option<(Process, Game)>> {
+    // The Linux launcher already supplies --game. A bare Wine invocation keeps
+    // the existing PoE2 default, never entering the Windows console fallback.
+    let selected_game = requested_game.or(if under_wine { Some(Game::Poe2) } else { None });
     let mut notice_shown = false;
 
     loop {
-        match Process::attach_to_game(game) {
-            Ok(process) => return Ok(Some(process)),
+        let attached = match selected_game {
+            Some(game) => Process::attach_to_game(game),
+            None => Process::attach_to_any_game(),
+        };
+        match attached {
+            Ok(process) => {
+                let game = match selected_game {
+                    Some(game) => game,
+                    None => match process.executable_path() {
+                        Ok(path) => match game_from_install_path(&path) {
+                            Some(game) => game,
+                            None => prompt_for_game()?,
+                        },
+                        Err(_) if !process.is_alive().unwrap_or(false) => continue,
+                        Err(error) => return Err(error),
+                    },
+                };
+                // A process may exit while a user is answering the fallback.
+                if !process.is_alive().unwrap_or(false) {
+                    continue;
+                }
+                return Ok(Some((process, game)));
+            }
             Err(error)
                 if matches!(
                     error.kind(),
@@ -184,6 +217,7 @@ fn wait_for_process(under_wine: bool, game: Game) -> io::Result<Option<Process>>
                 return Err(error)
             }
             Err(error) if under_wine && error.kind() == io::ErrorKind::NotFound => {
+                let game = selected_game.expect("Wine always has a selected game");
                 println!("{} is not running.", game.name());
                 println!(
                     "On Proton/Wine, start the selected game first, then relaunch poe2-auto-flask."
@@ -192,12 +226,61 @@ fn wait_for_process(under_wine: bool, game: Game) -> io::Result<Option<Process>>
             }
             Err(_) => {
                 if !notice_shown {
-                    println!("Status: WAITING FOR {}", game.name().to_ascii_uppercase());
+                    let name = selected_game.map_or("Path of Exile", Game::name);
+                    println!("Status: WAITING FOR {}", name.to_ascii_uppercase());
                     notice_shown = true;
                 }
                 thread::sleep(PROCESS_RETRY_INTERVAL);
             }
         }
+    }
+}
+
+/// Only exact installation-folder names qualify for automatic identification.
+fn game_from_install_path(path: &str) -> Option<Game> {
+    let directory = path.rsplit(['\\', '/']).nth(1)?;
+    if directory.eq_ignore_ascii_case("Path of Exile") {
+        Some(Game::Poe1)
+    } else if directory.eq_ignore_ascii_case("Path of Exile 2") {
+        Some(Game::Poe2)
+    } else {
+        None
+    }
+}
+
+fn parse_game_choice(input: &str) -> Option<Game> {
+    match input.trim() {
+        "1" => Some(Game::Poe1),
+        "2" => Some(Game::Poe2),
+        _ => None,
+    }
+}
+
+/// An unfamiliar native Windows directory requires an explicit user choice;
+/// do not scan both game memory parsers or silently guess.
+fn prompt_for_game() -> io::Result<Game> {
+    println!("Automatic game detection failed.");
+    if !io::stdin().is_terminal() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "no interactive console; launch with --game poe1 or --game poe2",
+        ));
+    }
+    println!("Select game: 1) PoE1  2) PoE2");
+    loop {
+        print!("> ");
+        io::stdout().flush()?;
+        let mut input = String::new();
+        if io::stdin().read_line(&mut input)? == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "game selection cancelled; use --game poe1 or --game poe2",
+            ));
+        }
+        if let Some(game) = parse_game_choice(&input) {
+            return Ok(game);
+        }
+        println!("Please enter 1 or 2.");
     }
 }
 
@@ -252,4 +335,48 @@ fn print_config_startup(startup: &ConfigStartup) {
 fn print_wine_process_exit_notice(game: Game) {
     println!("{} exited.", game.name());
     println!("On Proton/Wine, restart the game first, then relaunch poe2-auto-flask.");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn installation_directories_identify_only_the_matching_game() {
+        assert_eq!(
+            game_from_install_path(r"C:\Steam\steamapps\common\Path of Exile\PathOfExileSteam.exe"),
+            Some(Game::Poe1)
+        );
+        assert_eq!(
+            game_from_install_path(r"D:\Games\PATH OF EXILE 2\PathOfExile.exe"),
+            Some(Game::Poe2)
+        );
+        assert_eq!(
+            game_from_install_path("D:/SteamLibrary/Path of Exile 2/PathOfExileSteam.exe"),
+            Some(Game::Poe2)
+        );
+    }
+
+    #[test]
+    fn unknown_or_misleading_directory_names_require_manual_selection() {
+        assert_eq!(game_from_install_path(r"D:\Games\PoE\PathOfExileSteam.exe"), None);
+        assert_eq!(
+            game_from_install_path(r"C:\Games\Path of Exile 2 Backup\PathOfExile.exe"),
+            None
+        );
+        assert_eq!(
+            game_from_install_path(r"C:\Games\Path of Exile Mods\PathOfExile.exe"),
+            None
+        );
+        assert_eq!(game_from_install_path("PathOfExileSteam.exe"), None);
+    }
+
+    #[test]
+    fn manual_selection_accepts_only_one_or_two() {
+        assert_eq!(parse_game_choice("1\r\n"), Some(Game::Poe1));
+        assert_eq!(parse_game_choice(" 2 "), Some(Game::Poe2));
+        assert_eq!(parse_game_choice("poe1"), None);
+        assert_eq!(parse_game_choice("3"), None);
+        assert_eq!(parse_game_choice(""), None);
+    }
 }

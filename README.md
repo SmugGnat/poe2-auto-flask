@@ -86,19 +86,25 @@ Flask keys do not need to be added to the config. The selected game's keyboard b
 
 ### Windows
 
-Select the game explicitly when using PoE1:
-
-```text
-poe2-auto-flask-windows-x64.exe --game poe1
-```
-
-Without `--game`, the Windows helper defaults to PoE2:
+Without `--game`, the helper identifies the running game from the executable's
+installation directory (`Path of Exile` or `Path of Exile 2`) and runs the
+corresponding validated parser. If the directory is unrecognized, a terminal
+prompt asks you to select `1` (PoE1) or `2` (PoE2); it does not probe both
+parsers. An interactive console is required for the prompt.
 
 ```text
 poe2-auto-flask-windows-x64.exe
 ```
 
-PoE2 can be started before or after the helper. PoE1 uses its game-specific reader and policy.
+For custom installations without an interactive console, or to override
+auto-detection, explicitly select the game:
+
+```text
+poe2-auto-flask-windows-x64.exe --game poe1
+```
+
+Game-state validation still runs after selection, and automation starts disarmed.
+If multiple matching clients are running, the helper refuses to guess.
 
 ### Linux / Steam Proton
 
@@ -153,7 +159,7 @@ poe2-auto-flask-windows-x64.exe --debug
 ./poe2-auto-flask-x86_64.AppImage --debug
 ```
 
-Debug mode shows the selected game's state, area, Life/Mana values, flask charges, and active effects without sending flask input. On Windows, add `--game poe1` to debug PoE1; on Linux, single-game auto-detection also applies in debug mode.
+Debug mode shows the selected game's state, area, Life/Mana values, flask charges, and active effects without sending flask input. On Windows, install-folder auto-detection (or the manual fallback prompt) also works in debug mode; `--game poe1` overrides it. On Linux, single-game auto-detection also applies in debug mode.
 
 If a game update changes required memory structures, the helper pauses rather than guessing and sending unsafe input.
 
@@ -213,9 +219,8 @@ The optional `--auto` flag remains supported for existing commands but is
 not required. If **both** PoE1 and PoE2 are running, choose explicitly with
 `--game poe1` or `--game poe2`. The launcher never guesses between two
 running clients. If neither is detected, PoE2 remains the fallback selection,
-but an active Steam Proton environment is still required. On Windows,
-automatic Steam detection is not used; PoE2 remains the default unless
-`--game poe1` is specified. PoE1 uses `[health]` and `[mana]` thresholds, and individually opt-in utility types under `[poe1.utility]`. Duplicate equipped flasks are selected automatically with least-recently-used rotation and a separate same-resource guard for instant Life/Mana recovery. A Life-only emergency exception permits a positively identified instant Life flask to bypass an already-active gradual recovery effect at very low Life; conditional-instant flasks wait for actual Low Life (50% of maximum or less). All 18 standard PoE1 utility base types are recognized; a `quicksilver_min_run_ms` option under `[poe1]` optionally delays Quicksilver until sustained running. Keybindings are discovered from PoE1's own `production_Config.ini`.
+but an active Steam Proton environment is still required. On Windows, the install-folder name selects PoE1 or PoE2; unknown directories
+require manual selection from the console unless `--game` is supplied. PoE1 uses `[health]` and `[mana]` thresholds, and individually opt-in utility types under `[poe1.utility]`. Duplicate equipped flasks are selected automatically with least-recently-used rotation and a separate same-resource guard for instant Life/Mana recovery. A Life-only emergency exception permits a positively identified instant Life flask to bypass an already-active gradual recovery effect at very low Life; conditional-instant flasks wait for actual Low Life (50% of maximum or less). All 18 standard PoE1 utility base types are recognized; a `quicksilver_min_run_ms` option under `[poe1]` optionally delays Quicksilver until sustained running. Keybindings are discovered from PoE1's own `production_Config.ini`.
 
 The **[PoE1 support guide](docs/POE1_SUPPORT.md)** documents memory architecture, configuration, duplicate-flask choices, safety checks, validation, and known limitations. For maintainers, see the [source layout and runtime audit](docs/SOURCE_LAYOUT.md) for the shared-vs-game-specific module structure and safety/performance review.
 

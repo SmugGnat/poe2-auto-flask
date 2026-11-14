@@ -9,13 +9,23 @@ use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     MODULEENTRY32W, PROCESSENTRY32W, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32, TH32CS_SNAPPROCESS,
 };
 use windows_sys::Win32::System::Threading::{
-    GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ,
+    GetExitCodeProcess, OpenProcess, QueryFullProcessImageNameW,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ,
 };
 
 use crate::game::Game;
 
 const SCAN_CHUNK_SIZE: usize = 1024 * 1024;
 const STILL_ACTIVE_EXIT_CODE: u32 = 259;
+
+// Superset of the PoE1/PoE2 executable names for native Windows discovery.
+// A regression test ensures both game-specific lists remain covered.
+const AUTO_PROCESS_NAMES: &[&str] = &[
+    "PathOfExileSteam.exe",
+    "PathOfExile.exe",
+    "PathOfExile_x64.exe",
+    "PathOfExile_KG.exe",
+];
 
 #[derive(Debug, Clone)]
 pub struct ModuleInfo {
@@ -39,12 +49,20 @@ pub struct Process {
 
 impl Process {
     pub fn attach_to_game(game: Game) -> io::Result<Self> {
-        // Executable names overlap between games. A game-specific memory probe
-        // must succeed before any state is used; multiple candidates fail closed.
         let names = match game {
             Game::Poe1 => crate::poe1::PROCESS_NAMES,
             Game::Poe2 => crate::poe2::PROCESS_NAMES,
         };
+        Self::attach_with_names(names)
+    }
+
+    /// Native Windows discovery only. These executable names overlap between
+    /// games; the caller chooses a parser only after identifying the directory.
+    pub fn attach_to_any_game() -> io::Result<Self> {
+        Self::attach_with_names(AUTO_PROCESS_NAMES)
+    }
+
+    fn attach_with_names(names: &[&str]) -> io::Result<Self> {
         let pid = find_process_id(names)?;
         let handle = open_read_only(pid)?;
         let main_module = find_main_module(pid, names)?;
@@ -54,6 +72,20 @@ impl Process {
             handle,
             main_module,
         })
+    }
+
+    /// Read the executable path using the existing limited-query process handle.
+    /// Called only at native Windows attachment, not on automation ticks.
+    pub fn executable_path(&self) -> io::Result<String> {
+        let mut path = vec![0u16; 32_768]; // Supports Windows extended-length paths.
+        let mut length = path.len() as u32;
+        let ok = unsafe {
+            QueryFullProcessImageNameW(self.handle.raw(), 0, path.as_mut_ptr(), &mut length)
+        };
+        if ok == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(String::from_utf16_lossy(&path[..length as usize]))
     }
 
     pub fn pid(&self) -> u32 {
@@ -422,4 +454,19 @@ fn utf16_z_to_string(buffer: &[u16]) -> String {
         .position(|&ch| ch == 0)
         .unwrap_or(buffer.len());
     String::from_utf16_lossy(&buffer[..end])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AUTO_PROCESS_NAMES;
+    use crate::{poe1, poe2};
+
+    #[test]
+    fn automatic_discovery_covers_both_games_executable_names() {
+        for name in poe1::PROCESS_NAMES.iter().chain(poe2::PROCESS_NAMES) {
+            assert!(AUTO_PROCESS_NAMES
+                .iter()
+                .any(|known| known.eq_ignore_ascii_case(name)));
+        }
+    }
 }
