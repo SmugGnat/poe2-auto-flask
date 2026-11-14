@@ -564,17 +564,32 @@ fn writhing_jar_is_opt_in_and_does_not_use_generic_hybrid_recovery() {
     flasks.slots[1] = slot(FlaskType::Hybrid, 40, Some(16));
     // An ordinary Hallowed Hybrid Flask cannot activate even with enough charges.
     config.poe1.unique.writhing_jar = true;
-    assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+    assert_eq!(
+        choose_action(&config, vitals, &flasks, &effects, true),
+        None
+    );
     flasks.slots[1].as_mut().unwrap().unique = Some(UniqueFlask::WrithingJar);
     config.poe1.unique.writhing_jar = false;
-    assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+    assert_eq!(
+        choose_action(&config, vitals, &flasks, &effects, true),
+        None
+    );
     config.poe1.unique.writhing_jar = true;
     assert!(enabled_demand(&config, vitals));
-    assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(1));
+    assert_eq!(
+        choose_action(&config, vitals, &flasks, &effects, true),
+        Some(1)
+    );
     flasks.slots[1].as_mut().unwrap().current_charges = 15;
-    assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+    assert_eq!(
+        choose_action(&config, vitals, &flasks, &effects, true),
+        None
+    );
     flasks.slots[1].as_mut().unwrap().effective_per_use = None;
-    assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), None);
+    assert_eq!(
+        choose_action(&config, vitals, &flasks, &effects, true),
+        None
+    );
 }
 
 #[test]
@@ -590,7 +605,10 @@ fn writhing_jar_nearby_gate_is_optional_and_uses_shared_census() {
     flasks.slots[2] = slot(FlaskType::Hybrid, 40, Some(16));
     flasks.slots[2].as_mut().unwrap().unique = Some(UniqueFlask::WrithingJar);
     // No configured proximity: eligible without any census.
-    assert_eq!(choose_action_with_nearby(&config, vitals, &flasks, &effects, true, None), Some(2));
+    assert_eq!(
+        choose_action_with_nearby(&config, vitals, &flasks, &effects, true, None),
+        Some(2)
+    );
     assert!(!needs_nearby(&config, vitals, &flasks, &effects, true));
     config.poe1.unique_conditions.insert(
         UniqueFlask::WrithingJar,
@@ -604,7 +622,10 @@ fn writhing_jar_nearby_gate_is_optional_and_uses_shared_census() {
         },
     );
     assert!(needs_nearby(&config, vitals, &flasks, &effects, true));
-    assert_eq!(choose_action_with_nearby(&config, vitals, &flasks, &effects, true, None), None);
+    assert_eq!(
+        choose_action_with_nearby(&config, vitals, &flasks, &effects, true, None),
+        None
+    );
     let census = NearbySnapshot {
         awake_nodes: 1,
         candidate_monsters: 1,
@@ -625,8 +646,19 @@ fn writhing_jar_nearby_gate_is_optional_and_uses_shared_census() {
         None
     );
     effects.slots_active[2] = false;
-    config.poe1.unique_conditions.get_mut(&UniqueFlask::WrithingJar).unwrap().nearby.as_mut().unwrap().enabled = false;
-    assert_eq!(choose_action_with_nearby(&config, vitals, &flasks, &effects, true, None), Some(2));
+    config
+        .poe1
+        .unique_conditions
+        .get_mut(&UniqueFlask::WrithingJar)
+        .unwrap()
+        .nearby
+        .as_mut()
+        .unwrap()
+        .enabled = false;
+    assert_eq!(
+        choose_action_with_nearby(&config, vitals, &flasks, &effects, true, None),
+        Some(2)
+    );
 }
 
 #[test]
@@ -636,5 +668,8 @@ fn life_recovery_keeps_priority_over_enabled_writhing_jar() {
     flasks.slots[0] = slot(FlaskType::Hybrid, 40, Some(16));
     flasks.slots[0].as_mut().unwrap().unique = Some(UniqueFlask::WrithingJar);
     flasks.slots[1] = slot(FlaskType::Life, 40, Some(15));
-    assert_eq!(choose_action(&config, vitals, &flasks, &effects, true), Some(1));
+    assert_eq!(
+        choose_action(&config, vitals, &flasks, &effects, true),
+        Some(1)
+    );
 }

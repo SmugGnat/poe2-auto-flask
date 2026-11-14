@@ -423,7 +423,9 @@ mod summary_tests {
     fn unique_status_keeps_optional_nearby_gate_with_its_owner() {
         let mut config = Config::default();
         config.poe1.unique.writhing_jar = true;
-        assert!(config.poe1_summary().contains("Flasks  : Writhing Jar\nSkills"));
+        assert!(config
+            .poe1_summary()
+            .contains("Flasks  : Writhing Jar\nSkills"));
         config.poe1.unique_conditions.insert(
             UniqueFlask::WrithingJar,
             UniqueConditions {

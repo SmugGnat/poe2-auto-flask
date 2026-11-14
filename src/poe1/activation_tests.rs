@@ -359,19 +359,43 @@ fn unique_waits_for_charge_spend_before_repeating() {
     guard.mark(1, FlaskType::Hybrid, sent, vitals, &flasks);
     guard.mark_unique(1, &flasks);
     assert_eq!(
-        choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_secs(5)),
+        choose(
+            &config,
+            vitals,
+            &flasks,
+            &mut guard,
+            sent + Duration::from_secs(5)
+        ),
         None
     );
     flasks.slots[1].as_mut().unwrap().current_charges = 25;
     assert_eq!(
-        choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_millis(400)),
+        choose(
+            &config,
+            vitals,
+            &flasks,
+            &mut guard,
+            sent + Duration::from_millis(400)
+        ),
         Some(1)
     );
-    guard.mark(1, FlaskType::Hybrid, sent + Duration::from_millis(400), vitals, &flasks);
+    guard.mark(
+        1,
+        FlaskType::Hybrid,
+        sent + Duration::from_millis(400),
+        vitals,
+        &flasks,
+    );
     guard.mark_unique(1, &flasks);
     flasks.slots[1].as_mut().unwrap().unique = None;
     assert_eq!(
-        choose(&config, vitals, &flasks, &mut guard, sent + Duration::from_secs(5)),
+        choose(
+            &config,
+            vitals,
+            &flasks,
+            &mut guard,
+            sent + Duration::from_secs(5)
+        ),
         None
     );
 }

@@ -502,7 +502,9 @@ impl Policy {
                     self.rotation.record(slot, flask.flask_type);
                     println!(
                         "{} flask (slot {}) -> {} | charges {} | effective cost {}",
-                        flask.unique.map_or(flask.flask_type.name(), |kind| kind.name()),
+                        flask
+                            .unique
+                            .map_or(flask.flask_type.name(), |kind| kind.name()),
                         slot + 1,
                         key.label(),
                         flask.current_charges,

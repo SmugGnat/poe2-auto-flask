@@ -319,9 +319,11 @@ mod tests {
         use crate::poe1::types::UniqueFlask;
         use std::path::Path;
 
-        let enabled =
-            Config::parse(Path::new("test.toml"), "[poe1.unique]\nwrithing_jar = true\n")
-                .unwrap();
+        let enabled = Config::parse(
+            Path::new("test.toml"),
+            "[poe1.unique]\nwrithing_jar = true\n",
+        )
+        .unwrap();
         assert!(enabled.poe1.unique.writhing_jar);
         assert!(enabled.poe1.unique_conditions.is_empty());
 

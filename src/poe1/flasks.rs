@@ -166,7 +166,8 @@ pub fn sample(
             let recovery = mods.map_or(RecoveryKind::Gradual, |value| value.recovery);
             let unique = mods.and_then(|value| value.unique);
             // The worm modifier can only authorize a hybrid-flask special policy.
-            let unique = unique.filter(|_| FlaskType::from_metadata(&item_path) == FlaskType::Hybrid);
+            let unique =
+                unique.filter(|_| FlaskType::from_metadata(&item_path) == FlaskType::Hybrid);
             cache.slots[slot] = Some(CachedItem {
                 inventory_item,
                 entity,

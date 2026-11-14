@@ -215,12 +215,10 @@ pub fn needs_nearby_guarded(
         life_emergency_ready,
     )
     .is_some_and(|slot| {
-        flasks.slots[slot]
-            .as_ref()
-            .is_some_and(|flask| {
-                matches!(flask.flask_type, FlaskType::Life | FlaskType::Mana)
-                    || flask.unique == Some(UniqueFlask::WrithingJar)
-            })
+        flasks.slots[slot].as_ref().is_some_and(|flask| {
+            matches!(flask.flask_type, FlaskType::Life | FlaskType::Mana)
+                || flask.unique == Some(UniqueFlask::WrithingJar)
+        })
     }) {
         return false;
     }
