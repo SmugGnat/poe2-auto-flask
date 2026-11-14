@@ -359,7 +359,10 @@ mod tests {
 
     #[test]
     fn unknown_or_misleading_directory_names_require_manual_selection() {
-        assert_eq!(game_from_install_path(r"D:\Games\PoE\PathOfExileSteam.exe"), None);
+        assert_eq!(
+            game_from_install_path(r"D:\Games\PoE\PathOfExileSteam.exe"),
+            None
+        );
         assert_eq!(
             game_from_install_path(r"C:\Games\Path of Exile 2 Backup\PathOfExile.exe"),
             None
