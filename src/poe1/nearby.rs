@@ -16,6 +16,8 @@ use super::{invalid, plausible_ptr, read_metadata, read_ptr, Probe};
 const MAX_MAP_NODES: usize = 1500;
 const MAX_NEARBY_MONSTERS: usize = 512;
 const MAX_NEARBY_CORPSES: usize = 512;
+const MAX_OFFERING_WITNESSES: usize = 16;
+const OFFERING_WITNESS_RADIUS: f32 = 60.0;
 const MAX_STATIC_CACHE: usize = 2500;
 const MAX_COMPONENTS: usize = 50;
 const MAX_GRID_DISTANCE: f32 = 150.0;
@@ -70,6 +72,8 @@ pub struct NearbyCorpse {
 enum NearbyEntity {
     Monster(NearbyMonster),
     Corpse(NearbyCorpse),
+    /// Live, friendly monster with an optional Buffs component.
+    Friendly(Option<usize>),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -78,6 +82,10 @@ pub struct NearbySnapshot {
     pub candidate_monsters: usize,
     pub nearby: Vec<NearbyMonster>,
     pub corpses: Vec<NearbyCorpse>,
+    /// None: no reliable nearby friendly minion witness; true/false:
+    /// at least one active Spirit Offering / all checked minions unbuffed.
+    /// Does not infer an Offering expiration from the player's buff list.
+    pub offering_on_minions: Option<bool>,
     /// Wall time for the most recent full scan (not CPU time). Includes
     /// Wine/ReadProcessMemory latency; sampling requires debug --nearby or
     /// an explicitly enabled proximity-gated PoE1 utility flask.
@@ -120,6 +128,7 @@ struct Components {
     positioned: usize,
     properties: usize,
     targetable: usize,
+    buffs: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -133,6 +142,9 @@ pub struct NearbyCache {
     player_render: Option<usize>,
     static_entities: HashMap<(u32, usize), CachedEntity>,
     last_poll: Option<Instant>,
+    last_observed_offering: bool,
+    /// Definition pointer -> whether it names offering_spirit.
+    offering_definitions: HashMap<usize, bool>,
     last_result: Option<Result<NearbySnapshot, String>>,
 }
 
@@ -141,23 +153,32 @@ impl NearbyCache {
         self.player_render = None;
         self.static_entities.clear();
         self.last_poll = None;
+        self.last_observed_offering = false;
+        self.offering_definitions.clear();
         self.last_result = None;
     }
 
-    pub fn sample(&mut self, process: &Process, probe: &Probe) -> io::Result<NearbySnapshot> {
+    pub fn sample(
+        &mut self,
+        process: &Process,
+        probe: &Probe,
+        observe_offering: bool,
+    ) -> io::Result<NearbySnapshot> {
         let now = Instant::now();
         if self
             .last_poll
             .is_some_and(|previous| now.saturating_duration_since(previous) < REFRESH_DELAY)
+            && (!observe_offering || self.last_observed_offering)
         {
             if let Some(previous) = &self.last_result {
                 return previous.clone().map_err(invalid);
             }
         }
         self.last_poll = Some(now);
+        self.last_observed_offering = observe_offering;
         let scan_started = Instant::now();
         let read = self
-            .read_fresh(process, probe)
+            .read_fresh(process, probe, observe_offering)
             .map(|mut result| {
                 result.scan_wall = scan_started.elapsed();
                 result
@@ -167,7 +188,12 @@ impl NearbyCache {
         read.map_err(invalid)
     }
 
-    fn read_fresh(&mut self, process: &Process, probe: &Probe) -> io::Result<NearbySnapshot> {
+    fn read_fresh(
+        &mut self,
+        process: &Process,
+        probe: &Probe,
+        observe_offering: bool,
+    ) -> io::Result<NearbySnapshot> {
         // The caller normally samples vitals first; check player identity anyway
         // so no stale pointers are accepted across character transitions.
         if super::read_player_id(process, probe.local_player)? != probe.player_id {
@@ -192,6 +218,9 @@ impl NearbyCache {
             return Err(invalid("awake entity count exceeds bounded reader budget"));
         }
         let mut result = NearbySnapshot::default();
+        let mut offering_witnesses = 0usize;
+        let mut offering_incomplete = false;
+        let mut offering_active = false;
         if size == 0 {
             return Ok(result);
         }
@@ -243,7 +272,7 @@ impl NearbyCache {
                 continue;
             };
             result.candidate_monsters += 1;
-            match read_nearby_entity(process, components, player)? {
+            match read_nearby_entity(process, components, player, observe_offering)? {
                 Some(NearbyEntity::Monster(monster)) => {
                     result.nearby.push(monster);
                     if result.nearby.len() > MAX_NEARBY_MONSTERS {
@@ -256,6 +285,29 @@ impl NearbyCache {
                         return Err(invalid("PoE1 nearby corpse count exceeds budget"));
                     }
                 }
+                Some(NearbyEntity::Friendly(buff_component)) => {
+                    if !offering_active {
+                        if let Some(component) = buff_component {
+                            if offering_witnesses < MAX_OFFERING_WITNESSES {
+                                offering_witnesses += 1;
+                                match super::buffs::has_named_effect(
+                                    process,
+                                    component,
+                                    super::skill_rules::SPIRIT_OFFERING_BUFF,
+                                    &mut self.offering_definitions,
+                                ) {
+                                    Ok(true) => offering_active = true,
+                                    Ok(false) => {}
+                                    Err(_) => offering_incomplete = true,
+                                }
+                            } else {
+                                offering_incomplete = true;
+                            }
+                        } else {
+                            offering_incomplete = true;
+                        }
+                    }
+                }
                 None => {}
             }
         }
@@ -264,6 +316,15 @@ impl NearbyCache {
         // result to authorize anything in the future.
         if result.awake_nodes != size as usize {
             return Err(invalid("PoE1 awake entity tree changed during scan"));
+        }
+        if observe_offering {
+            result.offering_on_minions = if offering_active {
+                Some(true)
+            } else if offering_witnesses > 0 && !offering_incomplete {
+                Some(false)
+            } else {
+                None
+            };
         }
         Ok(result)
     }
@@ -304,7 +365,7 @@ fn find_monster_components(process: &Process, entity: usize) -> io::Result<Optio
     }
     let component_pointers = process.read_bytes(first, component_count * 8)?;
     let names = process.read_bytes(name_first, name_count * 16)?;
-    let mut selected = [0usize; 5];
+    let mut selected = [0usize; 6];
     for entry in names.chunks_exact(16) {
         let name_at = get_u64(entry, 0) as usize;
         let index = get_i32(entry, 8);
@@ -321,6 +382,7 @@ fn find_monster_components(process: &Process, entity: usize) -> io::Result<Optio
             "Positioned" => Some(2),
             "ObjectMagicProperties" => Some(3),
             "Targetable" => Some(4),
+            "Buffs" => Some(5),
             _ => None,
         };
         if let Some(idx) = selected_index {
@@ -330,7 +392,7 @@ fn find_monster_components(process: &Process, entity: usize) -> io::Result<Optio
             }
         }
     }
-    if selected.contains(&0) {
+    if selected[..3].contains(&0) {
         return Ok(None);
     }
     Ok(Some(Components {
@@ -339,6 +401,7 @@ fn find_monster_components(process: &Process, entity: usize) -> io::Result<Optio
         positioned: selected[2],
         properties: selected[3],
         targetable: selected[4],
+        buffs: selected[5],
     }))
 }
 
@@ -357,20 +420,39 @@ fn read_nearby_entity(
     process: &Process,
     components: Components,
     player: (f32, f32),
+    observe_offering: bool,
 ) -> io::Result<Option<NearbyEntity>> {
     let current_life = process.read_i32(components.life + LIFE_CURRENT)?;
     if current_life < 0 {
         return Ok(None);
     }
     let reaction = process.read_bytes(components.positioned + POSITIONED_REACTION, 1)?[0];
+    if reaction & 0x7f == 1 {
+        if !observe_offering || current_life <= 0 {
+            return Ok(None);
+        }
+        let (x, y) = read_xy(process, components.render)?;
+        let dx = (x - player.0) / WORLD_TO_GRID;
+        let dy = (y - player.1) / WORLD_TO_GRID;
+        let squared = dx * dx + dy * dy;
+        if squared.is_finite() && squared < OFFERING_WITNESS_RADIUS * OFFERING_WITNESS_RADIUS {
+            return Ok(Some(NearbyEntity::Friendly(
+                (components.buffs != 0).then_some(components.buffs),
+            )));
+        }
+        return Ok(None);
+    }
+    if components.targetable == 0 {
+        return Ok(None);
+    }
     let targetable = process.read_i32(components.targetable + TARGETABLE_FLAG)? as u32;
-    if reaction & 0x7f == 1 || targetable & 1 == 0 {
+    if targetable & 1 == 0 {
         return Ok(None);
     }
     // A zero-Life targetable hostile monster is a candidate for corpse skills.
     // TargetTypes=Corpse is a SKILL target filter, not an entity-memory field;
     // this heuristic needs live verification (shattered/consumed bodies differ).
-    let rarity = if current_life > 0 {
+    let rarity = if current_life > 0 && components.properties != 0 {
         Rarity::parse(process.read_i32(components.properties + MONSTER_RARITY)?)
     } else {
         None
@@ -436,6 +518,7 @@ mod tests {
             candidate_monsters: 4,
             scan_wall: Duration::ZERO,
             corpses: Vec::new(),
+            offering_on_minions: None,
             nearby: vec![
                 NearbyMonster {
                     rarity: Rarity::Normal,
@@ -458,6 +541,16 @@ mod tests {
         assert_eq!(snapshot.counts_at(50.0), [1, 0, 0, 0]);
         assert_eq!(snapshot.counts_at(75.0), [1, 1, 0, 0]);
         assert_eq!(snapshot.counts_at(150.0), [1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn minion_witness_state_is_unknown_without_a_valid_observation() {
+        assert_eq!(NearbySnapshot::default().offering_on_minions, None);
+        let mut snapshot = NearbySnapshot::default();
+        snapshot.offering_on_minions = Some(true);
+        assert_eq!(snapshot.offering_on_minions, Some(true));
+        snapshot.offering_on_minions = Some(false);
+        assert_eq!(snapshot.offering_on_minions, Some(false));
     }
 
     #[test]

@@ -113,9 +113,13 @@ impl GameSession {
         }
     }
 
-    pub fn poe1_nearby(&mut self, process: &Process) -> io::Result<poe1::nearby::NearbySnapshot> {
+    pub fn poe1_nearby(
+        &mut self,
+        process: &Process,
+        observe_offering: bool,
+    ) -> io::Result<poe1::nearby::NearbySnapshot> {
         match &mut self.reader {
-            Reader::Poe1(adapter) => adapter.nearby(process),
+            Reader::Poe1(adapter) => adapter.nearby(process, observe_offering),
             Reader::Poe2(_) => Err(unsupported()),
         }
     }

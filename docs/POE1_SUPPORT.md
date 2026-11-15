@@ -447,3 +447,32 @@ after manually casting before relying on automatic renewal. Supporting
 minion-only offering status would require extending the reader to observe
 minion buffs or the Offering effect object; this patch does not guess an
 expiry duration or add extra entity scans.
+
+## Offering buff observation through nearby minions (develop)
+
+Spirit Offering is an Offering object that grants `offering_spirit` to
+minions, but the player-only Buffs reader often cannot see it. The policy now
+reuses the same 750 ms awake-entity scan to inspect a **bounded set of nearby
+friendly, living monster entities** (up to 16 with readable Buffs components)
+for the exact status name. This monitoring is enabled only while the Spirit
+Offering preset is configured; it adds no second tree traversal.
+
+The monitor returns `ACTIVE`, `ABSENT` or `UNKNOWN`: it reports `ABSENT`
+only when at least one nearby minion's status was inspected without error and
+none of the eligible nearby minions were skipped or left uninspected. Missing
+components, read errors, a witness-budget overflow or no nearby friendly
+minions produce `UNKNOWN` rather than fabricated absence. Presence of the
+effect on **any** monitored minion blocks the cast.
+
+The post-cast safeguard still requires **positive acknowledgement**, now from
+**either the player or an affected minion**. While awaiting acknowledgement,
+the helper continues the normal throttled nearby scan even when there are no
+corpses. Once the status has appeared, subsequent nearby snapshots can see it
+disappear and permit recasting when the normal corpse, skill readiness, key
+and safety conditions are met. No fixed duration guess is used.
+
+Debug with `--game poe1 --debug --nearby` and look for
+`Spirit Offering on nearby minions: ACTIVE/ABSENT/UNKNOWN` before and after
+manually casting. If the status remains UNKNOWN or never becomes ACTIVE, the
+reader cannot safely confirm a completed cast; the acknowledgment latch will
+still prevent another automatic attempt until explicitly disarmed/rearmed.

@@ -80,7 +80,7 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                     );
                     println!("  Chat: {chat}");
                     if nearby_debug && !area.is_town && !area.is_hideout {
-                        match session.poe1_nearby(process) {
+                        match session.poe1_nearby(process, true) {
                             Ok(census) => {
                                 println!(
                                     "  Nearby nodes {} | candidate monsters {} | within 60 grid units (N/M/R/U): {:?} | within 100: {:?}",
@@ -93,6 +93,14 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                                     "  Corpse candidates: within 60 {} | within 100 {} (dead, targetable)",
                                     census.corpses_at(60.0),
                                     census.corpses_at(100.0)
+                                );
+                                println!(
+                                    "  Spirit Offering on nearby minions: {}",
+                                    match census.offering_on_minions {
+                                        Some(true) => "ACTIVE",
+                                        Some(false) => "ABSENT",
+                                        None => "UNKNOWN (no reliable minion witness)",
+                                    }
                                 );
                                 println!(
                                     "  Nearby last full scan: {:.2} ms wall (includes cross-process read latency)",

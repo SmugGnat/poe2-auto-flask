@@ -173,6 +173,7 @@ fn rarity_thresholds_include_unique_bosses() {
         candidate_monsters: 1,
         scan_wall: Duration::ZERO,
         corpses: Vec::new(),
+        offering_on_minions: None,
         nearby: vec![NearbyMonster {
             rarity: Rarity::Unique,
             distance_squared: 25.0 * 25.0,
@@ -230,6 +231,7 @@ fn count_radius_and_failed_scans_block_only_proximity_gated_flasks() {
         candidate_monsters: 1,
         scan_wall: Duration::ZERO,
         corpses: Vec::new(),
+        offering_on_minions: None,
         nearby: vec![NearbyMonster {
             rarity: Rarity::Unique,
             distance_squared: 70.0 * 70.0,
@@ -633,6 +635,7 @@ fn writhing_jar_nearby_gate_is_optional_and_uses_shared_census() {
         candidate_monsters: 1,
         scan_wall: Duration::ZERO,
         corpses: Vec::new(),
+        offering_on_minions: None,
         nearby: vec![NearbyMonster {
             rarity: Rarity::Normal,
             distance_squared: 40.0 * 40.0,

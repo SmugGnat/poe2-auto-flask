@@ -154,7 +154,9 @@ pub fn nearby_conditions_met(rule: &SkillRule, nearby: Option<&NearbySnapshot>) 
             (1..=150).contains(&radius)
                 && (1..=512).contains(&minimum_count)
                 && nearby.is_some_and(|snapshot| {
-                    snapshot.corpses_at(f32::from(radius)) >= usize::from(minimum_count)
+                    snapshot.offering_on_minions != Some(true)
+                        && snapshot.corpses_at(f32::from(radius))
+                            >= usize::from(minimum_count)
                 })
         }
         _ => true,
@@ -206,6 +208,9 @@ pub fn evaluate(
                 }
             }
             Condition::NearbyCorpses { .. } => {
+                if nearby.is_some_and(|snapshot| snapshot.offering_on_minions == Some(true)) {
+                    return RuleDecision::AlreadyActive;
+                }
                 if !nearby_conditions_met(rule, nearby) {
                     return RuleDecision::NotEnoughNearbyCorpses;
                 }
@@ -629,6 +634,38 @@ mod tests {
         );
         effects.effects.clear();
         assert!(observations_allow(&rule, vitals(100), &effects));
+    }
+
+    #[test]
+    fn nearby_minion_buff_also_blocks_offering_recast() {
+        use super::super::nearby::NearbyCorpse;
+        let mut config = Poe1SkillsConfig::default();
+        config.spirit_offering.enabled = true;
+        let rule = configured_rules(&config).unwrap().remove(0);
+        let mut nearby = NearbySnapshot {
+            corpses: vec![NearbyCorpse {
+                distance_squared: 10.0 * 10.0,
+            }],
+            offering_on_minions: Some(true),
+            ..NearbySnapshot::default()
+        };
+        assert!(!nearby_conditions_met(&rule, Some(&nearby)));
+        assert_eq!(
+            evaluate(
+                &rule,
+                vitals(100),
+                &empty(),
+                Some(&nearby),
+                Some(SkillReadiness::Usable)
+            ),
+            RuleDecision::AlreadyActive
+        );
+        nearby.offering_on_minions = Some(false);
+        assert!(nearby_conditions_met(&rule, Some(&nearby)));
+        nearby.offering_on_minions = None;
+        // Unknown state can permit the first cast, but acknowledgement still
+        // prevents repeating it without positive observation.
+        assert!(nearby_conditions_met(&rule, Some(&nearby)));
     }
 
     #[test]

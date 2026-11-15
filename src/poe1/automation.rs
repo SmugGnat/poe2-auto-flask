@@ -222,23 +222,35 @@ impl GameAutomationPolicy for Policy {
             Ok(false) => {}
             Err(error) => return Ok(TickOutcome::RefreshFailed(error.to_string())),
         }
-        let effects = match state.effects(session, process) {
-            Ok(value) => value,
+        let (grace_period, player_has_offering) = match state.effects(session, process) {
+            Ok(value) => (
+                blocks_grace_period(value),
+                value
+                    .effects
+                    .iter()
+                    .any(|effect| effect.name == SPIRIT_OFFERING_BUFF),
+            ),
             Err(error) => return Ok(TickOutcome::RefreshFailed(error.to_string())),
         };
-        // Keep sampling the player effect while awaiting acknowledgement.
-        // If the buff never appears, another Offering key is never sent.
-        if self.awaiting_offering_confirmation()
-            && effects
-                .effects
-                .iter()
-                .any(|effect| effect.name == SPIRIT_OFFERING_BUFF)
-        {
-            if let Some(attempt) = self.skill_attempts.get_mut(&SkillId::SpiritOffering) {
-                attempt.observe_buff(true);
+        // Offerings normally affect minions, not the player. Reuse the
+        // existing 750 ms awake-entity census to acknowledge a minion buff.
+        // If no reliable witness is available, never auto-retry blindly.
+        if self.awaiting_offering_confirmation() {
+            let minion_has_buff = if player_has_offering {
+                false
+            } else {
+                state
+                    .nearby(session, process, true)
+                    .ok()
+                    .is_some_and(|nearby| nearby.offering_on_minions == Some(true))
+            };
+            if player_has_offering || minion_has_buff {
+                if let Some(attempt) = self.skill_attempts.get_mut(&SkillId::SpiritOffering) {
+                    attempt.observe_buff(true);
+                }
             }
         }
-        if blocks_grace_period(effects) {
+        if grace_period {
             return Ok(TickOutcome::Status("ARMED"));
         }
 
@@ -294,7 +306,9 @@ impl GameAutomationPolicy for Policy {
             // A proximity-gated skill fails closed when the census is
             // unavailable. TickState reuses a flask's existing census.
             if requires_nearby(rule) {
-                let nearby = state.nearby(session, process).ok();
+                let nearby = state
+                    .nearby(session, process, config.poe1.skills.spirit_offering.enabled)
+                    .ok();
                 if !nearby_conditions_met(rule, nearby) {
                     continue;
                 }
@@ -449,7 +463,10 @@ impl Policy {
             quicksilver_ready,
             !self.activation_guard.life_input_pending(),
         ) {
-            state.nearby(session, process).ok().cloned()
+            state
+                .nearby(session, process, config.poe1.skills.spirit_offering.enabled)
+                .ok()
+                .cloned()
         } else {
             None
         };
