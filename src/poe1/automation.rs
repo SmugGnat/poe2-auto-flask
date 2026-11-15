@@ -23,6 +23,7 @@ use super::rotation::FlaskRotation;
 use super::skill_rules::{
     configured_rules, evaluate, nearby_conditions_met, observations_allow, preconditions_met,
     requires_nearby, Condition, RuleDecision, SkillAttemptGuard, SkillRule,
+    SPIRIT_OFFERING_BUFF,
 };
 use super::skills::SkillId;
 use super::state::{Preflight, TickState};
@@ -71,7 +72,18 @@ impl Policy {
     }
 
     fn mark_skill(&mut self, skill: SkillId, sent_at: Instant) {
-        self.skill_attempts.entry(skill).or_default().mark(sent_at);
+        let attempt = self.skill_attempts.entry(skill).or_default();
+        if skill == SkillId::SpiritOffering {
+            attempt.mark_awaiting_buff(sent_at);
+        } else {
+            attempt.mark(sent_at);
+        }
+    }
+
+    fn awaiting_offering_confirmation(&self) -> bool {
+        self.skill_attempts
+            .get(&SkillId::SpiritOffering)
+            .is_some_and(SkillAttemptGuard::awaiting_buff_confirmation)
     }
 
     fn defer_skill(&mut self, skill: SkillId, started: Instant) {
@@ -138,6 +150,9 @@ impl GameAutomationPolicy for Policy {
         self.run_tracker.reset();
         self.activation_guard.reset();
         self.rotation.reset();
+        if let Some(attempt) = self.skill_attempts.get_mut(&SkillId::SpiritOffering) {
+            attempt.clear_confirmation();
+        }
     }
 
     fn on_inactive(&mut self) {
@@ -191,7 +206,10 @@ impl GameAutomationPolicy for Policy {
         let flask_demand = matches!(self.bindings.current(), BindingState::Ready(_))
             && enabled_demand(config, state.vitals);
         let skill_demand = self.skill_rules.iter().any(|rule| {
-            self.guard_ready(rule.id, started) && preconditions_met(rule, state.vitals)
+            preconditions_met(rule, state.vitals)
+                && (self.guard_ready(rule.id, started)
+                    || (rule.id == SkillId::SpiritOffering
+                        && self.awaiting_offering_confirmation()))
         });
         if !flask_demand && !skill_demand {
             self.run_tracker.reset();
@@ -209,6 +227,15 @@ impl GameAutomationPolicy for Policy {
             Ok(value) => value,
             Err(error) => return Ok(TickOutcome::RefreshFailed(error.to_string())),
         };
+        // Keep sampling the player effect while awaiting acknowledgement.
+        // If the buff never appears, another Offering key is never sent.
+        if self.awaiting_offering_confirmation()
+            && effects.effects.iter().any(|effect| effect.name == SPIRIT_OFFERING_BUFF)
+        {
+            if let Some(attempt) = self.skill_attempts.get_mut(&SkillId::SpiritOffering) {
+                attempt.observe_buff(true);
+            }
+        }
         if blocks_grace_period(effects) {
             return Ok(TickOutcome::Status("ARMED"));
         }

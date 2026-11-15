@@ -13,6 +13,8 @@ use super::skills::{SkillId, SkillReadiness};
 
 pub const MOLTEN_SHELL_BUFF: &str = "molten_shell_shield";
 pub const BLOOD_RAGE_BUFF: &str = "blood_rage";
+/// PoEDB Buffs.dat identifier; Offering statuses can be non-timed.
+pub const SPIRIT_OFFERING_BUFF: &str = "offering_spirit";
 const MIN_ATTEMPT_GAP: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +74,7 @@ pub fn configured_rules(config: &Poe1SkillsConfig) -> io::Result<Vec<SkillRule>>
             id: SkillId::SpiritOffering,
             key: offering.binding()?,
             conditions: vec![
+                Condition::BuffAbsent(SPIRIT_OFFERING_BUFF),
                 Condition::NearbyCorpses {
                     radius: offering.nearby_radius,
                     minimum_count: offering.nearby_minimum_count,
@@ -118,9 +121,7 @@ pub fn observations_allow(rule: &SkillRule, vitals: LiveVitals, effects: &Effect
         Condition::LifeAtOrBelow(threshold) => life_at_or_below(vitals, threshold),
         Condition::LifeAtOrAbove(threshold) => life_at_or_above(vitals, threshold),
         Condition::NearbyMonsters { .. } | Condition::NearbyCorpses { .. } => true,
-        Condition::BuffAbsent(name) => !effects.effects.iter().any(|effect| {
-            effect.name == name && (!effect.time_left.is_finite() || effect.time_left >= 0.0)
-        }),
+        Condition::BuffAbsent(name) => !effects.effects.iter().any(|effect| buff_present(effect, name)),
         Condition::SkillUsable => true,
     })
 }
@@ -207,10 +208,7 @@ pub fn evaluate(
                 }
             }
             Condition::BuffAbsent(name) => {
-                if effects.effects.iter().any(|effect| {
-                    effect.name == name
-                        && (!effect.time_left.is_finite() || effect.time_left >= 0.0)
-                }) {
+                if effects.effects.iter().any(|effect| buff_present(effect, name)) {
                     return RuleDecision::AlreadyActive;
                 }
             }
@@ -224,6 +222,13 @@ pub fn evaluate(
         }
     }
     RuleDecision::Eligible
+}
+
+fn buff_present(effect: &super::buffs::Effect, name: &str) -> bool {
+    effect.name == name
+        && (name == SPIRIT_OFFERING_BUFF
+            || !effect.time_left.is_finite()
+            || effect.time_left >= 0.0)
 }
 
 fn life_at_or_below(vitals: LiveVitals, threshold: u8) -> bool {
@@ -250,12 +255,38 @@ fn life_at_or_above(vitals: LiveVitals, threshold: u8) -> bool {
 pub struct SkillAttemptGuard {
     last_sent: Option<Instant>,
     retry_after: Option<Instant>,
+    /// Offering is blocked after dispatch until a real player buff is seen.
+    /// No observed buff means no repeat, even after the 1-second interval.
+    awaiting_buff_confirmation: bool,
 }
 impl SkillAttemptGuard {
     pub fn ready(&self, now: Instant) -> bool {
-        self.last_sent
-            .is_none_or(|sent| now.saturating_duration_since(sent) >= MIN_ATTEMPT_GAP)
+        !self.awaiting_buff_confirmation
+            && self
+                .last_sent
+                .is_none_or(|sent| now.saturating_duration_since(sent) >= MIN_ATTEMPT_GAP)
             && self.retry_after.is_none_or(|at| now >= at)
+    }
+
+    pub fn awaiting_buff_confirmation(&self) -> bool {
+        self.awaiting_buff_confirmation
+    }
+
+    /// An unacknowledged cast cannot repeat automatically.
+    pub fn mark_awaiting_buff(&mut self, sent_at: Instant) {
+        self.mark(sent_at);
+        self.awaiting_buff_confirmation = true;
+    }
+
+    pub fn observe_buff(&mut self, present: bool) {
+        if present {
+            self.awaiting_buff_confirmation = false;
+        }
+    }
+
+    /// Allows an explicit F11 disarm/rearm to retry a non-confirmed cast.
+    pub fn clear_confirmation(&mut self) {
+        self.awaiting_buff_confirmation = false;
     }
     pub fn mark(&mut self, sent_at: Instant) {
         self.last_sent = Some(sent_at);
@@ -530,6 +561,67 @@ mod tests {
             distance_squared: 80.0 * 80.0,
         });
         assert!(!nearby_conditions_met(&twice, Some(&snapshot)));
+    }
+
+    #[test]
+    fn offering_does_not_cast_while_its_buff_is_visible() {
+        use super::super::nearby::NearbyCorpse;
+        let mut settings = Poe1SkillsConfig::default();
+        settings.spirit_offering.enabled = true;
+        let rule = configured_rules(&settings).unwrap().remove(0);
+        assert!(rule.conditions.iter().any(|condition| {
+            matches!(condition, Condition::BuffAbsent(SPIRIT_OFFERING_BUFF))
+        }));
+        let nearby = NearbySnapshot {
+            corpses: vec![NearbyCorpse {
+                distance_squared: 25.0 * 25.0,
+            }],
+            ..NearbySnapshot::default()
+        };
+        let mut effects = empty();
+        assert_eq!(
+            evaluate(&rule, vitals(100), &effects, Some(&nearby), Some(SkillReadiness::Usable)),
+            RuleDecision::Eligible
+        );
+        effects.effects.push(Effect {
+            name: SPIRIT_OFFERING_BUFF.into(),
+            flask_slot: None,
+            buff_type: 2,
+            time_left: 7.5,
+        });
+        assert!(!observations_allow(&rule, vitals(100), &effects));
+        assert_eq!(
+            evaluate(&rule, vitals(100), &effects, Some(&nearby), Some(SkillReadiness::Usable)),
+            RuleDecision::AlreadyActive
+        );
+        // Unlike a timed player buff, an offering can be marked indefinite.
+        effects.effects[0].time_left = -1.0;
+        assert!(!observations_allow(&rule, vitals(100), &effects));
+        assert_eq!(
+            evaluate(&rule, vitals(100), &effects, Some(&nearby), Some(SkillReadiness::Usable)),
+            RuleDecision::AlreadyActive
+        );
+        effects.effects.clear();
+        assert!(observations_allow(&rule, vitals(100), &effects));
+    }
+
+    #[test]
+    fn offering_needs_positive_acknowledgement_before_next_cast() {
+        let mut attempt = SkillAttemptGuard::default();
+        let start = Instant::now();
+        assert!(attempt.ready(start));
+        attempt.mark_awaiting_buff(start);
+        assert!(attempt.awaiting_buff_confirmation());
+        attempt.observe_buff(false);
+        assert!(!attempt.ready(start + Duration::from_secs(30)));
+        attempt.observe_buff(true);
+        assert!(!attempt.awaiting_buff_confirmation());
+        assert!(!attempt.ready(start + Duration::from_millis(900)));
+        assert!(attempt.ready(start + Duration::from_secs(1)));
+        attempt.mark_awaiting_buff(start + Duration::from_secs(2));
+        assert!(!attempt.ready(start + Duration::from_secs(30)));
+        attempt.clear_confirmation();
+        assert!(attempt.ready(start + Duration::from_secs(30)));
     }
 
     #[test]

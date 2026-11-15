@@ -6,7 +6,9 @@ use std::time::{Duration, Instant};
 
 use super::config::Poe1SkillsConfig;
 use super::movement::RUN_ANIMATION_ID;
-use super::skill_rules::{configured_rules, evaluate, BLOOD_RAGE_BUFF, MOLTEN_SHELL_BUFF};
+use super::skill_rules::{
+    configured_rules, evaluate, BLOOD_RAGE_BUFF, MOLTEN_SHELL_BUFF, SPIRIT_OFFERING_BUFF,
+};
 use super::skills::SkillId;
 use crate::process::Process;
 use crate::session::GameSession;
@@ -210,7 +212,12 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                         }
                     );
                     println!(
-                        "  Spirit Offering (read-only): skill {} | corpse trigger requires --nearby census",
+                        "  Spirit Offering (read-only): player buff {} | skill {} | corpse trigger requires --nearby census",
+                        if buffs.effects.iter().any(|effect| effect.name == SPIRIT_OFFERING_BUFF) {
+                            "visible"
+                        } else {
+                            "not visible"
+                        },
                         match &spirit_offering {
                             Ok(state) => format!("{state:?}"),
                             Err(error) => format!("unavailable ({error})"),
