@@ -21,6 +21,7 @@ pub enum Condition {
     LifeAtOrAbove(u8),
     BuffAbsent(&'static str),
     NearbyMonsters { radius: u16, minimum_count: u16 },
+    NearbyCorpses { radius: u16, minimum_count: u16 },
     SkillUsable,
 }
 
@@ -65,6 +66,20 @@ pub fn configured_rules(config: &Poe1SkillsConfig) -> io::Result<Vec<SkillRule>>
             conditions,
         });
     }
+    let offering = &config.spirit_offering;
+    if offering.enabled {
+        rules.push(SkillRule {
+            id: SkillId::SpiritOffering,
+            key: offering.binding()?,
+            conditions: vec![
+                Condition::NearbyCorpses {
+                    radius: offering.nearby_radius,
+                    minimum_count: offering.nearby_minimum_count,
+                },
+                Condition::SkillUsable,
+            ],
+        });
+    }
     Ok(rules)
 }
 
@@ -75,6 +90,7 @@ pub enum RuleDecision {
     LifeBelowThreshold,
     AlreadyActive,
     NotEnoughNearbyMonsters,
+    NotEnoughNearbyCorpses,
     SkillUnavailable,
     SkillNotUsable,
     Eligible,
@@ -84,9 +100,10 @@ pub fn preconditions_met(rule: &SkillRule, vitals: LiveVitals) -> bool {
     rule.conditions.iter().all(|condition| match condition {
         Condition::LifeAtOrBelow(threshold) => life_at_or_below(vitals, *threshold),
         Condition::LifeAtOrAbove(threshold) => life_at_or_above(vitals, *threshold),
-        Condition::BuffAbsent(_) | Condition::NearbyMonsters { .. } | Condition::SkillUsable => {
-            true
-        }
+        Condition::BuffAbsent(_)
+        | Condition::NearbyMonsters { .. }
+        | Condition::NearbyCorpses { .. }
+        | Condition::SkillUsable => true,
     })
 }
 
@@ -100,7 +117,7 @@ pub fn observations_allow(rule: &SkillRule, vitals: LiveVitals, effects: &Effect
     rule.conditions.iter().all(|condition| match *condition {
         Condition::LifeAtOrBelow(threshold) => life_at_or_below(vitals, threshold),
         Condition::LifeAtOrAbove(threshold) => life_at_or_above(vitals, threshold),
-        Condition::NearbyMonsters { .. } => true,
+        Condition::NearbyMonsters { .. } | Condition::NearbyCorpses { .. } => true,
         Condition::BuffAbsent(name) => !effects.effects.iter().any(|effect| {
             effect.name == name && (!effect.time_left.is_finite() || effect.time_left >= 0.0)
         }),
@@ -126,6 +143,16 @@ pub fn nearby_conditions_met(rule: &SkillRule, nearby: Option<&NearbySnapshot>) 
                         >= usize::from(minimum_count)
                 })
         }
+        Condition::NearbyCorpses {
+            radius,
+            minimum_count,
+        } => {
+            (1..=150).contains(&radius)
+                && (1..=512).contains(&minimum_count)
+                && nearby.is_some_and(|snapshot| {
+                    snapshot.corpses_at(f32::from(radius)) >= usize::from(minimum_count)
+                })
+        }
         _ => true,
     })
 }
@@ -133,7 +160,12 @@ pub fn nearby_conditions_met(rule: &SkillRule, nearby: Option<&NearbySnapshot>) 
 pub fn requires_nearby(rule: &SkillRule) -> bool {
     rule.conditions
         .iter()
-        .any(|condition| matches!(condition, Condition::NearbyMonsters { .. }))
+        .any(|condition| {
+            matches!(
+                condition,
+                Condition::NearbyMonsters { .. } | Condition::NearbyCorpses { .. }
+            )
+        })
 }
 
 pub fn evaluate(
@@ -169,6 +201,11 @@ pub fn evaluate(
             Condition::NearbyMonsters { .. } => {
                 if !nearby_conditions_met(rule, nearby) {
                     return RuleDecision::NotEnoughNearbyMonsters;
+                }
+            }
+            Condition::NearbyCorpses { .. } => {
+                if !nearby_conditions_met(rule, nearby) {
+                    return RuleDecision::NotEnoughNearbyCorpses;
                 }
             }
             Condition::BuffAbsent(name) => {
@@ -433,6 +470,50 @@ mod tests {
             ),
             RuleDecision::Eligible
         );
+    }
+
+    #[test]
+    fn spirit_offering_needs_corpses_not_live_monsters() {
+        use super::super::nearby::{NearbyCorpse, NearbyMonster, Rarity};
+
+        let mut config = Poe1SkillsConfig::default();
+        config.spirit_offering.enabled = true;
+        let rule = configured_rules(&config).unwrap().remove(0);
+        assert_eq!(rule.id, SkillId::SpiritOffering);
+        assert!(requires_nearby(&rule));
+        assert!(preconditions_met(&rule, vitals(100)));
+        assert!(!nearby_conditions_met(&rule, None));
+        let mut snapshot = NearbySnapshot {
+            nearby: vec![NearbyMonster {
+                rarity: Rarity::Normal,
+                distance_squared: 10.0 * 10.0,
+            }],
+            ..NearbySnapshot::default()
+        };
+        assert!(!nearby_conditions_met(&rule, Some(&snapshot)));
+        assert_eq!(
+            evaluate(&rule, vitals(100), &empty(), Some(&snapshot), Some(SkillReadiness::Usable)),
+            RuleDecision::NotEnoughNearbyCorpses
+        );
+        snapshot.corpses.push(NearbyCorpse {
+            distance_squared: 25.0 * 25.0,
+        });
+        assert!(nearby_conditions_met(&rule, Some(&snapshot)));
+        assert_eq!(
+            evaluate(&rule, vitals(100), &empty(), Some(&snapshot), Some(SkillReadiness::Usable)),
+            RuleDecision::Eligible
+        );
+        assert_eq!(
+            evaluate(&rule, vitals(100), &empty(), Some(&snapshot), Some(SkillReadiness::NotUsable)),
+            RuleDecision::SkillNotUsable
+        );
+        config.spirit_offering.nearby_minimum_count = 2;
+        let twice = configured_rules(&config).unwrap().remove(0);
+        assert!(!nearby_conditions_met(&twice, Some(&snapshot)));
+        snapshot.corpses.push(NearbyCorpse {
+            distance_squared: 80.0 * 80.0,
+        });
+        assert!(!nearby_conditions_met(&twice, Some(&snapshot)));
     }
 
     #[test]

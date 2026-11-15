@@ -22,6 +22,7 @@ const NAME_UNITS: usize = 128;
 pub enum SkillId {
     MoltenShell,
     BloodRage,
+    SpiritOffering,
 }
 
 impl SkillId {
@@ -29,6 +30,7 @@ impl SkillId {
         match self {
             Self::MoltenShell => "Molten Shell",
             Self::BloodRage => "Blood Rage",
+            Self::SpiritOffering => "Spirit Offering",
         }
     }
 
@@ -40,6 +42,10 @@ impl SkillId {
             }
             Self::BloodRage => {
                 name.eq_ignore_ascii_case("BloodRage") || name.eq_ignore_ascii_case("blood_rage")
+            }
+            Self::SpiritOffering => {
+                name.eq_ignore_ascii_case("SpiritOffering")
+                    || name.eq_ignore_ascii_case("spirit_offering")
             }
         }
     }
@@ -295,6 +301,14 @@ mod tests {
         assert!(SkillId::BloodRage.matches_internal_name("BloodRage"));
         assert!(SkillId::BloodRage.matches_internal_name("blood_rage"));
         assert!(!SkillId::BloodRage.matches_internal_name("blood_rage_leech"));
+    }
+
+    #[test]
+    fn offering_skill_matches_only_its_own_internal_name() {
+        assert!(SkillId::SpiritOffering.matches_internal_name("SpiritOffering"));
+        assert!(SkillId::SpiritOffering.matches_internal_name("spirit_offering"));
+        assert!(!SkillId::SpiritOffering.matches_internal_name("FleshOffering"));
+        assert!(!SkillId::SpiritOffering.matches_internal_name("VaalSpiritOffering"));
     }
 
     #[test]

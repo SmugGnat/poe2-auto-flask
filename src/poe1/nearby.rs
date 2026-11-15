@@ -15,6 +15,7 @@ use super::{invalid, plausible_ptr, read_metadata, read_ptr, Probe};
 
 const MAX_MAP_NODES: usize = 1500;
 const MAX_NEARBY_MONSTERS: usize = 512;
+const MAX_NEARBY_CORPSES: usize = 512;
 const MAX_STATIC_CACHE: usize = 2500;
 const MAX_COMPONENTS: usize = 50;
 const MAX_GRID_DISTANCE: f32 = 150.0;
@@ -57,11 +58,26 @@ pub struct NearbyMonster {
     pub distance_squared: f32,
 }
 
+/// A dead, hostile monster entity that still appears targetable. This is a
+/// conservative corpse *candidate*, not a confirmed Spirit Offering target.
+#[derive(Debug, Clone)]
+pub struct NearbyCorpse {
+    /// Squared grid distance, identical scale to nearby monster rules.
+    pub distance_squared: f32,
+}
+
+#[derive(Debug, Clone)]
+enum NearbyEntity {
+    Monster(NearbyMonster),
+    Corpse(NearbyCorpse),
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct NearbySnapshot {
     pub awake_nodes: usize,
     pub candidate_monsters: usize,
     pub nearby: Vec<NearbyMonster>,
+    pub corpses: Vec<NearbyCorpse>,
     /// Wall time for the most recent full scan (not CPU time). Includes
     /// Wine/ReadProcessMemory latency; sampling requires debug --nearby or
     /// an explicitly enabled proximity-gated PoE1 utility flask.
@@ -81,6 +97,19 @@ impl NearbySnapshot {
             }
         }
         counts
+    }
+
+    /// Counts corpse candidates from the same cached bounded entity scan.
+    /// Dead monsters without the observed targetable flag are excluded.
+    pub fn corpses_at(&self, radius: f32) -> usize {
+        if radius <= 0.0 || !radius.is_finite() {
+            return 0;
+        }
+        let distance_squared = radius * radius;
+        self.corpses
+            .iter()
+            .filter(|corpse| corpse.distance_squared < distance_squared)
+            .count()
     }
 }
 
@@ -214,11 +243,20 @@ impl NearbyCache {
                 continue;
             };
             result.candidate_monsters += 1;
-            if let Some(monster) = read_live_monster(process, components, player)? {
-                result.nearby.push(monster);
-                if result.nearby.len() > MAX_NEARBY_MONSTERS {
-                    return Err(invalid("PoE1 nearby monster count exceeds budget"));
+            match read_nearby_entity(process, components, player)? {
+                Some(NearbyEntity::Monster(monster)) => {
+                    result.nearby.push(monster);
+                    if result.nearby.len() > MAX_NEARBY_MONSTERS {
+                        return Err(invalid("PoE1 nearby monster count exceeds budget"));
+                    }
                 }
+                Some(NearbyEntity::Corpse(corpse)) => {
+                    result.corpses.push(corpse);
+                    if result.corpses.len() > MAX_NEARBY_CORPSES {
+                        return Err(invalid("PoE1 nearby corpse count exceeds budget"));
+                    }
+                }
+                None => {}
             }
         }
 
@@ -315,38 +353,56 @@ fn vector_count(first: usize, last: usize, stride: usize, limit: usize) -> io::R
     Ok(count)
 }
 
-fn read_live_monster(
+fn read_nearby_entity(
     process: &Process,
     components: Components,
     player: (f32, f32),
-) -> io::Result<Option<NearbyMonster>> {
+) -> io::Result<Option<NearbyEntity>> {
     let current_life = process.read_i32(components.life + LIFE_CURRENT)?;
-    if current_life <= 0 {
+    if current_life < 0 {
         return Ok(None);
     }
     let reaction = process.read_bytes(components.positioned + POSITIONED_REACTION, 1)?[0];
-    if reaction & 0x7f == 1 {
-        return Ok(None);
-    }
     let targetable = process.read_i32(components.targetable + TARGETABLE_FLAG)? as u32;
-    if targetable & 1 == 0 {
+    if reaction & 0x7f == 1 || targetable & 1 == 0 {
         return Ok(None);
     }
-    let rarity = process.read_i32(components.properties + MONSTER_RARITY)?;
-    let Some(rarity) = Rarity::parse(rarity) else {
-        return Ok(None);
+    // A zero-Life targetable hostile monster is a candidate for corpse skills.
+    // TargetTypes=Corpse is a SKILL target filter, not an entity-memory field;
+    // this heuristic needs live verification (shattered/consumed bodies differ).
+    let rarity = if current_life > 0 {
+        Rarity::parse(process.read_i32(components.properties + MONSTER_RARITY)?)
+    } else {
+        None
     };
+    if current_life > 0 && rarity.is_none() {
+        return Ok(None);
+    }
     let (x, y) = read_xy(process, components.render)?;
     let dx = (x - player.0) / WORLD_TO_GRID;
     let dy = (y - player.1) / WORLD_TO_GRID;
     let squared = dx * dx + dy * dy;
+    Ok(classify_nearby(current_life, rarity, squared))
+}
+
+/// Pure final classification keeps the existing living-monster counts separate
+/// from dead, targetable corpse candidates.
+fn classify_nearby(life: i32, rarity: Option<Rarity>, squared: f32) -> Option<NearbyEntity> {
     if !squared.is_finite() || squared > MAX_GRID_DISTANCE * MAX_GRID_DISTANCE {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(NearbyMonster {
-        rarity,
-        distance_squared: squared,
-    }))
+    match life {
+        0 => Some(NearbyEntity::Corpse(NearbyCorpse {
+            distance_squared: squared,
+        })),
+        1.. => rarity.map(|rarity| {
+            NearbyEntity::Monster(NearbyMonster {
+                rarity,
+                distance_squared: squared,
+            })
+        }),
+        _ => None,
+    }
 }
 
 fn read_xy(process: &Process, render: usize) -> io::Result<(f32, f32)> {
@@ -379,6 +435,7 @@ mod tests {
             awake_nodes: 4,
             candidate_monsters: 4,
             scan_wall: Duration::ZERO,
+            corpses: Vec::new(),
             nearby: vec![
                 NearbyMonster {
                     rarity: Rarity::Normal,
@@ -401,6 +458,34 @@ mod tests {
         assert_eq!(snapshot.counts_at(50.0), [1, 0, 0, 0]);
         assert_eq!(snapshot.counts_at(75.0), [1, 1, 0, 0]);
         assert_eq!(snapshot.counts_at(150.0), [1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn living_monsters_and_dead_corpse_candidates_stay_separate() {
+        let living = classify_nearby(10, Some(Rarity::Magic), 20.0 * 20.0);
+        assert!(matches!(living, Some(NearbyEntity::Monster(_))));
+        let corpse = classify_nearby(0, None, 20.0 * 20.0);
+        assert!(matches!(corpse, Some(NearbyEntity::Corpse(_))));
+        assert!(classify_nearby(-1, None, 20.0 * 20.0).is_none());
+        assert!(classify_nearby(0, None, 200.0 * 200.0).is_none());
+
+        let snapshot = NearbySnapshot {
+            corpses: vec![
+                NearbyCorpse {
+                    distance_squared: 20.0 * 20.0,
+                },
+                NearbyCorpse {
+                    distance_squared: 60.0 * 60.0,
+                },
+            ],
+            ..NearbySnapshot::default()
+        };
+        assert_eq!(snapshot.corpses_at(30.0), 1);
+        assert_eq!(snapshot.corpses_at(60.0), 1); // Strict radius
+        assert_eq!(snapshot.corpses_at(61.0), 2);
+        assert_eq!(snapshot.corpses_at(-1.0), 0);
+        assert_eq!(snapshot.corpses_at(f32::NAN), 0);
+        assert_eq!(snapshot.counts_at(150.0), [0; 4]);
     }
 
     #[test]

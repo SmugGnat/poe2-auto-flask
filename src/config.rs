@@ -369,6 +369,35 @@ mod tests {
     }
 
     #[test]
+    fn spirit_offering_configuration_is_opt_in_and_validated() {
+        let defaults = Config::default();
+        assert!(!defaults.poe1.skills.spirit_offering.enabled);
+        let configured = Config::parse(
+            Path::new("test.toml"),
+            "[poe1.skills.spirit_offering]\nenabled = true\nkey = \"E\"\nnearby_radius = 50\nnearby_minimum_count = 2\n",
+        )
+        .unwrap();
+        assert!(configured.poe1.skills.spirit_offering.enabled);
+        assert_eq!(configured.poe1.skills.spirit_offering.nearby_radius, 50);
+        assert_eq!(configured.poe1.skills.spirit_offering.nearby_minimum_count, 2);
+        for bad in [
+            "nearby_radius = 0",
+            "nearby_radius = 151",
+            "nearby_minimum_count = 0",
+            "nearby_minimum_count = 513",
+            "key = \"F11\"",
+        ] {
+            let input = format!("[poe1.skills.spirit_offering]\n{bad}\n");
+            assert!(Config::parse(Path::new("test.toml"), &input).is_err(), "{bad}");
+        }
+        assert!(Config::parse(
+            Path::new("test.toml"),
+            "[poe1.skills.blood_rage]\nenabled = true\nkey = \"T\"\n[poe1.skills.spirit_offering]\nenabled = true\nkey = \"T\"\n",
+        )
+        .is_err());
+    }
+
+    #[test]
     fn bundled_default_config_matches_built_in_defaults() {
         let config = Config::parse(Path::new("config.toml"), DEFAULT_CONFIG_TEXT)
             .expect("bundled default config must parse");

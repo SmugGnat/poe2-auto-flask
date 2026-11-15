@@ -381,3 +381,41 @@ After a successfully sent Jar key, the helper waits to observe reduced charges
 before allowing another Jar activation; a lost input cannot repeat indefinitely
 on the normal utility settling timer. The current 350 ms per-slot utility
 settling remains active. No extra per-tick modifier walk was added.
+
+## Spirit Offering: corpse-gated PoE1 skill (develop)
+
+Opt-in preset using the existing skill scheduler and **same cached 750 ms
+awake-entity scan** as nearby monster and flask conditions. No extra traversal
+or full-memory signature scan is introduced.
+
+```toml
+[poe1.skills.spirit_offering]
+enabled = true
+key = "E"
+nearby_radius = 60
+nearby_minimum_count = 1
+```
+
+The `SpiritOffering` / `spirit_offering` Actor skill must be unambiguously
+usable. Like existing skills, it requires player alive, allowed area, no grace
+period, focus, no chat, valid preflight and the usual 1-second attempt gap.
+A corpse candidate is an awake `Metadata/Monsters/` entity whose live Life
+is exactly zero, is not marked friendly, still has the existing
+`TargetableFlag & 1`, and lies within the configured grid radius.
+Living monsters and corpse candidates are counted **separately**. The existing
+maximum map traversal, cache, position bounds and 750 ms throttle are unchanged.
+
+**Unverified limitation:** PoEDB's `TargetTypes: Corpse` is the skill's
+target category, **not** an entity memory flag. A zero-Life, targetable
+monster is a conservative *candidate*, not confirmation that the game accepts
+it as a consumable corpse; e.g. shattered or already consumed entities may
+be excluded by the game. The live `Targetable` behavior for dead entities
+must be checked with `--game poe1 --debug --nearby`, which now reports
+`Corpse candidates` at radii 60/100 and Spirit Offering Actor readiness.
+
+This first pass uses the **existing single keyboard key dispatch** with
+no cursor movement, target selection or special treatment for its 1-second
+base cast time. PoEDB lists a `Corpse` target requirement; a nearby corpse
+candidate does not guarantee the current cursor can target it. Cast success,
+targeting and interaction with active offering buffs need in-game testing
+before further policy changes.

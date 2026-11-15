@@ -95,4 +95,14 @@ require_nearby_monsters = true
 nearby_radius = 60
 nearby_minimum_count = 1
 
+# Spirit Offering (PoE1) consumes a corpse, so this optional preset checks
+# dead, targetable hostile monster entities in the existing 750 ms census.
+# It uses the existing key-only skill dispatcher; it does not aim at a corpse
+# or account for the skill's cast time. Verify behavior in --debug --nearby.
+[poe1.skills.spirit_offering]
+enabled = false
+key = "E"
+nearby_radius = 60
+nearby_minimum_count = 1
+
 # Existing PoE2 operation is unchanged: two slots, F11, 100 ms polling.

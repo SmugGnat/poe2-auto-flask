@@ -31,6 +31,7 @@ pub struct Poe1Config {
 pub struct Poe1SkillsConfig {
     pub molten_shell: MoltenShellConfig,
     pub blood_rage: BloodRageConfig,
+    pub spirit_offering: SpiritOfferingConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -113,6 +114,49 @@ impl BloodRageConfig {
         if !(1..=512).contains(&self.nearby_minimum_count) {
             return Err(invalid(
                 "poe1.skills.blood_rage.nearby_minimum_count must be 1..=512",
+            ));
+        }
+        self.binding()?;
+        Ok(())
+    }
+}
+
+/// Corpse-triggered skill. This does not manipulate the mouse or account for
+/// cast duration; the ordinary skill readiness and attempt guard still apply.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct SpiritOfferingConfig {
+    pub enabled: bool,
+    pub key: String,
+    pub nearby_radius: u16,
+    pub nearby_minimum_count: u16,
+}
+
+impl Default for SpiritOfferingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            key: "E".to_string(),
+            nearby_radius: 60,
+            nearby_minimum_count: 1,
+        }
+    }
+}
+
+impl SpiritOfferingConfig {
+    pub fn binding(&self) -> io::Result<KeyBinding> {
+        skill_binding(&self.key, "poe1.skills.spirit_offering.key")
+    }
+
+    pub fn validate(&self) -> io::Result<()> {
+        if !(1..=150).contains(&self.nearby_radius) {
+            return Err(invalid(
+                "poe1.skills.spirit_offering.nearby_radius must be 1..=150",
+            ));
+        }
+        if !(1..=512).contains(&self.nearby_minimum_count) {
+            return Err(invalid(
+                "poe1.skills.spirit_offering.nearby_minimum_count must be 1..=512",
             ));
         }
         self.binding()?;
@@ -327,6 +371,19 @@ impl Config {
             }
             skills.push(summary_entry("Blood Rage", &gates));
         }
+        let offering = &self.poe1.skills.spirit_offering;
+        if offering.enabled {
+            skills.push(summary_entry(
+                "Spirit Offering",
+                &[
+                    offering.key.clone(),
+                    format!(
+                        "corpses >={} @{}",
+                        offering.nearby_minimum_count, offering.nearby_radius
+                    ),
+                ],
+            ));
+        }
 
         format!(
             "Options : Hideout {}\nLife    : {}\nMana    : {}\n{}\n{}",
@@ -375,13 +432,29 @@ impl Poe1Config {
     pub(crate) fn validate(&self) -> io::Result<()> {
         self.skills.molten_shell.validate()?;
         self.skills.blood_rage.validate()?;
-        if self.skills.molten_shell.enabled
-            && self.skills.blood_rage.enabled
-            && self.skills.molten_shell.binding()? == self.skills.blood_rage.binding()?
-        {
-            return Err(invalid(
-                "enabled PoE1 skill presets cannot use the same key",
-            ));
+        self.skills.spirit_offering.validate()?;
+        let enabled_keys = [
+            (
+                self.skills.molten_shell.enabled,
+                self.skills.molten_shell.binding()?,
+            ),
+            (
+                self.skills.blood_rage.enabled,
+                self.skills.blood_rage.binding()?,
+            ),
+            (
+                self.skills.spirit_offering.enabled,
+                self.skills.spirit_offering.binding()?,
+            ),
+        ];
+        for (index, (enabled, key)) in enabled_keys.iter().enumerate() {
+            if *enabled
+                && enabled_keys[index + 1..]
+                    .iter()
+                    .any(|(other_enabled, other_key)| *other_enabled && key == other_key)
+            {
+                return Err(invalid("enabled PoE1 skill presets cannot use the same key"));
+            }
         }
         let ms = self.quicksilver_min_run_ms;
         if ms != 0 && !(100..=5000).contains(&ms) {
@@ -498,4 +571,17 @@ mod summary_tests {
             "Options : Hideout ON\nLife    : OFF\nMana    : OFF\nFlasks  : Granite [nearby >=2 Magic+ @40]\nSkills  : Blood Rage [T, Life >=80%]"
         );
     }
+    #[test]
+    fn offering_summary_uses_existing_skill_group() {
+        let mut config = Config::default();
+        config.poe1.skills.spirit_offering.enabled = true;
+        config.poe1.skills.spirit_offering.key = "E".into();
+        config.poe1.skills.spirit_offering.nearby_minimum_count = 2;
+        config.poe1.skills.spirit_offering.nearby_radius = 50;
+        assert!(config
+            .poe1_summary()
+            .contains("Skills  : Spirit Offering [E, corpses >=2 @50]"));
+    }
+
+
 }

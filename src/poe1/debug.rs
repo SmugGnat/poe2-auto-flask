@@ -88,6 +88,11 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                                     census.counts_at(100.0)
                                 );
                                 println!(
+                                    "  Corpse candidates: within 60 {} | within 100 {} (dead, targetable)",
+                                    census.corpses_at(60.0),
+                                    census.corpses_at(100.0)
+                                );
+                                println!(
                                     "  Nearby last full scan: {:.2} ms wall (includes cross-process read latency)",
                                     census.scan_wall.as_secs_f64() * 1000.0
                                 );
@@ -151,13 +156,19 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                     // The debug reader shares one Actor pass for both actual
                     // presets, even when only one is equipped.
                     let skills =
-                        session.poe1_skills(process, &[SkillId::MoltenShell, SkillId::BloodRage]);
+                        session.poe1_skills(
+                            process,
+                            &[SkillId::MoltenShell, SkillId::BloodRage, SkillId::SpiritOffering],
+                        );
                     let skill = skills
                         .as_ref()
                         .map(|snapshot| snapshot[&SkillId::MoltenShell]);
                     let blood_rage = skills
                         .as_ref()
                         .map(|snapshot| snapshot[&SkillId::BloodRage]);
+                    let spirit_offering = skills
+                        .as_ref()
+                        .map(|snapshot| snapshot[&SkillId::SpiritOffering]);
                     let rule = evaluate(
                         &diagnostic_rule,
                         vitals,
@@ -191,6 +202,13 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                             "absent"
                         },
                         match &blood_rage {
+                            Ok(state) => format!("{state:?}"),
+                            Err(error) => format!("unavailable ({error})"),
+                        }
+                    );
+                    println!(
+                        "  Spirit Offering (read-only): skill {} | corpse trigger requires --nearby census",
+                        match &spirit_offering {
                             Ok(state) => format!("{state:?}"),
                             Err(error) => format!("unavailable ({error})"),
                         }
