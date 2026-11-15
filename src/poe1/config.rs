@@ -453,7 +453,9 @@ impl Poe1Config {
                     .iter()
                     .any(|(other_enabled, other_key)| *other_enabled && key == other_key)
             {
-                return Err(invalid("enabled PoE1 skill presets cannot use the same key"));
+                return Err(invalid(
+                    "enabled PoE1 skill presets cannot use the same key",
+                ));
             }
         }
         let ms = self.quicksilver_min_run_ms;
@@ -582,6 +584,4 @@ mod summary_tests {
             .poe1_summary()
             .contains("Skills  : Spirit Offering [E, corpses >=2 @50]"));
     }
-
-
 }

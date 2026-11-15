@@ -158,14 +158,12 @@ pub fn nearby_conditions_met(rule: &SkillRule, nearby: Option<&NearbySnapshot>) 
 }
 
 pub fn requires_nearby(rule: &SkillRule) -> bool {
-    rule.conditions
-        .iter()
-        .any(|condition| {
-            matches!(
-                condition,
-                Condition::NearbyMonsters { .. } | Condition::NearbyCorpses { .. }
-            )
-        })
+    rule.conditions.iter().any(|condition| {
+        matches!(
+            condition,
+            Condition::NearbyMonsters { .. } | Condition::NearbyCorpses { .. }
+        )
+    })
 }
 
 pub fn evaluate(
@@ -492,7 +490,13 @@ mod tests {
         };
         assert!(!nearby_conditions_met(&rule, Some(&snapshot)));
         assert_eq!(
-            evaluate(&rule, vitals(100), &empty(), Some(&snapshot), Some(SkillReadiness::Usable)),
+            evaluate(
+                &rule,
+                vitals(100),
+                &empty(),
+                Some(&snapshot),
+                Some(SkillReadiness::Usable)
+            ),
             RuleDecision::NotEnoughNearbyCorpses
         );
         snapshot.corpses.push(NearbyCorpse {
@@ -500,11 +504,23 @@ mod tests {
         });
         assert!(nearby_conditions_met(&rule, Some(&snapshot)));
         assert_eq!(
-            evaluate(&rule, vitals(100), &empty(), Some(&snapshot), Some(SkillReadiness::Usable)),
+            evaluate(
+                &rule,
+                vitals(100),
+                &empty(),
+                Some(&snapshot),
+                Some(SkillReadiness::Usable)
+            ),
             RuleDecision::Eligible
         );
         assert_eq!(
-            evaluate(&rule, vitals(100), &empty(), Some(&snapshot), Some(SkillReadiness::NotUsable)),
+            evaluate(
+                &rule,
+                vitals(100),
+                &empty(),
+                Some(&snapshot),
+                Some(SkillReadiness::NotUsable)
+            ),
             RuleDecision::SkillNotUsable
         );
         config.spirit_offering.nearby_minimum_count = 2;

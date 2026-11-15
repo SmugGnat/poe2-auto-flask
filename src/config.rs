@@ -379,7 +379,10 @@ mod tests {
         .unwrap();
         assert!(configured.poe1.skills.spirit_offering.enabled);
         assert_eq!(configured.poe1.skills.spirit_offering.nearby_radius, 50);
-        assert_eq!(configured.poe1.skills.spirit_offering.nearby_minimum_count, 2);
+        assert_eq!(
+            configured.poe1.skills.spirit_offering.nearby_minimum_count,
+            2
+        );
         for bad in [
             "nearby_radius = 0",
             "nearby_radius = 151",
@@ -388,7 +391,10 @@ mod tests {
             "key = \"F11\"",
         ] {
             let input = format!("[poe1.skills.spirit_offering]\n{bad}\n");
-            assert!(Config::parse(Path::new("test.toml"), &input).is_err(), "{bad}");
+            assert!(
+                Config::parse(Path::new("test.toml"), &input).is_err(),
+                "{bad}"
+            );
         }
         assert!(Config::parse(
             Path::new("test.toml"),
