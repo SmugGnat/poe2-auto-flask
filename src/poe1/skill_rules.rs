@@ -121,7 +121,10 @@ pub fn observations_allow(rule: &SkillRule, vitals: LiveVitals, effects: &Effect
         Condition::LifeAtOrBelow(threshold) => life_at_or_below(vitals, threshold),
         Condition::LifeAtOrAbove(threshold) => life_at_or_above(vitals, threshold),
         Condition::NearbyMonsters { .. } | Condition::NearbyCorpses { .. } => true,
-        Condition::BuffAbsent(name) => !effects.effects.iter().any(|effect| buff_present(effect, name)),
+        Condition::BuffAbsent(name) => !effects
+            .effects
+            .iter()
+            .any(|effect| buff_present(effect, name)),
         Condition::SkillUsable => true,
     })
 }
@@ -208,7 +211,11 @@ pub fn evaluate(
                 }
             }
             Condition::BuffAbsent(name) => {
-                if effects.effects.iter().any(|effect| buff_present(effect, name)) {
+                if effects
+                    .effects
+                    .iter()
+                    .any(|effect| buff_present(effect, name))
+                {
                     return RuleDecision::AlreadyActive;
                 }
             }
@@ -569,9 +576,10 @@ mod tests {
         let mut settings = Poe1SkillsConfig::default();
         settings.spirit_offering.enabled = true;
         let rule = configured_rules(&settings).unwrap().remove(0);
-        assert!(rule.conditions.iter().any(|condition| {
-            matches!(condition, Condition::BuffAbsent(SPIRIT_OFFERING_BUFF))
-        }));
+        assert!(rule
+            .conditions
+            .iter()
+            .any(|condition| { matches!(condition, Condition::BuffAbsent(SPIRIT_OFFERING_BUFF)) }));
         let nearby = NearbySnapshot {
             corpses: vec![NearbyCorpse {
                 distance_squared: 25.0 * 25.0,
@@ -580,7 +588,13 @@ mod tests {
         };
         let mut effects = empty();
         assert_eq!(
-            evaluate(&rule, vitals(100), &effects, Some(&nearby), Some(SkillReadiness::Usable)),
+            evaluate(
+                &rule,
+                vitals(100),
+                &effects,
+                Some(&nearby),
+                Some(SkillReadiness::Usable)
+            ),
             RuleDecision::Eligible
         );
         effects.effects.push(Effect {
@@ -591,14 +605,26 @@ mod tests {
         });
         assert!(!observations_allow(&rule, vitals(100), &effects));
         assert_eq!(
-            evaluate(&rule, vitals(100), &effects, Some(&nearby), Some(SkillReadiness::Usable)),
+            evaluate(
+                &rule,
+                vitals(100),
+                &effects,
+                Some(&nearby),
+                Some(SkillReadiness::Usable)
+            ),
             RuleDecision::AlreadyActive
         );
         // Unlike a timed player buff, an offering can be marked indefinite.
         effects.effects[0].time_left = -1.0;
         assert!(!observations_allow(&rule, vitals(100), &effects));
         assert_eq!(
-            evaluate(&rule, vitals(100), &effects, Some(&nearby), Some(SkillReadiness::Usable)),
+            evaluate(
+                &rule,
+                vitals(100),
+                &effects,
+                Some(&nearby),
+                Some(SkillReadiness::Usable)
+            ),
             RuleDecision::AlreadyActive
         );
         effects.effects.clear();

@@ -22,8 +22,7 @@ use super::nearby::NearbySnapshot;
 use super::rotation::FlaskRotation;
 use super::skill_rules::{
     configured_rules, evaluate, nearby_conditions_met, observations_allow, preconditions_met,
-    requires_nearby, Condition, RuleDecision, SkillAttemptGuard, SkillRule,
-    SPIRIT_OFFERING_BUFF,
+    requires_nearby, Condition, RuleDecision, SkillAttemptGuard, SkillRule, SPIRIT_OFFERING_BUFF,
 };
 use super::skills::SkillId;
 use super::state::{Preflight, TickState};
@@ -230,7 +229,10 @@ impl GameAutomationPolicy for Policy {
         // Keep sampling the player effect while awaiting acknowledgement.
         // If the buff never appears, another Offering key is never sent.
         if self.awaiting_offering_confirmation()
-            && effects.effects.iter().any(|effect| effect.name == SPIRIT_OFFERING_BUFF)
+            && effects
+                .effects
+                .iter()
+                .any(|effect| effect.name == SPIRIT_OFFERING_BUFF)
         {
             if let Some(attempt) = self.skill_attempts.get_mut(&SkillId::SpiritOffering) {
                 attempt.observe_buff(true);
