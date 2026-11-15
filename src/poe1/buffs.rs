@@ -139,53 +139,6 @@ pub fn sample(
     Ok(result)
 }
 
-/// Checks a named effect on an arbitrary entity (not just the player).
-/// Used for nearby friendly minions with the existing bounded Buffs layout.
-/// Cache only definition-name matches, never the entity's live effects.
-pub(crate) fn has_named_effect(
-    process: &Process,
-    component: usize,
-    name: &str,
-    definitions: &mut HashMap<usize, bool>,
-) -> io::Result<bool> {
-    let header = process.read_bytes(component + BUFFS_EFFECTS, 16)?;
-    let first = u64_at(&header, 0) as usize;
-    let last = u64_at(&header, 8) as usize;
-    let count = effect_count(first, last)?;
-    if count == 0 {
-        return Ok(false);
-    }
-    let pointers = process.read_bytes(first, count * 8)?;
-    for pointer in pointers.chunks_exact(8) {
-        let at = u64_at(pointer, 0) as usize;
-        if !plausible_ptr(at) {
-            return Err(invalid("PoE1 minion buff vector contains invalid entry"));
-        }
-        let definition = super::read_ptr(process, at + STATUS_DEFINITION)?;
-        if definition == 0 {
-            continue;
-        }
-        if !plausible_ptr(definition) {
-            return Err(invalid("PoE1 minion buff definition pointer invalid"));
-        }
-        // This helper currently has one caller and one fixed target buff.
-        let found = if let Some(found) = definitions.get(&definition) {
-            *found
-        } else {
-            let found = read_definition(process, definition)?.name == name;
-            if definitions.len() >= MAX_DEFINITIONS {
-                definitions.clear();
-            }
-            definitions.insert(definition, found);
-            found
-        };
-        if found {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
 fn flask_slot(
     kind: u8,
     source: u32,

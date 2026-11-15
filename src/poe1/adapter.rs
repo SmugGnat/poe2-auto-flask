@@ -99,13 +99,8 @@ impl Adapter {
             .sample_many(process, &self.probe, requested)
     }
 
-    pub fn nearby(
-        &mut self,
-        process: &Process,
-        observe_offering: bool,
-    ) -> io::Result<NearbySnapshot> {
-        self.nearby_cache
-            .sample(process, &self.probe, observe_offering)
+    pub fn nearby(&mut self, process: &Process) -> io::Result<NearbySnapshot> {
+        self.nearby_cache.sample(process, &self.probe)
     }
 
     pub fn area(&mut self, process: &Process) -> io::Result<&AreaInfo> {

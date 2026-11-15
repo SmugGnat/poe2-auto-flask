@@ -22,7 +22,6 @@ pub struct TickState {
     animation: Option<i32>,
     skills: Option<BTreeMap<SkillId, SkillReadiness>>,
     nearby: Option<NearbySnapshot>,
-    nearby_observed_offering: bool,
 }
 
 impl TickState {
@@ -42,7 +41,6 @@ impl TickState {
             animation: None,
             skills: None,
             nearby: None,
-            nearby_observed_offering: false,
         })
     }
 
@@ -123,11 +121,9 @@ impl TickState {
         &mut self,
         session: &mut GameSession,
         process: &Process,
-        observe_offering: bool,
     ) -> io::Result<&NearbySnapshot> {
-        if self.nearby.is_none() || (observe_offering && !self.nearby_observed_offering) {
-            self.nearby = Some(session.poe1_nearby(process, observe_offering)?);
-            self.nearby_observed_offering = observe_offering;
+        if self.nearby.is_none() {
+            self.nearby = Some(session.poe1_nearby(process)?);
         }
         Ok(self.nearby.as_ref().expect("nearby was sampled"))
     }

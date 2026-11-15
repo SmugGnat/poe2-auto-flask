@@ -447,32 +447,19 @@ after manually casting before relying on automatic renewal. Supporting
 minion-only offering status would require extending the reader to observe
 minion buffs or the Offering effect object; this patch does not guess an
 expiry duration or add extra entity scans.
+## Spirit Offering buff gate and interrupted cast retry (develop)
 
-## Offering buff observation through nearby minions (develop)
+A live PoE1 debug snapshot confirms `offering_spirit` in the **player's**
+Buffs component when the offering is active. Spirit Offering now requires
+`BuffAbsent("offering_spirit")`, alongside its existing corpse-count and
+Actor readiness conditions. The presence of that buff blocks another cast,
+including when the status has a non-timed duration field.
 
-Spirit Offering is an Offering object that grants `offering_spirit` to
-minions, but the player-only Buffs reader often cannot see it. The policy now
-reuses the same 750 ms awake-entity scan to inspect a **bounded set of nearby
-friendly, living monster entities** (up to 16 with readable Buffs components)
-for the exact status name. This monitoring is enabled only while the Spirit
-Offering preset is configured; it adds no second tree traversal.
-
-The monitor returns `ACTIVE`, `ABSENT` or `UNKNOWN`: it reports `ABSENT`
-only when at least one nearby minion's status was inspected without error and
-none of the eligible nearby minions were skipped or left uninspected. Missing
-components, read errors, a witness-budget overflow or no nearby friendly
-minions produce `UNKNOWN` rather than fabricated absence. Presence of the
-effect on **any** monitored minion blocks the cast.
-
-The post-cast safeguard still requires **positive acknowledgement**, now from
-**either the player or an affected minion**. While awaiting acknowledgement,
-the helper continues the normal throttled nearby scan even when there are no
-corpses. Once the status has appeared, subsequent nearby snapshots can see it
-disappear and permit recasting when the normal corpse, skill readiness, key
-and safety conditions are met. No fixed duration guess is used.
-
-Debug with `--game poe1 --debug --nearby` and look for
-`Spirit Offering on nearby minions: ACTIVE/ABSENT/UNKNOWN` before and after
-manually casting. If the status remains UNKNOWN or never becomes ACTIVE, the
-reader cannot safely confirm a completed cast; the acknowledgment latch will
-still prevent another automatic attempt until explicitly disarmed/rearmed.
+The attempted-cast acknowledgement latch has been removed: an offering cast
+can be interrupted by movement or another skill, in which case there is no
+buff to acknowledge. The existing **1-second per-skill attempt interval** now
+allows another attempt whenever corpses are nearby, the skill is usable,
+the buff is absent, and normal safety/preflight checks still pass. After
+a successful cast, the visible buff blocks all further attempts until it
+disappears. There is no fixed duration guess or minion buff scan. All
+existing corpse proximity sampling continues to reuse the 750 ms cache.

@@ -13,7 +13,7 @@ use super::skills::{SkillId, SkillReadiness};
 
 pub const MOLTEN_SHELL_BUFF: &str = "molten_shell_shield";
 pub const BLOOD_RAGE_BUFF: &str = "blood_rage";
-/// PoEDB Buffs.dat identifier; Offering statuses can be non-timed.
+/// Verified in the player's PoE1 Buffs snapshot during live Spirit Offering.
 pub const SPIRIT_OFFERING_BUFF: &str = "offering_spirit";
 const MIN_ATTEMPT_GAP: Duration = Duration::from_secs(1);
 
@@ -121,10 +121,9 @@ pub fn observations_allow(rule: &SkillRule, vitals: LiveVitals, effects: &Effect
         Condition::LifeAtOrBelow(threshold) => life_at_or_below(vitals, threshold),
         Condition::LifeAtOrAbove(threshold) => life_at_or_above(vitals, threshold),
         Condition::NearbyMonsters { .. } | Condition::NearbyCorpses { .. } => true,
-        Condition::BuffAbsent(name) => !effects
-            .effects
-            .iter()
-            .any(|effect| buff_present(effect, name)),
+        Condition::BuffAbsent(name) => !effects.effects.iter().any(|effect| {
+            buff_present(effect, name)
+        }),
         Condition::SkillUsable => true,
     })
 }
@@ -154,8 +153,7 @@ pub fn nearby_conditions_met(rule: &SkillRule, nearby: Option<&NearbySnapshot>) 
             (1..=150).contains(&radius)
                 && (1..=512).contains(&minimum_count)
                 && nearby.is_some_and(|snapshot| {
-                    snapshot.offering_on_minions != Some(true)
-                        && snapshot.corpses_at(f32::from(radius)) >= usize::from(minimum_count)
+                    snapshot.corpses_at(f32::from(radius)) >= usize::from(minimum_count)
                 })
         }
         _ => true,
@@ -207,19 +205,12 @@ pub fn evaluate(
                 }
             }
             Condition::NearbyCorpses { .. } => {
-                if nearby.is_some_and(|snapshot| snapshot.offering_on_minions == Some(true)) {
-                    return RuleDecision::AlreadyActive;
-                }
                 if !nearby_conditions_met(rule, nearby) {
                     return RuleDecision::NotEnoughNearbyCorpses;
                 }
             }
             Condition::BuffAbsent(name) => {
-                if effects
-                    .effects
-                    .iter()
-                    .any(|effect| buff_present(effect, name))
-                {
+                if effects.effects.iter().any(|effect| buff_present(effect, name)) {
                     return RuleDecision::AlreadyActive;
                 }
             }
@@ -235,6 +226,8 @@ pub fn evaluate(
     RuleDecision::Eligible
 }
 
+/// A visible offering remains active even when the status has no finite
+/// countdown. Other timed buff rules retain their original duration semantics.
 fn buff_present(effect: &super::buffs::Effect, name: &str) -> bool {
     effect.name == name
         && (name == SPIRIT_OFFERING_BUFF
@@ -266,38 +259,12 @@ fn life_at_or_above(vitals: LiveVitals, threshold: u8) -> bool {
 pub struct SkillAttemptGuard {
     last_sent: Option<Instant>,
     retry_after: Option<Instant>,
-    /// Offering is blocked after dispatch until a real player buff is seen.
-    /// No observed buff means no repeat, even after the 1-second interval.
-    awaiting_buff_confirmation: bool,
 }
 impl SkillAttemptGuard {
     pub fn ready(&self, now: Instant) -> bool {
-        !self.awaiting_buff_confirmation
-            && self
-                .last_sent
-                .is_none_or(|sent| now.saturating_duration_since(sent) >= MIN_ATTEMPT_GAP)
+        self.last_sent
+            .is_none_or(|sent| now.saturating_duration_since(sent) >= MIN_ATTEMPT_GAP)
             && self.retry_after.is_none_or(|at| now >= at)
-    }
-
-    pub fn awaiting_buff_confirmation(&self) -> bool {
-        self.awaiting_buff_confirmation
-    }
-
-    /// An unacknowledged cast cannot repeat automatically.
-    pub fn mark_awaiting_buff(&mut self, sent_at: Instant) {
-        self.mark(sent_at);
-        self.awaiting_buff_confirmation = true;
-    }
-
-    pub fn observe_buff(&mut self, present: bool) {
-        if present {
-            self.awaiting_buff_confirmation = false;
-        }
-    }
-
-    /// Allows an explicit F11 disarm/rearm to retry a non-confirmed cast.
-    pub fn clear_confirmation(&mut self) {
-        self.awaiting_buff_confirmation = false;
     }
     pub fn mark(&mut self, sent_at: Instant) {
         self.last_sent = Some(sent_at);
@@ -575,80 +542,72 @@ mod tests {
     }
 
     #[test]
-    fn offering_does_not_cast_while_its_buff_is_visible() {
+    fn spirit_offering_buff_blocks_recasts_until_it_disappears() {
         use super::super::nearby::NearbyCorpse;
-        let mut settings = Poe1SkillsConfig::default();
-        settings.spirit_offering.enabled = true;
-        let rule = configured_rules(&settings).unwrap().remove(0);
-        assert!(rule
-            .conditions
-            .iter()
-            .any(|condition| { matches!(condition, Condition::BuffAbsent(SPIRIT_OFFERING_BUFF)) }));
+
+        let mut config = Poe1SkillsConfig::default();
+        config.spirit_offering.enabled = true;
+        let rule = configured_rules(&config).unwrap().remove(0);
+        assert!(rule.conditions.iter().any(|condition| {
+            matches!(condition, Condition::BuffAbsent(SPIRIT_OFFERING_BUFF))
+        }));
         let nearby = NearbySnapshot {
             corpses: vec![NearbyCorpse {
-                distance_squared: 25.0 * 25.0,
+                distance_squared: 20.0 * 20.0,
             }],
             ..NearbySnapshot::default()
         };
         let mut effects = empty();
+        let ready = Some(SkillReadiness::Usable);
+        assert!(observations_allow(&rule, vitals(100), &effects));
         assert_eq!(
-            evaluate(
-                &rule,
-                vitals(100),
-                &effects,
-                Some(&nearby),
-                Some(SkillReadiness::Usable)
-            ),
+            evaluate(&rule, vitals(100), &effects, Some(&nearby), ready),
             RuleDecision::Eligible
         );
         effects.effects.push(Effect {
             name: SPIRIT_OFFERING_BUFF.into(),
             flask_slot: None,
             buff_type: 2,
-            time_left: 7.5,
+            time_left: 6.0,
         });
         assert!(!observations_allow(&rule, vitals(100), &effects));
         assert_eq!(
-            evaluate(
-                &rule,
-                vitals(100),
-                &effects,
-                Some(&nearby),
-                Some(SkillReadiness::Usable)
-            ),
+            evaluate(&rule, vitals(100), &effects, Some(&nearby), ready),
             RuleDecision::AlreadyActive
         );
-        // Unlike a timed player buff, an offering can be marked indefinite.
+        // Offering buffs can have non-timed status data.
         effects.effects[0].time_left = -1.0;
         assert!(!observations_allow(&rule, vitals(100), &effects));
         assert_eq!(
-            evaluate(
-                &rule,
-                vitals(100),
-                &effects,
-                Some(&nearby),
-                Some(SkillReadiness::Usable)
-            ),
+            evaluate(&rule, vitals(100), &effects, Some(&nearby), ready),
             RuleDecision::AlreadyActive
         );
+        // Expiration removes the buff from the player's snapshot.
         effects.effects.clear();
         assert!(observations_allow(&rule, vitals(100), &effects));
+        assert_eq!(
+            evaluate(&rule, vitals(100), &effects, Some(&nearby), ready),
+            RuleDecision::Eligible
+        );
     }
 
     #[test]
-    fn nearby_minion_buff_also_blocks_offering_recast() {
+    fn interrupted_spirit_offering_can_retry_after_one_second_without_buff() {
         use super::super::nearby::NearbyCorpse;
         let mut config = Poe1SkillsConfig::default();
         config.spirit_offering.enabled = true;
         let rule = configured_rules(&config).unwrap().remove(0);
-        let mut nearby = NearbySnapshot {
+        let nearby = NearbySnapshot {
             corpses: vec![NearbyCorpse {
-                distance_squared: 10.0 * 10.0,
+                distance_squared: 12.0 * 12.0,
             }],
-            offering_on_minions: Some(true),
             ..NearbySnapshot::default()
         };
-        assert!(!nearby_conditions_met(&rule, Some(&nearby)));
+        let mut guard = SkillAttemptGuard::default();
+        let start = Instant::now();
+        guard.mark(start); // Key dispatched, but the game interrupted the cast.
+        assert!(!guard.ready(start + Duration::from_millis(999)));
+        assert!(guard.ready(start + Duration::from_secs(1)));
         assert_eq!(
             evaluate(
                 &rule,
@@ -657,33 +616,11 @@ mod tests {
                 Some(&nearby),
                 Some(SkillReadiness::Usable)
             ),
-            RuleDecision::AlreadyActive
+            RuleDecision::Eligible
         );
-        nearby.offering_on_minions = Some(false);
-        assert!(nearby_conditions_met(&rule, Some(&nearby)));
-        nearby.offering_on_minions = None;
-        // Unknown state can permit the first cast, but acknowledgement still
-        // prevents repeating it without positive observation.
-        assert!(nearby_conditions_met(&rule, Some(&nearby)));
-    }
-
-    #[test]
-    fn offering_needs_positive_acknowledgement_before_next_cast() {
-        let mut attempt = SkillAttemptGuard::default();
-        let start = Instant::now();
-        assert!(attempt.ready(start));
-        attempt.mark_awaiting_buff(start);
-        assert!(attempt.awaiting_buff_confirmation());
-        attempt.observe_buff(false);
-        assert!(!attempt.ready(start + Duration::from_secs(30)));
-        attempt.observe_buff(true);
-        assert!(!attempt.awaiting_buff_confirmation());
-        assert!(!attempt.ready(start + Duration::from_millis(900)));
-        assert!(attempt.ready(start + Duration::from_secs(1)));
-        attempt.mark_awaiting_buff(start + Duration::from_secs(2));
-        assert!(!attempt.ready(start + Duration::from_secs(30)));
-        attempt.clear_confirmation();
-        assert!(attempt.ready(start + Duration::from_secs(30)));
+        guard.mark(start + Duration::from_secs(1));
+        assert!(!guard.ready(start + Duration::from_millis(1500)));
+        assert!(guard.ready(start + Duration::from_secs(2)));
     }
 
     #[test]
