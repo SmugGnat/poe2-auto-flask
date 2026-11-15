@@ -104,7 +104,8 @@ impl Adapter {
         process: &Process,
         observe_offering: bool,
     ) -> io::Result<NearbySnapshot> {
-        self.nearby_cache.sample(process, &self.probe, observe_offering)
+        self.nearby_cache
+            .sample(process, &self.probe, observe_offering)
     }
 
     pub fn area(&mut self, process: &Process) -> io::Result<&AreaInfo> {

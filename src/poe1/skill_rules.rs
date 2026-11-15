@@ -155,8 +155,7 @@ pub fn nearby_conditions_met(rule: &SkillRule, nearby: Option<&NearbySnapshot>) 
                 && (1..=512).contains(&minimum_count)
                 && nearby.is_some_and(|snapshot| {
                     snapshot.offering_on_minions != Some(true)
-                        && snapshot.corpses_at(f32::from(radius))
-                            >= usize::from(minimum_count)
+                        && snapshot.corpses_at(f32::from(radius)) >= usize::from(minimum_count)
                 })
         }
         _ => true,
