@@ -121,9 +121,10 @@ pub fn observations_allow(rule: &SkillRule, vitals: LiveVitals, effects: &Effect
         Condition::LifeAtOrBelow(threshold) => life_at_or_below(vitals, threshold),
         Condition::LifeAtOrAbove(threshold) => life_at_or_above(vitals, threshold),
         Condition::NearbyMonsters { .. } | Condition::NearbyCorpses { .. } => true,
-        Condition::BuffAbsent(name) => !effects.effects.iter().any(|effect| {
-            buff_present(effect, name)
-        }),
+        Condition::BuffAbsent(name) => !effects
+            .effects
+            .iter()
+            .any(|effect| buff_present(effect, name)),
         Condition::SkillUsable => true,
     })
 }
@@ -210,7 +211,11 @@ pub fn evaluate(
                 }
             }
             Condition::BuffAbsent(name) => {
-                if effects.effects.iter().any(|effect| buff_present(effect, name)) {
+                if effects
+                    .effects
+                    .iter()
+                    .any(|effect| buff_present(effect, name))
+                {
                     return RuleDecision::AlreadyActive;
                 }
             }
@@ -548,9 +553,10 @@ mod tests {
         let mut config = Poe1SkillsConfig::default();
         config.spirit_offering.enabled = true;
         let rule = configured_rules(&config).unwrap().remove(0);
-        assert!(rule.conditions.iter().any(|condition| {
-            matches!(condition, Condition::BuffAbsent(SPIRIT_OFFERING_BUFF))
-        }));
+        assert!(rule
+            .conditions
+            .iter()
+            .any(|condition| { matches!(condition, Condition::BuffAbsent(SPIRIT_OFFERING_BUFF)) }));
         let nearby = NearbySnapshot {
             corpses: vec![NearbyCorpse {
                 distance_squared: 20.0 * 20.0,

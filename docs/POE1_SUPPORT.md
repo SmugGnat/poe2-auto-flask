@@ -420,33 +420,6 @@ candidate does not guarantee the current cursor can target it. Cast success,
 targeting and interaction with active offering buffs need in-game testing
 before further policy changes.
 
-## Spirit Offering buff gate (develop)
-
-PoEDB exposes `offering_spirit` as the Spirit Offering status ID. The skill
-policy now includes `BuffAbsent("offering_spirit")` so a **visible active
-player buff blocks casting**, independently of corpse count or Actor readiness.
-Offering statuses are considered active while their buff definition appears,
-including non-timed (negative time-left) effects.
-
-**Important:** the current `Buffs` reader samples the player only. Spirit
-Offering normally benefits minions; without Mistress of Sacrifice or another
-effect applying Offerings to the player, `offering_spirit` may never appear in
-the player's status vector even if the Offering is active.
-
-To prevent an unobserved buff from producing 1-second casting spam, a successful
-Spirit Offering key dispatch also enters **awaiting buff confirmation**.
-The helper will not automatically send the skill a second time until it
-has actually observed `offering_spirit` on the player. Once acknowledged,
-the ordinary buff-absent condition blocks every subsequent cast for as long
-as the status remains present, regardless of buff duration. If no buff is
-observable, no more keys are sent (fail closed); F11 disarm/rearm explicitly
-resets the confirmation latch for another manual test.
-
-Use `--game poe1 --debug` and check `Spirit Offering ... player buff visible`
-after manually casting before relying on automatic renewal. Supporting
-minion-only offering status would require extending the reader to observe
-minion buffs or the Offering effect object; this patch does not guess an
-expiry duration or add extra entity scans.
 ## Spirit Offering buff gate and interrupted cast retry (develop)
 
 A live PoE1 debug snapshot confirms `offering_spirit` in the **player's**
@@ -457,7 +430,7 @@ including when the status has a non-timed duration field.
 
 The attempted-cast acknowledgement latch has been removed: an offering cast
 can be interrupted by movement or another skill, in which case there is no
-buff to acknowledge. The existing **1-second per-skill attempt interval** now
+buff to acknowledge. The existing **1-second per-skill attempt interval**
 allows another attempt whenever corpses are nearby, the skill is usable,
 the buff is absent, and normal safety/preflight checks still pass. After
 a successful cast, the visible buff blocks all further attempts until it
