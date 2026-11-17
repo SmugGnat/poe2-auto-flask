@@ -1,3 +1,8 @@
+// Rust 1.100 Clippy prefers alternate byte-buffer iteration and divisibility
+// expressions. Preserve the already-tested memory-reader behavior during this
+// toolchain-only upgrade; revisit these mechanical cleanups separately.
+#![allow(clippy::chunks_exact_to_as_chunks, clippy::manual_is_multiple_of)]
+
 mod action;
 mod area;
 mod bindings;
