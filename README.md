@@ -168,10 +168,16 @@ If a game update changes required memory structures, the helper pauses rather th
 <details>
 <summary><strong>Building from source</strong></summary>
 
-The Windows helper requires Rust 1.85 or newer and the Windows x64 MSVC target.
+Both crates use **Rust 1.100.0**, pinned by the repository's root `rust-toolchain.toml`.
+Install [rustup](https://rustup.rs/) first; running Cargo from the repository (including
+`linux-launcher/`) automatically selects the pinned toolchain and its Clippy/rustfmt
+components. For a native Windows build, the Windows x64 MSVC target and Visual Studio
+C++ build tools are also required.
 
 ```text
-rustup target add x86_64-pc-windows-msvc
+rustup toolchain install 1.100.0
+rustup target add --toolchain 1.100.0 x86_64-pc-windows-msvc
+rustc --version
 cargo fmt --check
 cargo clippy --locked --target x86_64-pc-windows-msvc --all-targets -- -D warnings
 cargo test --locked --target x86_64-pc-windows-msvc

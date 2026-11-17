@@ -62,6 +62,15 @@ The future GUI should read/write the same configuration rather than introducing 
 - Town/hideout/focus gating and transient `WAITING FOR GAME STATE` behavior must remain safe.
 - Closing the future overlay should not implicitly terminate automation; quitting the app must be a separate explicit action.
 
+## Rust toolchain
+
+- Both crates require Rust 1.100.0 and inherit the root `rust-toolchain.toml`.
+- Keep the Windows, Linux-launcher, and release workflow toolchains aligned
+  when upgrading. Check `--locked` builds on both platforms before changing
+  dependency versions or introducing Slint.
+- Keep the Rust edition and existing runtime behavior unchanged during
+  toolchain-only updates.
+
 ## Packaging
 
 Current public release assets are:

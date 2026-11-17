@@ -7,6 +7,7 @@ on:
       - "src/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "rust-toolchain.toml"
       - "config.example.toml"
       - "linux-launcher/**"
       - "packaging/linux/**"
@@ -19,6 +20,7 @@ on:
       - "src/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "rust-toolchain.toml"
       - "config.example.toml"
       - "linux-launcher/**"
       - "packaging/linux/**"
@@ -88,6 +90,11 @@ jobs:
               src/*|Cargo.toml|Cargo.lock|config.example.toml)
                 windows_changed=true
                 ;;
+              rust-toolchain.toml)
+                windows_changed=true
+                linux_changed=true
+                appimage=true
+                ;;
               linux-launcher/*)
                 linux_changed=true
                 appimage=true
@@ -130,13 +137,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install Rust 1.85
-        uses: dtolnay/rust-toolchain@1.85.0
+      - name: Install Rust 1.100.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Check MSRV
-        run: cargo check --locked --target x86_64-pc-windows-msvc
+      - name: Check pinned Rust version
+        run: |
+          rustc --version
+          cargo check --locked --target x86_64-pc-windows-msvc
 
   windows-x64:
     runs-on: windows-latest
@@ -147,8 +156,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust 1.100.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           targets: x86_64-pc-windows-msvc
           components: clippy, rustfmt
@@ -193,8 +202,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install Rust 1.85
-        uses: dtolnay/rust-toolchain@1.85.0
+      - name: Install Rust 1.100.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: clippy, rustfmt
 
