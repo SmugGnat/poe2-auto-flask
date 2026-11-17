@@ -104,7 +104,7 @@ PoE2 live validation remains deferred because PoE2 is not installed.
 
 ## Regression and promotion boundaries
 
-CI checks formatting, Clippy, Rust 1.85 compatibility, Windows helper unit
+CI checks formatting, Clippy, Rust 1.100.0 compatibility, Windows helper unit
 tests and a Windows release build; Linux launcher tests/builds are conditional
 on changes to the launcher or packaging. These tests cannot certify game
 memory offsets after future game updates. Do not modify `main`, publish a

@@ -76,7 +76,7 @@ input dispatcher unchanged. The tests added here are regression-only:
   backwards-compatible `--auto`, explicit game overrides, mixed/unknown
   Steam AppIDs and ambiguous simultaneous-game discovery.
 - **Build:** the feature branch's CI checks Rust formatting, Clippy and unit
-  tests for both the Windows helper and Linux launcher, Rust 1.85 MSRV,
+  tests for both the Windows helper and Linux launcher, Rust 1.100.0 pinned toolchain,
   release binaries and AppImage packaging.
 
 **Performance/code-path review:** the common engine uses one 100ms scheduling
@@ -331,7 +331,7 @@ The engine uses a single cached census for all proximity-enabled utility types, 
 
 ## Build and test
 
-Windows helper CI (Rust 1.85 MSRV): `cargo fmt --all -- --check`, `cargo clippy --locked --target x86_64-pc-windows-msvc --all-targets -- -D warnings`, `cargo test --locked --target x86_64-pc-windows-msvc`, and a release build.
+Windows helper CI (Rust 1.100.0 pinned toolchain): `cargo fmt --all -- --check`, `cargo clippy --locked --target x86_64-pc-windows-msvc --all-targets -- -D warnings`, `cargo test --locked --target x86_64-pc-windows-msvc`, and a release build.
 
 Linux launcher CI: formatting, Clippy, unit tests, release build and AppImage packaging. The final successful multi-branch development build before consolidation was GitHub Actions run **42961739151** (56 Windows helper tests and 7 Linux launcher tests passed).
 
