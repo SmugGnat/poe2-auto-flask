@@ -33,14 +33,14 @@ demand-driven and fail-closed.
 - The PoE1 memory reader checks the Game States signature, in-game state, local-player identity, and character metadata. It reads usable (unreserved) Life/Mana, ES, the five equipped flask paths and charges, player effects, chat state and optionally Actor animation.
 - Starting milestone 1 was **diagnostics-only**. The same backend now powers opt-in automated normal key input. Memory access remains read-only, without injection, kernel drivers or memory writes.
 
-Selected **PoE1 3.30 candidate** offsets extracted from the supplied updated GameHelper `GameOffsets.dll` (2026-11-13). The archived C# reference is on branch `reference/gamehelper-poe1`, under `references/GameHelper/`. Values are metadata-derived and **not yet live-validated**:
+Selected **PoE1 3.30 candidate** offsets extracted from the supplied updated GameHelper `GameOffsets.dll` (2026-11-13), with the UI/chat fields refreshed from the newer DLL (2026-11-18). The archived C# reference is on branch `reference/gamehelper-poe1`, under `references/GameHelper/`. Values are metadata-derived and **not yet live-validated**:
 
 | Structure | Offset |
 | --- | --- |
 | GameState → current state vector / states buffer | 0x10 / 0x50 |
 | InGameState → AreaInstance | 0x218 |
 | InGameState → WorldData | 0x270 |
-| InGameState → in-game UI | 0xBE0 |
+| InGameState → in-game UI | 0xBE8 |
 | AreaInstance → LocalPlayerStruct | 0x978; LocalPlayer +0x08 |
 | AreaInstance → awake entities | 0xA58 |
 | WorldAreaDetails → WorldArea row pointer | 0xC0 |
@@ -50,7 +50,7 @@ Selected **PoE1 3.30 candidate** offsets extracted from the supplied updated Gam
 | Buffs → effects vector | 0x160 |
 | Actor → animation ID | 0x248, Run = 4 |
 | ActiveSkillDetails → GrantedEffectsPerLevelDatRow | 0x58 |
-| In-game UI → chat parent / chat background color | 0x568 / 0x2B4 |
+| In-game UI → chat parent / chat background color | 0x570 / 0x2BC |
 
 **Provenance:** The originally supplied GameHelper source snapshot had no verified original repository commit, upstream URL, or license. To avoid redistributing unverified third-party source in the compiled application branch, `develop` **does not include** the C# reference tree; it is archived separately on `reference/gamehelper-poe1`. This project does not compile or link GameHelper. Relevant observations are independently implemented in Rust and documented here. Verify provenance and any attribution/licensing obligations before redistributing that original C# source.
 

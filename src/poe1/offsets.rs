@@ -1,5 +1,6 @@
 //! PoE1 offsets from GameHelper structures. The 3.30 candidates below were
-//! extracted from updated GameOffsets.dll metadata (2026-11-13); live verification is required.
+//! extracted from updated GameOffsets.dll metadata (2026-11-13); UI/chat fields
+//! refreshed from the 2026-11-18 DLL. Live verification is still required.
 //! Older C# reference: branch reference/gamehelper-poe1, references/GameHelper/GameOffsets.
 pub(super) const GAME_STATE_PATTERN: [Option<u8>; 16] = [
     Some(0x48),
@@ -59,9 +60,9 @@ pub(super) const STATUS_FLASK_SLOT: usize = 0x42;
 pub(super) const DEFINITION_BUFF_TYPE: usize = 0x67;
 
 // From chat.rs:
-pub(super) const IN_GAME_UI: usize = 0xBE0;
-pub(super) const CHAT_PARENT: usize = 0x568;
-pub(super) const CHAT_BACKGROUND_COLOR: usize = 0x2B4;
+pub(super) const IN_GAME_UI: usize = 0xBE8;
+pub(super) const CHAT_PARENT: usize = 0x570;
+pub(super) const CHAT_BACKGROUND_COLOR: usize = 0x2BC;
 
 // From movement.rs:
 pub(super) const ACTOR_ANIMATION_ID: usize = 0x248;
@@ -98,4 +99,16 @@ pub(super) mod nearby {
     pub(crate) const POSITIONED_REACTION: usize = 0x1E0;
     pub(crate) const TARGETABLE_FLAG: usize = 0x50;
     pub(crate) const MONSTER_RARITY: usize = 0x90 + 0xB4;
+}
+
+#[cfg(test)]
+mod november_2026_ui_offset_tests {
+    use super::*;
+
+    #[test]
+    fn ui_and_chat_offsets_match_2026_11_18_gameoffsets_dll() {
+        assert_eq!(IN_GAME_UI, 0xBE8);
+        assert_eq!(CHAT_PARENT, 0x570);
+        assert_eq!(CHAT_BACKGROUND_COLOR, 0x2BC);
+    }
 }
