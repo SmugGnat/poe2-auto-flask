@@ -78,6 +78,6 @@ mod tests {
     fn source_world_offsets_are_independent_of_poe2() {
         assert_eq!(super::IN_GAME_WORLD, 0x270);
         assert_eq!(super::WORLD_AREA_DETAILS, 0xA0);
-        assert_eq!(super::WORLD_DETAILS_ROW, 0xB0);
+        assert_eq!(super::WORLD_DETAILS_ROW, 0xC0);
     }
 }

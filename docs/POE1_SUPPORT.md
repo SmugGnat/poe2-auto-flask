@@ -32,18 +32,23 @@ demand-driven and fail-closed.
 - The PoE1 memory reader checks the Game States signature, in-game state, local-player identity, and character metadata. It reads usable (unreserved) Life/Mana, ES, the five equipped flask paths and charges, player effects, chat state and optionally Actor animation.
 - Starting milestone 1 was **diagnostics-only**. The same backend now powers opt-in automated normal key input. Memory access remains read-only, without injection, kernel drivers or memory writes.
 
-Selected offsets transcribed from a GameHelper C# snapshot (comments for the 2026-09-05 PoE1 executable):
+Selected offsets originally transcribed from the GameHelper C# reference (2026-09-05 executable); changed fields below were refreshed from the compiled `GameOffsets.dll` FieldLayout metadata on **2026-11-18**. This is a static DLL comparison, not live game validation:
 
 | Structure | Offset |
 | --- | --- |
+| GameState → current-state vector / state array | 0x10 / 0x50 |
 | InGameState → AreaInstance | 0x218 |
 | InGameState → WorldData | 0x270 |
-| InGameState → in-game UI | 0x978 |
-| AreaInstance → LocalPlayerStruct | 0x968; LocalPlayer +0x08 |
+| InGameState → in-game UI | 0xBE8 |
+| AreaInstance → LocalPlayerStruct | 0x978; LocalPlayer +0x08 |
+| AreaInstance → awake entities | 0xA58 |
 | Life component → Life / Mana / ES | 0x178 / 0x1C8 / 0x210 |
-| ServerData → player inventories | 0xC9F8 |
+| WorldAreaDetails → row pointer | 0xC0 |
+| ServerData → player inventories | 0xCE70 (0x2170 + SKIP 0xAD00) |
 | Inventory → equipped item vector | 0x170 |
 | Buffs → effects vector | 0x160 |
+| IngameUi → chat parent | 0x570 |
+| Chat UI element → background colour | 0x2BC |
 | Actor → animation ID | 0x248, Run = 4 |
 
 **Provenance:** The originally supplied GameHelper source snapshot had no verified original repository commit, upstream URL, or license. To avoid redistributing unverified third-party source, the consolidated branch **does not include** its approximately 3.6 MB C# reference tree. This project does not compile or link GameHelper. Relevant observations are independently implemented in Rust and documented here. Verify provenance and any attribution/licensing obligations before redistributing that original C# source.
