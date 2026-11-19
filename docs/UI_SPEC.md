@@ -239,7 +239,7 @@ Candidate fields:
 - detected Life and Mana bindings;
 - Life and Mana flask current charges/cost where useful.
 
-Do not expose raw memory addresses or implementation-level pointer data in the normal UI.
+Keep the normal UI focused on user-facing settings and status.
 
 ## Bottom telemetry strip
 
