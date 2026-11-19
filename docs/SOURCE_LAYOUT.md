@@ -38,10 +38,10 @@ readers. See [UI architecture](../app-ui/README.md) for frontend ownership.
 
 ## Game-specific modules
 
-Both games use `mod.rs`, `reader.rs`, `offsets.rs`, `layout.rs`, `adapter.rs`,
+Both games use `mod.rs`, `reader.rs`, `adapter.rs`,
 `area.rs`, `flasks.rs`, `buffs.rs`, `bindings.rs`, `automation.rs` and `debug.rs`.
-These names express matching responsibilities, not interchangeable raw
-layouts or policies. Two-slot PoE2 and five-slot PoE1 behavior stay distinct.
+These modules have matching responsibilities and game-specific behavior.
+Two-slot PoE2 and five-slot PoE1 behavior stay distinct.
 
 PoE1 additionally owns utility/skill configuration, charge-cost/recovery
 classification, duplicate rotation, chat, movement, nearby counts, optional

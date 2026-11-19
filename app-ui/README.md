@@ -17,7 +17,7 @@ This file is the UI architecture and behavior reference.
 
 `poe2-auto-flask` is a shared Rust library. `BackendHost` starts the backend
 with bounded Rust channels (eight status snapshots and eight commands).
-Statuses contain owned data, never game pointers or UI handles. Full status
+Statuses contain owned data without sharing backend or UI handles. Full status
 queues retain the latest pending state for later delivery. The UI coalesces
 notifications to avoid an event-loop backlog. There is no separate helper
 process, IPC service, webview or native Linux frontend.
@@ -90,9 +90,8 @@ automation indicators, optional PoE1 name, Life/Mana/Shield and area.
 The bridge opens an independent read-only session through the validated game
 adapters and samples at most **twice per second while visible**. Failed reads
 clear telemetry, with slower retries after attach/read failures. The PoE1
-name uses a bounded Player-component MSVC wide-string read at `0x168`, with
-owner, player identity, descriptor and text validation. A name failure omits
-only the name. No game-memory interpretation is implemented in `.slint`.
+name is validated against the current player before display. A name failure
+omits only the name. Game data is interpreted by the backend, outside `.slint`.
 
 ## Hidden/minimized lifecycle
 

@@ -4,7 +4,7 @@ PoE1 uses an independent validated reader and automation policy within the
 shared Rust backend. It supports five flask slots and opt-in skill presets.
 See [Source layout](SOURCE_LAYOUT.md) for module ownership,
 [Profiles](PROFILES.md) for storage and [UI architecture](../app-ui/README.md)
-for presentation. The implementation is authoritative for current offsets.
+for presentation.
 
 ## Connection and memory safety
 
@@ -16,17 +16,13 @@ directory; an unfamiliar directory prompts for selection in the UI. Debug
 mode retains the console prompt. No dual-parser memory probing is used.
 
 `GameSession` dispatches to separate game adapters. Common vitals use
-`VitalPool`, `LiveVitals` and `GameSnapshot`; raw layouts stay game-specific.
+`VitalPool`, `LiveVitals` and `GameSnapshot`; each game validates its own data.
 The PoE1 adapter owns validated player identity and demand-driven area,
 flask, buff, movement, skill and proximity caches. Required reads validate the
-Game States signature, in-game state, local-player identity and metadata.
+in-game state, local-player identity and metadata.
 Changed identities or memory I/O failures refresh the session. Unknown or
 stale observations cannot authorize input.
 
-Fixed candidates are in `src/poe1/offsets.rs`. Bounded attach/refresh recovery
-in `layout.rs` validates linked structures rather than scanning continuously.
-Game updates can invalidate these candidates despite successful past tests.
-The UI/chat candidates retain the November 18, 2026 update from `develop`: in-game UI `0xBE8`, chat parent `0x570` and chat background `0x2BC`. The offset regression test remains alongside those constants.
 The original C# reference tree is not bundled; see
 [acknowledgements](../ACKNOWLEDGEMENTS.md) for research provenance.
 
@@ -196,5 +192,5 @@ config/profile behavior and dispatch failure paths. User live PoE1/Proton
 testing covers connection, vitals/name/area, binding discovery, common flask
 and nearby rules, configuration changes, focus/area safety and UI/tray
 integration. This does not certify every utility/modifier/build or future
-game offsets. Broader platform checks are deferred; the final external
+game updates. Broader platform checks are deferred; the final external
 performance review follows testing the `develop` CI artifacts.
