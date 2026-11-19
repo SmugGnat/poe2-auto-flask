@@ -3,13 +3,13 @@
 use std::collections::BTreeMap;
 use std::io;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::types::{FlaskType, UniqueFlask};
 use crate::config::{invalid, Config, FlaskConfig};
-use crate::input::KeyBinding;
+use crate::input::{named_key_code, AutomationKey, KeyBinding};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Poe1Config {
     pub utility: Poe1UtilityConfig,
@@ -26,7 +26,7 @@ pub struct Poe1Config {
 
 /// Skill-specific settings remain explicit, rather than forcing every skill to
 /// use a Life threshold or the same conditions.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Poe1SkillsConfig {
     pub molten_shell: MoltenShellConfig,
@@ -34,7 +34,25 @@ pub struct Poe1SkillsConfig {
     pub spirit_offering: SpiritOfferingConfig,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+impl Poe1SkillsConfig {
+    pub fn validate_toggle_key(&self, toggle: AutomationKey) -> io::Result<()> {
+        for (enabled, binding) in [
+            (self.molten_shell.enabled, self.molten_shell.binding()),
+            (self.blood_rage.enabled, self.blood_rage.binding()),
+            (self.spirit_offering.enabled, self.spirit_offering.binding()),
+        ] {
+            if enabled && toggle.conflicts_with(binding?) {
+                return Err(invalid(format!(
+                    "{} is already assigned to an enabled skill. Choose a different automation key or skill keybind.",
+                    toggle.label()
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MoltenShellConfig {
     pub enabled: bool,
@@ -71,7 +89,7 @@ impl MoltenShellConfig {
 
 /// Optional self-damaging buff preset. Nearby monsters are required by
 /// default so Blood Rage doesn't activate automatically while idle.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BloodRageConfig {
     pub enabled: bool,
@@ -123,7 +141,7 @@ impl BloodRageConfig {
 
 /// Corpse-triggered skill. This does not manipulate the mouse or account for
 /// cast duration; the ordinary skill readiness and attempt guard still apply.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SpiritOfferingConfig {
     pub enabled: bool,
@@ -164,29 +182,30 @@ impl SpiritOfferingConfig {
     }
 }
 
-fn skill_binding(key: &str, config_path: &str) -> io::Result<KeyBinding> {
+pub fn skill_binding(key: &str, config_path: &str) -> io::Result<KeyBinding> {
     let key = key.trim().to_ascii_uppercase();
-    let invalid_format = || invalid(format!("{config_path} must be A-Z, 0-9 or F1-F12"));
-    let vk = match key.as_bytes() {
-        [value] if value.is_ascii_uppercase() || value.is_ascii_digit() => u16::from(*value),
-        _ => {
-            let number = key
-                .strip_prefix('F')
-                .and_then(|rest| rest.parse::<u16>().ok())
-                .ok_or_else(invalid_format)?;
-            if !(1..=12).contains(&number) {
-                return Err(invalid_format());
-            }
-            0x6F + number
-        }
+    let invalid_format = || {
+        invalid(format!(
+            "{config_path} must be A-Z, 0-9 or F1-F12 with at most one Ctrl, Shift or Alt modifier"
+        ))
     };
-    if vk == 0x7A {
-        return Err(invalid(format!("{config_path} cannot be F11 (arm toggle)")));
-    }
-    KeyBinding::from_poe(vk, 0)
+    let (key, modifier) = match key.split_once('+') {
+        Some((modifier, key)) => {
+            let modifier = match modifier.trim() {
+                "SHIFT" => 1,
+                "CTRL" => 2,
+                "ALT" => 3,
+                _ => return Err(invalid_format()),
+            };
+            (key.trim(), modifier)
+        }
+        None => (key.as_str(), 0),
+    };
+    let vk = named_key_code(key).ok_or_else(invalid_format)?;
+    KeyBinding::from_poe(vk, modifier)
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Poe1UtilityConfig {
     pub quicksilver: bool,
@@ -235,7 +254,7 @@ impl Poe1UtilityConfig {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Poe1UniqueConfig {
     pub writhing_jar: bool,
@@ -249,14 +268,14 @@ impl Poe1UniqueConfig {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct UniqueConditions {
     pub nearby: Option<NearbyRule>,
 }
 
 /// Ordering is cumulative: Rare permits Rare or Unique, Normal permits all four.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MinimumRarity {
     #[default]
@@ -279,7 +298,7 @@ impl MinimumRarity {
 
 /// A table's presence adds a nearby gate; enabled=false temporarily disables it.
 /// All numeric values use the same grid-unit scale as --debug --nearby.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NearbyRule {
     pub enabled: bool,

@@ -70,8 +70,66 @@ impl KeyBinding {
     }
 }
 
-pub fn master_toggle_down() -> bool {
-    unsafe { (GetAsyncKeyState(VK_F11 as i32) as u16 & 0x8000) != 0 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct AutomationKey(u16);
+
+impl Default for AutomationKey {
+    fn default() -> Self {
+        Self(VK_F11)
+    }
+}
+
+impl AutomationKey {
+    pub fn parse(key: &str) -> io::Result<Self> {
+        named_key_code(key.trim()).map(Self).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Choose a letter, digit, or function key from F1 to F12.",
+            )
+        })
+    }
+
+    pub fn label(self) -> String {
+        key_label(self.0)
+    }
+
+    pub fn conflicts_with(self, binding: KeyBinding) -> bool {
+        self.0 == binding.vk
+    }
+
+    pub fn is_down(self) -> bool {
+        unsafe { (GetAsyncKeyState(i32::from(self.0)) as u16 & 0x8000) != 0 }
+    }
+
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+impl TryFrom<String> for AutomationKey {
+    type Error = io::Error;
+
+    fn try_from(value: String) -> io::Result<Self> {
+        Self::parse(&value)
+    }
+}
+
+impl From<AutomationKey> for String {
+    fn from(value: AutomationKey) -> Self {
+        value.label()
+    }
+}
+
+pub fn named_key_code(key: &str) -> Option<u16> {
+    match key.as_bytes() {
+        [byte] if byte.is_ascii_alphanumeric() => Some(u16::from(byte.to_ascii_uppercase())),
+        [b'F' | b'f', ..] => {
+            let number = key[1..].parse::<u16>().ok()?;
+            (1..=12).contains(&number).then(|| 0x6F + number)
+        }
+        _ => None,
+    }
 }
 
 pub fn is_process_foreground(pid: u32) -> bool {

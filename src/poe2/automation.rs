@@ -128,9 +128,10 @@ pub fn run(
     process: &Process,
     session: GameSession,
     config_manager: &mut ConfigManager,
+    control: &mut crate::runtime::BackendControl,
 ) -> io::Result<()> {
     let policy = Policy::new(process, &session)?;
-    crate::engine::run(process, session, config_manager, policy)
+    crate::engine::run(process, session, config_manager, policy, control)
 }
 
 impl GameAutomationPolicy for Policy {
@@ -138,13 +139,14 @@ impl GameAutomationPolicy for Policy {
         println!("Connected to Path of Exile 2.");
         println!("{}", config.poe2_summary());
         println!("{}", self.bindings.current().summary());
-        println!("Press F11 to arm/disarm while PoE2 is focused. Ctrl+C exits.\n");
     }
 
     fn on_config_reload(&mut self, event: ConfigReload, config: &Config) {
         match event {
             ConfigReload::Unchanged => {}
-            ConfigReload::Reloaded => println!("Config reloaded: {}", config.poe2_summary()),
+            ConfigReload::Reloaded | ConfigReload::ProfileSwitched => {
+                println!("Config reloaded: {}", config.poe2_summary())
+            }
             ConfigReload::Removed => {
                 println!("Config: config.toml removed; keeping previous settings.");
             }
@@ -179,8 +181,13 @@ impl GameAutomationPolicy for Policy {
         }
     }
 
-    fn bindings_pause(&self) -> Option<&'static str> {
+    fn bindings_pause(&self, toggle: crate::input::AutomationKey) -> Option<&'static str> {
         match self.bindings.current() {
+            GameBindings::Keyboard { life, mana, .. }
+                if toggle.conflicts_with(*life) || toggle.conflicts_with(*mana) =>
+            {
+                Some("PAUSED (automation key conflicts with a flask)")
+            }
             GameBindings::Keyboard { .. } => None,
             GameBindings::Gamepad => Some("PAUSED (gamepad input not supported yet)"),
             GameBindings::UnsupportedMode(_) => Some("PAUSED (unsupported PoE2 input mode)"),
@@ -302,7 +309,7 @@ impl GameAutomationPolicy for Policy {
             }
             Err(error) => return Ok(self.bad_sample(error)),
         }
-        Ok(TickOutcome::Status("ARMED"))
+        Ok(TickOutcome::Status("ENABLED"))
     }
 }
 
@@ -312,7 +319,7 @@ fn area_status(area: &AreaInfo, config: &Config) -> &'static str {
     } else if area.is_hideout && !config.general.enable_in_hideout {
         "PAUSED (hideout)"
     } else {
-        "ARMED"
+        "ENABLED"
     }
 }
 

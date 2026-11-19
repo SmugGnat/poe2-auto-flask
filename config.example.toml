@@ -1,3 +1,6 @@
+# Automation fields for legacy migration or profiles (add profile metadata for a profile file).
+# Live configuration uses settings.toml and profiles/*.toml; see docs/PROFILES.md.
+
 [general]
 # Auto-flask is always disabled in towns. Hideouts are disabled by default; set this to true to
 # allow auto-flask use in hideouts.
@@ -14,7 +17,7 @@ threshold_percent = 30.0
 # PoE1 uses the same Life/Mana percentage thresholds above; percentages are based on the
 # unreserved pool. Quicksilver and other supported utility-flask types are opt-in.
 # No per-slot keys are needed: both games read their own production_Config.ini.
-# Unknown utility bases and ordinary hybrid flasks remain manual-only in this milestone.
+# Unknown utility bases and ordinary hybrid flasks remain manual-only.
 [poe1]
 # 0 = use Quicksilver as before. 750 = require 750 ms of continuously
 # observed Run animation before using Quicksilver; does not restrict Life/Mana.
@@ -74,9 +77,10 @@ writhing_jar = false
 
 # PoE1 defensive skill presets are separately configurable. Skills are
 # disabled by default and share the existing 100 ms loop with flask rules.
-# Each skill key must match its in-game binding. Only A-Z, 0-9,
-# F1-F10 and F12 are supported; F11 is reserved. Enabled skills
-# must use different keys.
+# Match the in-game binding with A-Z, 0-9, F1-F12 and an optional
+# Ctrl, Shift or Alt modifier (for example, "Ctrl+Q"). Reserve the
+# automation key (F11 by default) for enabling and disabling the helper.
+# Enabled skills must use different bindings.
 # The skill rule cannot run in town, or in hideouts unless permitted above.
 [poe1.skills.molten_shell]
 enabled = false
@@ -105,4 +109,4 @@ key = "E"
 nearby_radius = 60
 nearby_minimum_count = 1
 
-# Existing PoE2 operation is unchanged: two slots, F11, 100 ms polling.
+# PoE2 uses two slots and 100 ms polling. F11 is the default automation key.

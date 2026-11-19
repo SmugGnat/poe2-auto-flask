@@ -64,6 +64,19 @@ impl Process {
 
     fn attach_with_names(names: &[&str]) -> io::Result<Self> {
         let pid = find_process_id(names)?;
+        Self::open_pid(pid, names)
+    }
+
+    /// Open an independent read-only handle for the backend's exact process.
+    pub fn reader_for_pid(pid: u32, game: Game) -> io::Result<Self> {
+        let names = match game {
+            Game::Poe1 => crate::poe1::PROCESS_NAMES,
+            Game::Poe2 => crate::poe2::PROCESS_NAMES,
+        };
+        Self::open_pid(pid, names)
+    }
+
+    fn open_pid(pid: u32, names: &[&str]) -> io::Result<Self> {
         let handle = open_read_only(pid)?;
         let main_module = find_main_module(pid, names)?;
 

@@ -52,6 +52,10 @@ impl Adapter {
         &self.probe.metadata
     }
 
+    pub fn character_name(&self, process: &Process) -> io::Result<String> {
+        super::player::name(process, &self.probe)
+    }
+
     pub fn verify_vitals(&self, process: &Process) -> io::Result<LiveVitals> {
         super::sample_vitals(process, &self.probe)
     }

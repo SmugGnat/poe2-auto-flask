@@ -15,6 +15,7 @@ mod layout;
 pub mod movement;
 pub mod nearby;
 mod offsets;
+pub mod player;
 mod reader;
 pub mod recovery;
 pub mod rotation;

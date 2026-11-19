@@ -1,5 +1,5 @@
-# Pinned stable compiler for the Windows backend and Linux launcher.
-# Keep both Cargo.toml rust-version fields and CI workflows aligned.
+# Pinned stable compiler for the backend, Slint UI and Linux launcher.
+# Keep all Cargo.toml rust-version fields and CI workflows aligned.
 [toolchain]
 channel = "1.100.0"
 profile = "minimal"

@@ -72,6 +72,13 @@ impl GameSession {
         }
     }
 
+    pub fn poe1_character_name(&self, process: &Process) -> io::Result<String> {
+        match &self.reader {
+            Reader::Poe1(adapter) => adapter.character_name(process),
+            Reader::Poe2(_) => Err(unsupported()),
+        }
+    }
+
     /// Directly verify current identity and vitals before a PoE1 key press.
     pub fn poe1_verify_vitals(&self, process: &Process) -> io::Result<LiveVitals> {
         match &self.reader {

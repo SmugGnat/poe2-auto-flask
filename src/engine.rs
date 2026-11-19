@@ -5,12 +5,11 @@
 //! Individual game policies request validated state through GameSession and
 //! retain their own decision rules, safety guards, bindings, and input logic.
 use std::io;
-use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::config::{Config, ConfigManager, ConfigReload};
 use crate::diagnostics::FailureMonitor;
-use crate::input::{is_process_foreground, master_toggle_down};
+use crate::input::{is_process_foreground, AutomationKey};
 use crate::process::Process;
 use crate::session::GameSession;
 
@@ -38,7 +37,7 @@ pub trait GameAutomationPolicy {
     fn on_config_reload(&mut self, event: ConfigReload, config: &Config);
     fn check_bindings(&mut self);
     /// A reason to pause, if the selected game's current bindings are unsafe.
-    fn bindings_pause(&self) -> Option<&'static str>;
+    fn bindings_pause(&self, toggle: AutomationKey) -> Option<&'static str>;
 
     /// These hooks reset only game-specific state, not the shared session.
     fn on_arm_change(&mut self, armed: bool);
@@ -60,7 +59,7 @@ pub trait GameAutomationPolicy {
     fn waiting_status(&self) -> &'static str;
 }
 
-/// Shared F11 edge detector. Holding the key does not toggle repeatedly;
+/// Shared shortcut edge detector. Holding the key does not toggle repeatedly;
 /// pressing it outside the selected game's foreground window is ignored.
 #[derive(Default)]
 struct ArmLatch {
@@ -69,6 +68,14 @@ struct ArmLatch {
 }
 
 impl ArmLatch {
+    /// Consume any key held during a profile or shortcut change.
+    fn disable(&mut self, down: bool) -> bool {
+        let was_armed = self.armed;
+        self.armed = false;
+        self.last_down = down;
+        was_armed
+    }
+
     fn observe(&mut self, down: bool, focused: bool) -> Option<bool> {
         let pressed = down && !self.last_down && focused;
         self.last_down = down;
@@ -88,9 +95,15 @@ pub fn run<P: GameAutomationPolicy>(
     mut session: GameSession,
     config_manager: &mut ConfigManager,
     mut policy: P,
+    control: &mut crate::runtime::BackendControl,
 ) -> io::Result<()> {
     policy.banner(config_manager.current());
-    let mut latch = ArmLatch::default();
+    let mut toggle = config_manager.automation_key();
+    print_toggle_key(toggle);
+    let mut latch = ArmLatch {
+        last_down: toggle.is_down(),
+        ..ArmLatch::default()
+    };
     let mut status = None;
     let mut failures = FailureMonitor::default();
     let mut needs_refresh = false;
@@ -98,10 +111,14 @@ pub fn run<P: GameAutomationPolicy>(
     let mut next_config_reload = Instant::now() + CONFIG_RELOAD;
     let mut next_binding_reload = Instant::now() + BINDING_RELOAD;
     let mut next_process_check = Instant::now();
-    show(&mut status, "DISARMED");
+    show(&mut status, "DISABLED");
 
     loop {
         let started = Instant::now();
+        if control.is_stopping() {
+            policy.on_arm_change(false);
+            return Ok(());
+        }
         if started >= next_process_check {
             next_process_check = started + PROCESS_CHECK;
             if !process.is_alive().unwrap_or(false) {
@@ -112,6 +129,35 @@ pub fn run<P: GameAutomationPolicy>(
         if started >= next_config_reload {
             next_config_reload = started + CONFIG_RELOAD;
             let event = config_manager.check_for_reload();
+            let new_toggle = config_manager.automation_key();
+            let toggle_changed = new_toggle != toggle;
+            toggle = new_toggle;
+            if toggle_changed || matches!(&event, ConfigReload::ProfileSwitched) {
+                if latch.disable(toggle.is_down()) {
+                    policy.on_arm_change(false);
+                }
+                needs_refresh = false;
+                failures.clear();
+                if toggle_changed {
+                    show(&mut status, "DISABLED (automation key changed)");
+                    print_toggle_key(toggle);
+                } else {
+                    show(&mut status, "DISABLED (profile switched)");
+                }
+            }
+            match &event {
+                ConfigReload::Invalid(error) | ConfigReload::ReadError(error) => {
+                    control.config_error(error.clone());
+                }
+                ConfigReload::Removed => {
+                    control.config_error("Configuration file removed".to_owned())
+                }
+                ConfigReload::Reloaded | ConfigReload::ProfileSwitched => {
+                    control.applied(config_manager)
+                }
+                ConfigReload::Unchanged if toggle_changed => control.applied(config_manager),
+                ConfigReload::Unchanged => {}
+            }
             policy.on_config_reload(event, config_manager.current());
         }
         if started >= next_binding_reload {
@@ -120,7 +166,7 @@ pub fn run<P: GameAutomationPolicy>(
         }
 
         let focused = is_process_foreground(process.pid());
-        if let Some(armed) = latch.observe(master_toggle_down(), focused) {
+        if let Some(armed) = latch.observe(toggle.is_down(), focused) {
             policy.on_arm_change(armed);
             needs_refresh = armed;
             next_refresh = started;
@@ -129,14 +175,14 @@ pub fn run<P: GameAutomationPolicy>(
                 if armed {
                     policy.waiting_status()
                 } else {
-                    "DISARMED"
+                    "DISABLED"
                 },
             );
         }
         if !latch.armed {
             failures.clear();
             policy.on_inactive();
-            nap(started);
+            nap(started, control, latch.armed, focused, status);
             continue;
         }
         if !focused {
@@ -144,19 +190,19 @@ pub fn run<P: GameAutomationPolicy>(
             needs_refresh = true;
             policy.on_focus_lost();
             show(&mut status, policy.focus_status());
-            nap(started);
+            nap(started, control, latch.armed, focused, status);
             continue;
         }
-        if let Some(reason) = policy.bindings_pause() {
+        if let Some(reason) = policy.bindings_pause(toggle) {
             failures.clear();
             policy.on_inactive();
             show(&mut status, reason);
-            nap(started);
+            nap(started, control, latch.armed, focused, status);
             continue;
         }
         if needs_refresh {
             if started < next_refresh {
-                nap(started);
+                nap(started, control, latch.armed, focused, status);
                 continue;
             }
             // Refresh the session before its policy-specific derived probes.
@@ -176,7 +222,7 @@ pub fn run<P: GameAutomationPolicy>(
                     }
                     next_refresh = started + REFRESH_RETRY;
                     show(&mut status, policy.waiting_status());
-                    nap(started);
+                    nap(started, control, latch.armed, focused, status);
                     continue;
                 }
             }
@@ -197,8 +243,15 @@ pub fn run<P: GameAutomationPolicy>(
             }
             TickOutcome::Unchanged => {}
         }
-        nap(started);
+        nap(started, control, latch.armed, focused, status);
     }
+}
+
+fn print_toggle_key(toggle: AutomationKey) {
+    println!(
+        "Press {} while the game is focused to enable or disable automation. Ctrl+C exits.",
+        toggle.label()
+    );
 }
 
 fn show(current: &mut Option<&'static str>, next: &'static str) {
@@ -208,15 +261,51 @@ fn show(current: &mut Option<&'static str>, next: &'static str) {
     }
 }
 
-fn nap(started: Instant) {
+fn nap(
+    started: Instant,
+    control: &mut crate::runtime::BackendControl,
+    enabled: bool,
+    focused: bool,
+    status: Option<&str>,
+) {
+    control.automation(enabled, focused, status.unwrap_or("DISABLED"));
     if let Some(wait) = POLL.checked_sub(started.elapsed()) {
-        thread::sleep(wait);
+        control.wait(wait);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{ArmLatch, TickOutcome};
+
+    #[test]
+    fn reported_enabled_state_follows_the_latch_through_focus_pauses() {
+        use crate::runtime::{BackendControl, Connection};
+        use std::time::Instant;
+
+        let (mut control, events, _commands) = BackendControl::supervised();
+        control.connection(Connection::Connected, None, "DISABLED");
+        let mut latch = ArmLatch::default();
+        let mut report = |latch: &ArmLatch, focused, reason| {
+            super::nap(
+                Instant::now() - super::POLL,
+                &mut control,
+                latch.armed,
+                focused,
+                Some(reason),
+            );
+            events.try_iter().last().unwrap()
+        };
+        assert!(!report(&latch, true, "DISABLED").enabled);
+        assert_eq!(latch.observe(true, true), Some(true));
+        assert!(report(&latch, true, "ENABLED").enabled);
+        let paused = report(&latch, false, "PAUSED (PoE1 not focused)");
+        assert!(paused.enabled);
+        assert!(!paused.focused);
+        assert_eq!(latch.observe(false, true), None);
+        assert_eq!(latch.observe(true, true), Some(false));
+        assert!(!report(&latch, true, "DISABLED").enabled);
+    }
 
     #[test]
     fn key_toggles_only_on_foreground_rising_edge() {
@@ -231,11 +320,23 @@ mod tests {
     }
 
     #[test]
+    fn profile_switch_disarms_without_accidental_rearm() {
+        let mut latch = ArmLatch::default();
+        assert_eq!(latch.observe(true, true), Some(true));
+        assert!(latch.armed);
+        assert!(latch.disable(true));
+        assert!(!latch.armed);
+        assert_eq!(latch.observe(true, true), None);
+        assert_eq!(latch.observe(false, true), None);
+        assert_eq!(latch.observe(true, true), Some(true));
+    }
+
+    #[test]
     fn launch_is_disarmed_and_unfocused_key_does_not_arm_on_refocus() {
         let mut latch = ArmLatch::default();
         assert!(!latch.armed);
 
-        // An unfocused F11 press is consumed, not replayed on focus gain.
+        // An unfocused shortcut press is consumed, not replayed on focus gain.
         assert_eq!(latch.observe(true, false), None);
         assert_eq!(latch.observe(true, true), None);
         assert!(!latch.armed);
@@ -273,6 +374,9 @@ mod tests {
             TickOutcome::Unchanged,
             TickOutcome::RefreshFailed("stale state".to_owned())
         );
-        assert_eq!(TickOutcome::Status("ARMED"), TickOutcome::Status("ARMED"));
+        assert_eq!(
+            TickOutcome::Status("ENABLED"),
+            TickOutcome::Status("ENABLED")
+        );
     }
 }

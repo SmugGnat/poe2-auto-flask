@@ -2,29 +2,33 @@ name: Build
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, feature/ui]
     paths:
       - "src/**"
+      - "app-ui/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "config.example.toml"
       - "linux-launcher/**"
       - "packaging/linux/**"
+      - "packaging/licenses/**"
       - "scripts/**"
       - "LICENSE"
       - ".github/workflows/build.yml"
       - ".github/workflows/release.yml"
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, feature/ui]
     paths:
       - "src/**"
+      - "app-ui/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "config.example.toml"
       - "linux-launcher/**"
       - "packaging/linux/**"
+      - "packaging/licenses/**"
       - "scripts/**"
       - "LICENSE"
       - ".github/workflows/build.yml"
@@ -89,8 +93,9 @@ jobs:
 
           for file in "${files[@]}"; do
             case "$file" in
-              src/*|Cargo.toml|Cargo.lock|config.example.toml)
+              src/*|app-ui/*|Cargo.toml|Cargo.lock|config.example.toml)
                 windows_changed=true
+                appimage=true
                 ;;
               rust-toolchain.toml)
                 windows_changed=true
@@ -101,7 +106,7 @@ jobs:
                 linux_changed=true
                 appimage=true
                 ;;
-              packaging/linux/*|scripts/*|LICENSE)
+              packaging/linux/*|packaging/licenses/*|scripts/*|LICENSE)
                 appimage=true
                 ;;
               .github/workflows/build.yml|.github/workflows/release.yml)
@@ -144,10 +149,21 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      - name: Cache Windows Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            app-ui -> target
+
       - name: Check pinned Rust version
-        run: |
-          rustc --version
-          cargo check --locked --target x86_64-pc-windows-msvc
+        run: rustc --version
+
+      - name: Check backend
+        run: cargo check --locked --target x86_64-pc-windows-msvc
+
+      - name: Check UI
+        run: cargo check --locked --manifest-path app-ui/Cargo.toml --target x86_64-pc-windows-msvc
 
   windows-x64:
     runs-on: windows-latest
@@ -164,29 +180,37 @@ jobs:
           targets: x86_64-pc-windows-msvc
           components: clippy, rustfmt
 
-      - name: Check formatting
+      - name: Cache Windows Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            app-ui -> target
+
+      - name: Backend formatting
         run: cargo fmt --all -- --check
 
-      - name: Clippy
+      - name: UI formatting
+        run: cargo fmt --manifest-path app-ui/Cargo.toml -- --check
+
+      - name: Backend Clippy
         run: cargo clippy --locked --target x86_64-pc-windows-msvc --all-targets -- -D warnings
 
-      - name: Test
+      - name: UI Clippy
+        run: cargo clippy --locked --manifest-path app-ui/Cargo.toml --target x86_64-pc-windows-msvc --all-targets -- -D warnings
+
+      - name: Backend tests
         run: cargo test --locked --target x86_64-pc-windows-msvc
 
-      - name: Build release
-        run: cargo build --locked --release --target x86_64-pc-windows-msvc
+      - name: UI tests
+        run: cargo test --locked --manifest-path app-ui/Cargo.toml --target x86_64-pc-windows-msvc
 
-      - name: Prepare artifact
+      - name: Build release
+        run: cargo build --locked --release --manifest-path app-ui/Cargo.toml --target x86_64-pc-windows-msvc
+
+      - name: Package Windows application
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path dist -Force | Out-Null
-          Copy-Item target/x86_64-pc-windows-msvc/release/poe2-auto-flask.exe dist/
-          Copy-Item config.example.toml dist/
-          Copy-Item LICENSE dist/
-          Copy-Item ACKNOWLEDGEMENTS.md dist/
-          & ./scripts/collect-third-party-licenses.ps1 `
-            -OutputDir "$env:RUNNER_TEMP/poe2-auto-flask-third-party-licenses" `
-            -NoticePath "dist/THIRD_PARTY_NOTICES.txt"
+        run: ./scripts/package-windows.ps1
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -209,6 +233,11 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      - name: Cache launcher Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "linux-launcher -> target"
+
       - name: Check formatting
         working-directory: linux-launcher
         run: cargo fmt -- --check
@@ -220,6 +249,9 @@ jobs:
       - name: Test
         working-directory: linux-launcher
         run: cargo test --locked
+
+      - name: Test desktop launch routing
+        run: python3 scripts/test-app-run.py
 
       - name: Build release
         working-directory: linux-launcher
@@ -247,7 +279,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Download Windows helper
+      - name: Download Windows application
         uses: actions/download-artifact@v8
         with:
           name: poe2-auto-flask-windows-x64
@@ -259,59 +291,15 @@ jobs:
           name: poe2-auto-flask-linux-launcher
           path: linux-artifact
 
-      - name: Prepare AppDir
+      - name: Package AppImage
         run: |
-          mkdir -p \
-            AppDir/usr/bin \
-            AppDir/usr/lib/poe2-auto-flask \
-            AppDir/usr/share/licenses/poe2-auto-flask
-
-          cp linux-artifact/poe2-auto-flask-linux-launcher AppDir/usr/bin/poe2-auto-flask
-          cp packaging/linux/terminal-wrapper AppDir/usr/bin/poe2-auto-flask-terminal
-          cp windows-artifact/poe2-auto-flask.exe AppDir/usr/lib/poe2-auto-flask/
-          cp LICENSE AppDir/usr/share/licenses/poe2-auto-flask/LICENSE
-          cp windows-artifact/THIRD_PARTY_NOTICES.txt \
-            AppDir/usr/share/licenses/poe2-auto-flask/THIRD_PARTY_NOTICES.txt
-          cp packaging/linux/AppRun AppDir/AppRun
-          cp packaging/linux/poe2-auto-flask.desktop AppDir/poe2-auto-flask.desktop
-          cp packaging/linux/poe2-auto-flask.svg AppDir/poe2-auto-flask.svg
-          ln -s poe2-auto-flask.svg AppDir/.DirIcon
-
-          chmod +x \
-            AppDir/AppRun \
-            AppDir/usr/bin/poe2-auto-flask \
-            AppDir/usr/bin/poe2-auto-flask-terminal
-
-      - name: Download AppImage tools
-        run: |
-          curl --fail --location --retry 3 \
-            --output appimagetool-x86_64.AppImage \
-            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
-          echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool-x86_64.AppImage" \
-            | sha256sum --check -
-
-          curl --fail --location --retry 3 \
-            --output runtime-x86_64 \
-            https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
-          echo "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  runtime-x86_64" \
-            | sha256sum --check -
-
-          chmod +x appimagetool-x86_64.AppImage
-
-      - name: Build AppImage
-        run: |
-          mkdir -p dist
-          ARCH=x86_64 ./appimagetool-x86_64.AppImage \
-            --appimage-extract-and-run \
-            --no-appstream \
-            --runtime-file runtime-x86_64 \
-            AppDir \
-            dist/poe2-auto-flask-linux-x86_64.AppImage
-          chmod +x dist/poe2-auto-flask-linux-x86_64.AppImage
+          bash scripts/package-appimage.sh windows-artifact \
+            linux-artifact/poe2-auto-flask-linux-launcher \
+            dist/poe2-auto-flask-x86_64.AppImage
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v7
         with:
-          name: poe2-auto-flask-linux-x86_64-appimage
-          path: dist/poe2-auto-flask-linux-x86_64.AppImage
+          name: poe2-auto-flask-x86_64-appimage
+          path: dist/poe2-auto-flask-x86_64.AppImage
           if-no-files-found: error

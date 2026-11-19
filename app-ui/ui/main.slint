@@ -1,0 +1,1939 @@
+import { Palette, ScrollView, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import "./fonts/Inter.ttf";
+
+export global StatusTooltipState {
+    in-out property <bool> visible: false;
+    in-out property <styled-text> text;
+    in-out property <length> anchor-x;
+    in-out property <length> anchor-y;
+}
+export global PresentationState {
+    in-out property <bool> active: true;
+}
+component StatusHint inherits TouchArea {
+    in property <styled-text> detail;
+    private property <bool> presentation-active: PresentationState.active;
+    changed presentation-active => {
+        if (!self.presentation-active) { delay.stop(); }
+    }
+    changed has-hover => {
+        delay.running = self.has-hover && PresentationState.active;
+        if (!self.has-hover) {
+            StatusTooltipState.visible = false;
+        }
+    }
+    changed detail => {
+        if (self.has-hover) {
+            StatusTooltipState.text = root.detail;
+            StatusTooltipState.anchor-x = root.absolute-position.x;
+            StatusTooltipState.anchor-y = root.absolute-position.y;
+        }
+    }
+    delay := Timer {
+        interval: 180ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            StatusTooltipState.text = root.detail;
+            StatusTooltipState.anchor-x = root.absolute-position.x;
+            StatusTooltipState.anchor-y = root.absolute-position.y;
+            StatusTooltipState.visible = true;
+        }
+    }
+}
+
+// Auto Flask — Linear-inspired charcoal surfaces and restrained hierarchy.
+// The window remains opaque for reliable minimize/restore under Proton/KWin.
+component SectionHeading inherits Rectangle {
+    in property <string> text;
+    in property <bool> separated: false;
+    private property <length> top-inset: root.separated ? 21px : 0px;
+    height: 23px + root.top-inset;
+    background: transparent;
+    Text {
+        x: 10px;
+        y: root.top-inset;
+        height: 23px;
+        width: parent.width - 10px;
+        text: root.text;
+        color: #f1f1f3;
+        font-size: 15px;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+}
+component Separator inherits Rectangle {
+    in property <length> indent: 0px;
+    height: 1px;
+    Rectangle {
+        x: root.indent;
+        width: parent.width - root.indent;
+        background: #303034;
+    }
+}
+component SectionCard inherits Rectangle {
+    in property <length> vertical-inset: 9px;
+    horizontal-stretch: 1;
+    vertical-stretch: 0;
+    background: #242426;
+    drop-shadow-blur: 3px;
+    drop-shadow-offset-y: 1px;
+    drop-shadow-color: #00000044;
+    border-width: 1px;
+    border-color: #2b2c30;
+    border-radius: 12px;
+    VerticalBox {
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: root.vertical-inset;
+        padding-bottom: root.vertical-inset;
+        spacing: 0px;
+        @children
+    }
+}
+// Linear-like switch: the thumb expands toward its next destination on hover.
+component SwitchControl inherits Rectangle {
+    in-out property <bool> checked: false;
+    in property <string> accessibility-name: "";
+    callback toggled();
+    width: 35px;
+    height: 20px;
+    border-radius: 10px;
+    background: root.checked ? #3699d9 : (switch-hit.has-hover ? #65666b : #48494d);
+    drop-shadow-blur: 2px;
+    drop-shadow-offset-y: 1px;
+    drop-shadow-color: #00000055;
+    animate background { duration: 110ms; }
+    Rectangle {
+        x: root.checked ? (switch-hit.has-hover ? 14px : 18px) : 3px;
+        y: switch-hit.has-hover ? 2px : 3px;
+        width: switch-hit.has-hover ? 18px : 14px;
+        height: switch-hit.has-hover ? 16px : 14px;
+        border-radius: 8px;
+        background: #f5f5f7;
+        animate x, width, height, y { duration: 110ms; easing: ease-out; }
+    }
+    switch-focus := FocusScope { focus-on-tab-navigation: false; }
+    switch-hit := TouchArea {
+        accessible-role: button;
+        accessible-label: root.accessibility-name;
+        clicked => {
+            switch-focus.focus();
+            root.checked = !root.checked;
+            root.toggled();
+        }
+    }
+}
+export global FieldInputState {
+    in-out property <bool> numeric-focused: false;
+    in-out property <bool> skill-focused: false;
+    pure callback format-binding(string, bool, bool, bool, bool) -> string;
+    pure callback valid-number-text(string, bool) -> bool;
+}
+
+// Replaces Fluent LineEdit so normal, hover and focus states share one style.
+component FieldInput inherits Rectangle {
+    in-out property <string> text: "";
+    in property <string> placeholder-text: "";
+    in property <string> unit: "";
+    in property <string> accessibility-name: "";
+    in property <bool> numeric: false;
+    in property <bool> decimal: false;
+    in property <bool> enabled: true;
+    height: 31px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: input.has-focus ? #48afe6 :
+        (field-hit.has-hover ? #505159 : #36373b);
+    background: input.has-focus ? #202124 :
+        (field-hit.has-hover ? #242528 : #202123);
+    drop-shadow-blur: 3px;
+    drop-shadow-offset-y: 1px;
+    drop-shadow-color: #00000055;
+    animate border-color, background { duration: 110ms; }
+    clip: true;
+    field-hit := TouchArea { clicked => { if (root.enabled) { input.focus(); } } }
+    Rectangle {
+        x: 9px;
+        width: parent.width - (root.unit == "" ? 18px : 34px);
+        background: transparent;
+        clip: true;
+        if root.text == "" : Text {
+            text: root.placeholder-text;
+            x: 0px;
+            width: parent.width;
+            horizontal-alignment: left;
+            color: #7e7f86;
+            font-size: 14px;
+            vertical-alignment: center;
+        }
+        input := TextInput {
+            text <=> root.text;
+            enabled: root.enabled;
+            accessible-label: root.accessibility-name;
+            single-line: true;
+            input-type: root.decimal ? InputType.decimal : root.numeric ? InputType.number : InputType.text;
+            changed has-focus => {
+                if (root.numeric) { FieldInputState.numeric-focused = self.has-focus; }
+            }
+            edited => {
+                if (root.numeric && !FieldInputState.valid-number-text(self.text, root.decimal)) {
+                    self.undo();
+                }
+            }
+            accepted => { self.clear-focus(); }
+            font-family: "Inter Variable";
+            font-size: 14px;
+            horizontal-alignment: root.numeric ? center : left;
+            font-weight: 400;
+            color: root.enabled ? #f0f0f2 : #878890;
+            selection-background-color: #2c80b9;
+            selection-foreground-color: #ffffff;
+            text-cursor-width: 1px;
+            vertical-alignment: center;
+            width: root.numeric ? parent.width : max(parent.width, self.preferred-width);
+            cursor-position-changed(pos) => {
+                if (pos.x + self.x < 2px) {
+                    self.x = -pos.x + 2px;
+                } else if (pos.x + self.x > parent.width - 3px - self.text-cursor-width) {
+                    self.x = parent.width - pos.x - 3px - self.text-cursor-width;
+                }
+            }
+        }
+    }
+    if root.unit != "": Text {
+        x: parent.width - 25px;
+        width: 21px;
+        text: root.unit;
+        color: root.enabled ? #9b9ca4 : #6d6e75;
+        font-size: 11px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+component KeybindField inherits Rectangle {
+    in property <string> value;
+    in property <string> accessibility-name;
+    in property <bool> allow-modifier: true;
+    callback captured(string);
+    width: max(54px, key-text.preferred-width + 20px);
+    height: 29px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: capture.has-focus ? #48afe6 : key-hit.has-hover ? #505159 : #36373b;
+    background: key-hit.has-hover || capture.has-focus ? #242528 : #202123;
+    drop-shadow-blur: 3px;
+    drop-shadow-offset-y: 1px;
+    drop-shadow-color: #00000055;
+
+    key-text := Text {
+        text: capture.has-focus ? "Press a key" : root.value;
+        font-size: 13px;
+        color: #f0f0f2;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    capture := FocusScope {
+        focus-changed-event => { FieldInputState.skill-focused = self.has-focus; }
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                self.clear-focus();
+                return accept;
+            }
+            let binding = FieldInputState.format-binding(event.text, event.modifiers.shift,
+                event.modifiers.control, event.modifiers.alt, event.modifiers.meta);
+            if (binding != "" && (root.allow-modifier ||
+                !(event.modifiers.shift || event.modifiers.control || event.modifiers.alt || event.modifiers.meta))) {
+                root.captured(binding);
+                self.clear-focus();
+                return accept;
+            }
+            return event.text == Key.Tab || event.text == Key.Backtab ? reject : accept;
+        }
+        key-hit := TouchArea {
+            accessible-role: button;
+            accessible-label: root.accessibility-name;
+            clicked => { capture.focus(); }
+        }
+    }
+}
+
+component SkillKeyRow inherits Rectangle {
+    in-out property <string> value;
+    in property <string> skill-name;
+    height: 37px;
+    HorizontalLayout {
+        spacing: 9px;
+        cross-axis-alignment: center;
+        Text { text: "Keybind"; color: #ececf0; font-size: 13px; }
+        Rectangle { horizontal-stretch: 1; }
+        KeybindField {
+            accessibility-name: root.skill-name + " keybind";
+            value: root.value;
+            captured(binding) => { root.value = binding; }
+        }
+    }
+}
+
+// Compact, selected-item-aware popup. Placement is clamped inside the
+// application window rather than blindly forcing the popup upward.
+component SelectField inherits Rectangle {
+    private property <bool> presentation-active: PresentationState.active;
+    changed presentation-active => {
+        if (!self.presentation-active) { selection.close(); }
+    }
+    in property <[string]> entries: [];
+    in property <[color]> entry-colors: [];
+    in property <[bool]> enabled-entries: [];
+    in property <bool> current-entry-enabled;
+    in property <string> accessibility-name: "";
+    in property <int> label-weight: 400;
+    in property <int> current-index: 0;
+    in property <length> viewport-height: 552px;
+    private property <length> option-height: 31px;
+    private property <int> visible-rows: min(8, root.entries.length);
+    private property <length> popup-height: root.visible-rows * root.option-height + 8px;
+    private property <length> popup-scroll: 0px;
+    private property <length> preferred-popup-y: 0px;
+    private property <int> highlighted-index: 0;
+    callback selected(int);
+    pure function entry-color(index: int, fallback: color) -> color {
+        if (index >= 0 && index < root.enabled-entries.length &&
+            (index == root.current-index ? root.current-entry-enabled : root.enabled-entries[index])) {
+            return #46a239;
+        }
+        return index >= 0 && index < root.entry-colors.length ? root.entry-colors[index] : fallback;
+    }
+    function open-popup() {
+        if (root.entries.length > 0) {
+            root.highlighted-index = max(0, min(root.current-index, root.entries.length - 1));
+            // Keep the current selection in view, preferably aligned with
+            // the input field. Near an edge, shift the popup, not the window.
+            let first = max(0, min(root.entries.length - root.visible-rows,
+                root.highlighted-index - root.visible-rows / 2));
+            root.popup-scroll = -first * root.option-height;
+            root.preferred-popup-y = -(root.highlighted-index - first) * root.option-height - 4px;
+            selection.show();
+        }
+    }
+    function move-highlight(index: int) {
+        root.highlighted-index = max(0, min(index, root.entries.length - 1));
+        let top = root.highlighted-index * root.option-height;
+        let bottom = top + root.option-height;
+        let visible-height = root.visible-rows * root.option-height;
+        root.popup-scroll = min(-top, max(root.popup-scroll, visible-height - bottom));
+    }
+    height: 31px;
+    border-radius: 9px;
+    border-width: 1px;
+    border-color: select-hit.has-hover ? #4a4b51 : #35363a;
+    background: selection.is-open ? #343539 :
+        select-hit.has-hover ? #303135 : #29292b;
+    drop-shadow-blur: 3px;
+    drop-shadow-offset-y: 1px;
+    drop-shadow-color: #00000055;
+    animate background, border-color { duration: 100ms; }
+    Text {
+        x: 9px;
+        width: parent.width - 31px;
+        text: (root.current-index >= 0 && root.current-index < root.entries.length)
+            ? root.entries[root.current-index] : "";
+        color: root.entry-color(root.current-index, #dddde0);
+        font-size: 13px;
+        font-weight: root.label-weight;
+        overflow: elide;
+        vertical-alignment: center;
+    }
+    Path {
+        x: parent.width - 22px; y: (parent.height - self.height) / 2;
+        width: 12px; height: 8px;
+        commands: "M 1 1 L 6 6 L 11 1";
+        stroke: #a5a6ad;
+        stroke-width: 1.5px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+    }
+    select-focus := FocusScope {
+        enabled: root.entries.length > 0;
+        focus-on-tab-navigation: true;
+        key-pressed(event) => {
+            if (event.text == Key.Space || event.text == Key.Return) {
+                root.open-popup();
+                accept
+            } else if (event.text == Key.DownArrow && root.current-index + 1 < root.entries.length) {
+                root.selected(root.current-index + 1);
+                accept
+            } else if (event.text == Key.UpArrow && root.current-index > 0) {
+                root.selected(root.current-index - 1);
+                accept
+            } else {
+                reject
+            }
+        }
+        select-hit := TouchArea {
+            accessible-role: button;
+            accessible-label: root.accessibility-name;
+            clicked => {
+                select-focus.focus();
+                if (root.entries.length > 0) { root.open-popup(); }
+            }
+        }
+    }
+    selection := PopupWindow {
+        x: 0px;
+        // Selection and wheel movement scroll the list inside this frame.
+        y: max(8px - root.absolute-position.y, min(root.preferred-popup-y,
+            root.viewport-height - root.absolute-position.y - root.popup-height - 8px));
+        width: root.width;
+        height: root.popup-height;
+        close-policy: close-on-click-outside;
+        forward-focus: popup-focus;
+        popup-focus := FocusScope {
+            key-pressed(event) => {
+                if (event.text == Key.UpArrow || event.text == Key.DownArrow) {
+                    root.move-highlight(root.highlighted-index + (event.text == Key.UpArrow ? -1 : 1));
+                    accept
+                } else if (event.text == Key.Home || event.text == Key.End) {
+                    root.move-highlight(event.text == Key.Home ? 0 : root.entries.length - 1);
+                    accept
+                } else if (event.text == Key.Return || event.text == Key.Space) {
+                    root.selected(root.highlighted-index);
+                    selection.close();
+                    accept
+                } else {
+                    reject
+                }
+            }
+            Rectangle {
+                background: #2b2c2f;
+                border-radius: 9px;
+                border-width: 1px;
+                border-color: #45464b;
+                clip: true;
+                menu-scroll := ScrollView {
+                    content-y <=> root.popup-scroll;
+                    x: 4px; y: 4px;
+                    width: parent.width - 8px;
+                    height: parent.height - 8px;
+                    content-height: root.entries.length * root.option-height;
+                    vertical-scrollbar-policy: always-off;
+                    horizontal-scrollbar-policy: always-off;
+                    VerticalLayout {
+                        spacing: 0px;
+                        for item[index] in root.entries: Rectangle {
+                            height: root.option-height;
+                            border-radius: 6px;
+                            background: option-hit.has-hover ? #3a3b40 : transparent;
+                            HorizontalLayout {
+                                padding-left: 7px;
+                                padding-right: 7px;
+                                spacing: 6px;
+                                cross-axis-alignment: center;
+                                Text {
+                                    text: item;
+                                    font-size: 13px;
+                                    font-weight: root.label-weight;
+                                    color: root.entry-color(index, #d1d1d6);
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                                Rectangle { horizontal-stretch: 1; background: transparent; }
+                                if root.current-index == index: Path {
+                                    width: 12px; height: 10px;
+                                    commands: "M 1 5 L 4 8 L 11 1";
+                                    stroke: #78c4ee;
+                                    stroke-width: 1.5px;
+                                    stroke-line-cap: round;
+                                    stroke-line-join: round;
+                                }
+                            }
+                            option-hit := TouchArea {
+                                accessible-role: button;
+                                accessible-label: item;
+                                clicked => {
+                                    // Notify the Rust model while the row/callback
+                                    // still exists, *then* dismiss the popup.
+                                    // Closing first could invalidate this delegate
+                                    // before the selection callback was delivered.
+                                    root.selected(index);
+                                    selection.close();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+component ToggleRow inherits Rectangle {
+    in property <string> label;
+    in-out property <bool> checked: false;
+    in property <bool> strong-label: false;
+    in property <color> enabled-color: #ececf0;
+    in property <bool> collapsible: false;
+    in-out property <bool> expanded: true;
+    callback toggled();
+    height: 37px;
+    background: transparent;
+    HorizontalLayout {
+        spacing: 9px;
+        cross-axis-alignment: center;
+        Text { text: root.label; color: root.checked ? root.enabled-color : #ececf0; font-size: 13px;
+            font-weight: root.strong-label ? 650 : 400;
+            vertical-alignment: center; }
+        if root.collapsible && root.checked: Path {
+            width: 10px;
+            height: 10px;
+            commands: root.expanded ? "M 1 3 L 5 7 L 9 3" : "M 3 1 L 7 5 L 3 9";
+            stroke: #7e7f86;
+            stroke-width: 1.4px;
+            stroke-line-cap: round;
+            stroke-line-join: round;
+        }
+        Rectangle { horizontal-stretch: 1; background: transparent; }
+        SwitchControl {
+            checked <=> root.checked;
+            accessibility-name: root.collapsible ? root.label + " enabled" : "";
+            toggled => { root.toggled(); }
+        }
+    }
+    if root.collapsible: header-focus := FocusScope {
+        x: 0px;
+        y: 0px;
+        width: parent.width - 35px;
+        height: parent.height;
+        focus-on-tab-navigation: root.checked;
+        key-pressed(event) => {
+            if (root.checked && (event.text == " " || event.text == Key.Return)) {
+                root.expanded = !root.expanded;
+                return accept;
+            }
+            return reject;
+        }
+        TouchArea {
+            enabled: root.checked;
+            mouse-cursor: pointer;
+            accessible-role: button;
+            accessible-label: root.label + " options";
+            clicked => {
+                header-focus.focus();
+                root.expanded = !root.expanded;
+            }
+        }
+    }
+}
+component NumberRow inherits Rectangle {
+    in property <string> label;
+    in property <string> unit;
+    in property <length> indent: 0px;
+    in-out property <string> value;
+    height: 37px;
+    background: transparent;
+    HorizontalLayout {
+        padding-left: root.indent;
+        spacing: 9px;
+        cross-axis-alignment: center;
+        Text { text: root.label; color: #ececf0; font-size: 13px;
+            vertical-alignment: center; }
+        Rectangle { horizontal-stretch: 1; background: transparent; }
+        FieldInput {
+            width: 72px;
+            accessibility-name: root.label + " value";
+            text <=> root.value;
+            unit: root.unit;
+            numeric: true;
+            height: 29px;
+        }
+    }
+}
+component RadiusSlider inherits Rectangle {
+    in-out property <float> value;
+    private property <int> minimum: 1;
+    private property <int> maximum: 150;
+    private property <length> end-inset: 9px;
+    private property <length> track-width: root.width - 2 * root.end-inset;
+    private property <length> thumb-position: root.end-inset +
+        root.track-width * (root.value - root.minimum) / (root.maximum - root.minimum);
+    private property <bool> active: slider-hit.has-hover || slider-hit.pressed;
+    private property <bool> pointer-focus: false;
+
+    width: 204px;
+    height: 28px;
+    forward-focus: slider-focus;
+    accessible-role: slider;
+    accessible-label: "Radius slider";
+    accessible-orientation: Orientation.horizontal;
+    accessible-value: root.value;
+    accessible-value-minimum: root.minimum;
+    accessible-value-maximum: root.maximum;
+    accessible-value-step: 1;
+    accessible-action-increment => { root.set-value(root.value + 1); }
+    accessible-action-decrement => { root.set-value(root.value - 1); }
+    accessible-action-set-value(value) => {
+        if (value.is-float()) {
+            root.set-value(value.to-float());
+        }
+    }
+
+    function set-value(value: float) {
+        root.value = clamp(round(value), root.minimum, root.maximum);
+    }
+
+    function move-thumb(position: length) {
+        let value = round(root.minimum + (root.maximum - root.minimum)
+            * (position - root.end-inset) / root.track-width);
+        // Pointer detents make the common radii easy to hit. Arrow keys
+        // and accessibility actions still reach every integer.
+        root.set-value(abs(value - 60) <= 2 ? 60 : abs(value - 100) <= 2 ? 100 : value);
+    }
+
+    rail := Rectangle {
+        x: root.end-inset;
+        y: (parent.height - self.height) / 2;
+        width: root.track-width;
+        height: root.active ? 6px : 4px;
+        border-radius: self.height / 2;
+        background: #48494d;
+        animate height { duration: 110ms; easing: ease-out; }
+
+        Rectangle {
+            x: 0px;
+            width: root.thumb-position - root.end-inset;
+            height: parent.height;
+            border-radius: parent.border-radius;
+            background: #56b9ea;
+        }
+    }
+    thumb := Rectangle {
+        x: root.thumb-position - self.width / 2;
+        y: (parent.height - self.height) / 2;
+        width: root.active ? 16px : 12px;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: #f5f5f7;
+        border-width: slider-focus.has-focus ? 1px : 0px;
+        border-color: #56b9ea;
+        drop-shadow-blur: 3px;
+        drop-shadow-offset-y: 1px;
+        drop-shadow-color: #00000055;
+        animate width { duration: 110ms; easing: ease-out; }
+    }
+    slider-focus := FocusScope {
+        changed has-focus => {
+            if (!self.has-focus) { root.pointer-focus = false; }
+        }
+        key-pressed(event) => {
+            if (event.text == Key.LeftArrow || event.text == Key.DownArrow) {
+                root.set-value(root.value - 1);
+            } else if (event.text == Key.RightArrow || event.text == Key.UpArrow) {
+                root.set-value(root.value + 1);
+            } else if (event.text == Key.Home) {
+                root.set-value(root.minimum);
+            } else if (event.text == Key.End) {
+                root.set-value(root.maximum);
+            } else {
+                return reject;
+            }
+            root.pointer-focus = false;
+            accept
+        }
+        slider-hit := TouchArea {
+            private property <length> drag-offset: 0px;
+            mouse-cursor: pointer;
+            pointer-event(event) => {
+                if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                    let offset = self.mouse-x - root.thumb-position;
+                    if (abs(offset) <= thumb.width / 2) {
+                        self.drag-offset = offset;
+                    } else {
+                        self.drag-offset = 0px;
+                        root.move-thumb(self.mouse-x);
+                    }
+                    root.pointer-focus = true;
+                    slider-focus.focus();
+                }
+            }
+            moved => { root.move-thumb(self.mouse-x - self.drag-offset); }
+        }
+    }
+    if root.active || (slider-focus.has-focus && !root.pointer-focus): value-tooltip := Rectangle {
+        x: root.thumb-position - self.width / 2;
+        y: thumb.y - self.height - 4px;
+        width: 42px;
+        height: 33px;
+        Path {
+            x: (parent.width - self.width) / 2;
+            y: 25px;
+            width: 12px;
+            height: 8px;
+            commands: "M 0 0 L 6 7 L 12 0 Z";
+            fill: #29292b;
+            stroke: #36373b;
+            stroke-width: 1px;
+            stroke-line-join: round;
+        }
+        Rectangle {
+            height: 27px;
+            y: 0px;
+            border-radius: 7px;
+            border-width: 1px;
+            border-color: #36373b;
+            background: #29292b;
+            Text {
+                text: "\{round(root.value)}";
+                color: #f1f1f3;
+                font-size: 13px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+component RadiusRow inherits Rectangle {
+    in-out property <float> value;
+    height: 37px;
+    HorizontalLayout {
+        padding-left: 12px;
+        spacing: 9px;
+        cross-axis-alignment: center;
+        Text { text: "Radius"; color: #ececf0; font-size: 13px; }
+        Rectangle { horizontal-stretch: 1; }
+        RadiusSlider { value <=> root.value; }
+    }
+}
+component RecoveryRow inherits Rectangle {
+    in property <string> label;
+    in property <color> enabled-color;
+    in-out property <bool> checked: false;
+    in-out property <string> value;
+    height: 37px;
+    background: transparent;
+    HorizontalLayout {
+        spacing: 9px;
+        cross-axis-alignment: center;
+        Text {
+            text: root.label;
+            font-size: 13px;
+            font-weight: 650;
+            color: root.checked ? root.enabled-color : #878890;
+            vertical-alignment: center;
+        }
+        Rectangle { horizontal-stretch: 1; background: transparent; }
+        FieldInput {
+            width: 72px;
+            accessibility-name: root.label + " threshold";
+            text <=> root.value;
+            height: 29px;
+            unit: "%";
+            numeric: true;
+            decimal: true;
+            enabled: root.checked;
+        }
+        SwitchControl { checked <=> root.checked; }
+    }
+}
+component ChoiceRow inherits Rectangle {
+    in property <string> label;
+    in-out property <int> index;
+    in property <length> viewport-height: 552px;
+    height: 37px;
+    background: transparent;
+    HorizontalLayout {
+        padding-left: 12px;
+        spacing: 9px;
+        cross-axis-alignment: center;
+        Text { text: root.label; color: #bfc0c6; font-size: 13px;
+            vertical-alignment: center; }
+        Rectangle { horizontal-stretch: 1; background: transparent; }
+        SelectField {
+            width: 108px; height: 29px;
+            viewport-height: root.viewport-height;
+            accessibility-name: "Rarity selector";
+            entries: ["Normal+", "Magic+", "Rare+", "Unique"];
+            entry-colors: [#c8c8c8, #8888ff, #ffff77, #af6025];
+            current-index: root.index;
+            selected(index) => { root.index = index; }
+        }
+    }
+}
+component SideLink inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    in property <bool> active: false;
+    in property <bool> available: true;
+    callback pressed();
+    height: 34px;
+    border-radius: 7px;
+    border-width: 0px;
+    private property <color> foreground: !root.available ? #666870 :
+        (root.active || nav-hit.has-hover ? #eff0f3 : #989aa2);
+    background: active ? #2a2a2c : (nav-hit.has-hover && available ? #242527 : transparent);
+    HorizontalLayout {
+        padding-left: 11px;
+        spacing: 9px;
+        cross-axis-alignment: center;
+        Image {
+            source: root.icon;
+            width: 19px;
+            height: 19px;
+            colorize: root.foreground;
+        }
+        Text {
+            text: root.label;
+            font-size: 14px;
+            font-weight: 600;
+            color: root.foreground;
+            vertical-alignment: center;
+        }
+    }
+    nav-focus := FocusScope { focus-on-tab-navigation: false; }
+    nav-hit := TouchArea {
+        clicked => {
+            if (root.available) {
+                nav-focus.focus();
+                root.pressed();
+            }
+        }
+    }
+}
+component ChromeAction inherits Rectangle {
+    in property <bool> danger: false;
+    in property <bool> back: false;
+    callback pressed();
+    width: 27px;
+    height: 27px;
+    border-radius: 14px;
+    background: close-hit.has-hover ? (danger ? #493037 : #303034) : transparent;
+    Path {
+        x: 9px; y: 9px; width: 9px; height: 9px;
+        commands: root.back ? "M 7 1 L 2 5 L 7 9" :
+            root.danger ? "M 1 1 L 8 8 M 8 1 L 1 8" : "M 1 4 L 8 4";
+        stroke: close-hit.has-hover ? #e8e8ed : #a1a2a9;
+        stroke-width: 1.6px;
+        stroke-line-cap: round;
+    }
+    close-hit := TouchArea { clicked => { root.pressed(); } }
+}
+component ActionButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    callback clicked();
+    height: 30px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: danger ? #853941 : primary ? #2d87b8 : #414248;
+    background: action-hit.pressed ? (danger ? #802f36 : #414653) :
+        action-hit.has-hover ? (danger ? #723038 : primary ? #287cac : #323439) :
+        danger ? #55272d : primary ? #21638e : #292a2d;
+    drop-shadow-blur: 3px;
+    drop-shadow-offset-y: 1px;
+    drop-shadow-color: #00000055;
+    Text { text: root.label; font-size: 12px;
+        font-weight: primary ? 600 : 500;
+        color: danger ? #ffd1d3 : primary ? #e8f6ff : #cfd0d5;
+        horizontal-alignment: center; vertical-alignment: center; }
+    action-focus := FocusScope { focus-on-tab-navigation: false; }
+    action-hit := TouchArea {
+        accessible-role: button;
+        accessible-label: root.label;
+        clicked => {
+            action-focus.focus();
+            root.clicked();
+        }
+    }
+}
+// Compact contextual actions, shared by the profile menu and new-profile row.
+component TinyAction inherits Rectangle {
+    in property <bool> add: false;
+    in property <string> accessibility-name;
+    callback clicked();
+    width: 29px;
+    height: 29px;
+    border-radius: 7px;
+    background: hit.has-hover ? #37383c : transparent;
+    if root.add: Path {
+        x: 9px; y: 9px; width: 11px; height: 11px;
+        commands: "M 5.5 0 L 5.5 11 M 0 5.5 L 11 5.5";
+        stroke: #c6c6ce; stroke-width: 1.5px;
+        stroke-line-cap: round;
+    }
+    if !root.add: Rectangle {
+        background: transparent;
+        Rectangle {
+            x: 7px; y: 13px;
+            width: 3px; height: 3px; border-radius: 2px;
+            background: #b4b4bd;
+        }
+        Rectangle {
+            x: 13px; y: 13px;
+            width: 3px; height: 3px; border-radius: 2px;
+            background: #b4b4bd;
+        }
+        Rectangle {
+            x: 19px; y: 13px;
+            width: 3px; height: 3px; border-radius: 2px;
+            background: #b4b4bd;
+        }
+    }
+    focus := FocusScope { focus-on-tab-navigation: false; }
+    hit := TouchArea {
+        accessible-role: button;
+        accessible-label: root.accessibility-name;
+        clicked => {
+            focus.focus();
+            root.clicked();
+        }
+    }
+}
+component MenuReveal inherits Rectangle {
+    private property <float> reveal: 0;
+    init => { root.reveal = 1; }
+    opacity: root.reveal;
+    y: (1 - root.reveal) * 4px;
+    animate reveal { duration: 140ms; easing: ease-out; }
+}
+
+component MenuOption inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    in property <bool> danger: false;
+    callback selected();
+    height: 36px;
+    border-radius: 6px;
+    background: option-hit.has-hover ? (root.danger ? #4a2d32 : #36383d) : transparent;
+    Text { x: 12px; text: root.label;
+        color: root.danger ? #fa9399 : #e2e2e6; font-size: 13px;
+        vertical-alignment: center; }
+    Image {
+        x: parent.width - self.width - 12px;
+        width: 16px;
+        height: 16px;
+        source: root.icon;
+        colorize: root.danger ? #fa9399 : option-hit.has-hover ? #f4f4f7 : #a5a6ad;
+    }
+    option-focus := FocusScope { focus-on-tab-navigation: false; }
+    option-hit := TouchArea {
+        accessible-role: button;
+        accessible-label: root.label;
+        clicked => {
+            option-focus.focus();
+            root.selected();
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "Auto Flask";
+    icon: @image-url("icon.png");
+    preferred-width: 780px;
+    preferred-height: 552px;
+    min-width: 710px;
+    min-height: 470px;
+    background: #111113;
+    no-frame: true;
+    resize-border-width: 7px;
+    default-font-family: "Inter Variable";
+    default-font-size: 14px;
+    default-font-weight: 400;
+
+    in-out property <bool> startup-ready: true;
+    in-out property <bool> presentation-active: true;
+    callback presentation-changed(bool);
+    callback restore-existing();
+    callback game-window-focused();
+    changed presentation-active => {
+        PresentationState.active = root.presentation-active;
+        if (!root.presentation-active) {
+            StatusTooltipState.visible = false;
+            app-menu.close();
+            profile-menu.close();
+        }
+    }
+    in-out property <int> game-index: 0;
+    in-out property <int> page: 0;
+    in-out property <int> previous-page: 0;
+    in-out property <[string]> profile-names: [];
+    in-out property <int> profile-index: 0;
+    in-out property <int> profile-action-index: 0;
+    in-out property <string> profile-action-name: "";
+    in-out property <string> profile-id: "";
+    in-out property <string> profile-display: "";
+    in-out property <string> config-location: "";
+    in-out property <string> new-profile-name: "";
+    in-out property <string> rename-to: "";
+    in-out property <bool> profile-rename-open: false;
+    in-out property <bool> profile-create-open: false;
+    in-out property <bool> profile-create-duplicate: false;
+    in-out property <int> profile-create-source-index: 0;
+    in-out property <bool> profile-delete-open: false;
+    in-out property <bool> profile-reset-open: false;
+    in-out property <string> status-line: "";
+    in-out property <bool> dirty-settings: false;
+    in-out property <string> error-line: "";
+    in-out property <bool> hide-on-close: true;
+    in property <string> app-version;
+    in property <bool> backend-connected: false;
+    in property <bool> backend-failed: false;
+    in property <bool> backend-enabled: false;
+    in property <string> backend-game-name;
+    in property <styled-text> backend-detail: @markdown("Starting helper");
+    in property <styled-text> backend-automation-detail: @markdown("Automation disabled");
+    in property <string> backend-error;
+    in property <string> live-life: "—";
+    in property <string> live-mana: "—";
+    in property <string> live-shield: "—";
+    in property <string> live-character-name;
+    in property <string> live-area: "Waiting for game state";
+    in property <styled-text> live-area-detail;
+    in property <bool> choose-game-open: false;
+    callback refresh-backend();
+    callback choose-running-game(int);
+    private property <length> profile-menu-x;
+    private property <length> profile-menu-y;
+    private property <length> profile-menu-height: 160px;
+
+    in-out property <bool> hideout: false;
+    in-out property <bool> life-enabled: true;
+    in-out property <string> life-threshold: "60";
+    in-out property <bool> mana-enabled: true;
+    in-out property <string> mana-threshold: "30";
+    in-out property <[string]> utility-names: [];
+    in-out property <[bool]> utility-enabled-entries: [];
+    in-out property <string> automation-key: "F11";
+    in-out property <int> utility-index: 0;
+    in-out property <bool> utility-enabled: false;
+    in-out property <bool> utility-nearby: false;
+    in-out property <float> utility-radius: 60;
+    in-out property <string> utility-count: "1";
+    in-out property <int> utility-rarity: 0;
+    in-out property <string> quicksilver-ms: "0";
+    in-out property <bool> writhing-enabled: false;
+    in-out property <bool> writhing-nearby: false;
+    in-out property <float> writhing-radius: 60;
+    in-out property <string> writhing-count: "1";
+    in-out property <int> writhing-rarity: 0;
+    in-out property <bool> molten-enabled: false;
+    in-out property <string> molten-key: "Q";
+    in-out property <string> molten-life: "95";
+    in-out property <bool> blood-enabled: false;
+    in-out property <string> blood-key: "T";
+    in-out property <string> blood-life: "80";
+    in-out property <bool> blood-nearby: true;
+    in-out property <float> blood-radius: 60;
+    in-out property <string> blood-count: "1";
+    in-out property <bool> offering-enabled: false;
+    in-out property <string> offering-key: "E";
+    in-out property <float> offering-radius: 60;
+    in-out property <string> offering-count: "1";
+
+    // Presentation only: folding a skill must never change its saved rule.
+    in-out property <bool> molten-expanded: true;
+    in-out property <bool> blood-expanded: true;
+    in-out property <bool> offering-expanded: true;
+    callback save-skill-sections();
+    changed molten-expanded => { root.save-skill-sections(); }
+    changed blood-expanded => { root.save-skill-sections(); }
+    changed offering-expanded => { root.save-skill-sections(); }
+
+    callback profile-draft-changed();
+    changed hideout => { root.profile-draft-changed(); }
+    changed life-enabled => { root.profile-draft-changed(); }
+    changed life-threshold => { root.profile-draft-changed(); }
+    changed mana-enabled => { root.profile-draft-changed(); }
+    changed mana-threshold => { root.profile-draft-changed(); }
+    changed utility-enabled => { root.profile-draft-changed(); }
+    changed utility-nearby => { root.profile-draft-changed(); }
+    changed utility-radius => { root.profile-draft-changed(); }
+    changed utility-count => { root.profile-draft-changed(); }
+    changed utility-rarity => { root.profile-draft-changed(); }
+    changed quicksilver-ms => { root.profile-draft-changed(); }
+    changed writhing-enabled => { root.profile-draft-changed(); }
+    changed writhing-nearby => { root.profile-draft-changed(); }
+    changed writhing-radius => { root.profile-draft-changed(); }
+    changed writhing-count => { root.profile-draft-changed(); }
+    changed writhing-rarity => { root.profile-draft-changed(); }
+    changed molten-enabled => { root.profile-draft-changed(); }
+    changed molten-key => { root.profile-draft-changed(); }
+    changed molten-life => { root.profile-draft-changed(); }
+    changed blood-enabled => { root.profile-draft-changed(); }
+    changed blood-key => { root.profile-draft-changed(); }
+    changed blood-life => { root.profile-draft-changed(); }
+    changed blood-nearby => { root.profile-draft-changed(); }
+    changed blood-radius => { root.profile-draft-changed(); }
+    changed blood-count => { root.profile-draft-changed(); }
+    changed offering-enabled => { root.profile-draft-changed(); }
+    changed offering-key => { root.profile-draft-changed(); }
+    changed offering-radius => { root.profile-draft-changed(); }
+    changed offering-count => { root.profile-draft-changed(); }
+
+    callback change-profile(int);
+    callback change-utility(int);
+    callback create-profile();
+    callback duplicate-profile();
+    callback rename-profile();
+    callback delete-profile();
+    callback reset-profile();
+    callback save-settings();
+    callback discard-settings();
+    callback save-global();
+    callback save-automation-key(string);
+    callback close-window();
+    callback minimize-window();
+    callback quit-app();
+
+    profile-menu := PopupWindow {
+        x: root.profile-menu-x;
+        y: root.profile-menu-y;
+        width: 177px;
+        height: root.profile-menu-height;
+        close-policy: close-on-click-outside;
+        MenuReveal {
+            border-radius: 9px;
+            border-width: 1px;
+            border-color: #48484d;
+            background: #28282b;
+            VerticalBox {
+                padding: 5px;
+                spacing: 2px;
+                MenuOption {
+                    label: "Rename";
+                    icon: @image-url("icons/rename.svg");
+                    selected => {
+                        root.profile-delete-open = false;
+                        root.profile-reset-open = false;
+                        root.profile-create-open = false;
+                        root.profile-create-duplicate = false;
+                        root.rename-to = root.profile-action-name;
+                        root.profile-rename-open = true;
+                        profile-menu.close();
+                    }
+                }
+                MenuOption {
+                    label: "Duplicate";
+                    icon: @image-url("icons/duplicate.svg");
+                    selected => {
+                        root.profile-rename-open = false;
+                        root.profile-delete-open = false;
+                        root.profile-reset-open = false;
+                        root.profile-create-duplicate = true;
+                        root.profile-create-source-index = root.profile-action-index;
+                        root.profile-create-open = true;
+                        root.new-profile-name = root.profile-action-name + " copy";
+                        profile-menu.close();
+                    }
+                }
+                MenuOption {
+                    label: "Reset";
+                    icon: @image-url("icons/reset.svg");
+                    selected => {
+                        root.profile-rename-open = false;
+                        root.profile-create-open = false;
+                        root.profile-create-duplicate = false;
+                        root.profile-delete-open = false;
+                        root.profile-reset-open = true;
+                        profile-menu.close();
+                    }
+                }
+                MenuOption {
+                    label: "Delete";
+                    icon: @image-url("icons/delete.svg");
+                    danger: true;
+                    selected => {
+                        root.profile-rename-open = false;
+                        root.profile-create-open = false;
+                        root.profile-create-duplicate = false;
+                        root.profile-reset-open = false;
+                        root.profile-delete-open = true;
+                        profile-menu.close();
+                    }
+                }
+            }
+        }
+    }
+
+    app-menu := PopupWindow {
+        x: 17px; y: 54px; width: 180px; height: 91px;
+        close-policy: close-on-click;
+        MenuReveal {
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: #3d3e43;
+            background: #262627;
+            VerticalBox {
+                padding: 5px;
+                spacing: 4px;
+                MenuOption {
+                    label: "Settings";
+                    icon: @image-url("icons/settings.svg");
+                    selected => {
+                        if (root.page != 3) { root.previous-page = root.page; }
+                        root.page = 3;
+                        app-menu.close();
+                    }
+                }
+                Separator {}
+                MenuOption {
+                    label: "Quit";
+                    icon: @image-url("icons/quit.svg");
+                    selected => {
+                        root.quit-app();
+                        app-menu.close();
+                    }
+                }
+            }
+        }
+    }
+
+    background-focus := FocusScope {
+        focus-on-tab-navigation: false;
+        TouchArea {
+            clicked => { background-focus.focus(); }
+        }
+    }
+
+    HorizontalBox {
+        opacity: root.startup-ready ? 1 : 0;
+        animate opacity {
+            enabled: root.startup-ready;
+            duration: 180ms;
+            easing: ease-out;
+        }
+        padding: 11px;
+        spacing: 9px;
+        Rectangle {
+            width: 188px;
+            border-radius: 9px;
+            background: #111113;
+            VerticalBox {
+                padding-left: 9px;
+                padding-right: 9px;
+                padding-top: 7px;
+                padding-bottom: 13px;
+                spacing: 5px;
+
+                Rectangle {
+                    height: 41px;
+                    border-radius: 6px;
+                    background: brand-hit.has-hover ? #252527 : transparent;
+                    HorizontalBox {
+                        padding-left: 11px; padding-right: 10px; spacing: 8px;
+                        Rectangle {
+                            width: 20px; background: transparent;
+                            Image {
+                                source: @image-url("icon.png");
+                                x: 1px;
+                                y: (parent.height - 18px) / 2;
+                                width: 18px; height: 18px;
+                                image-fit: contain;
+                            }
+                        }
+                        Text {
+                            text: "Auto Flask"; color: #e6e6ea;
+                            font-size: 14px; font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                        Rectangle {
+                            width: 12px; background: transparent;
+                            Path {
+                                x: 0px; y: (parent.height - 8px) / 2;
+                                width: 12px; height: 8px;
+                                commands: "M 1 1 L 6 6 L 11 1";
+                                stroke: #98999f; stroke-width: 1.5px;
+                                stroke-line-cap: round; stroke-line-join: round;
+                            }
+                        }
+                        Rectangle { horizontal-stretch: 1; background: transparent; }
+                    }
+                    brand-hit := TouchArea {
+                        clicked => { app-menu.show(); }
+                    }
+                }
+
+                Rectangle { height: 7px; background: transparent; }
+                SideLink {
+                    label: "Flasks";
+                    icon: @image-url("icons/flasks.svg");
+                    active: root.page == 0;
+                    pressed => { root.page = 0; }
+                }
+                SideLink {
+                    label: "Skills";
+                    icon: @image-url("icons/skills.svg");
+                    available: root.game-index == 0;
+                    active: root.page == 1;
+                    pressed => { root.page = 1; }
+                }
+                SideLink {
+                    label: "Profiles";
+                    icon: @image-url("icons/profiles.svg");
+                    active: root.page == 2;
+                    pressed => { root.page = 2; }
+                }
+                Rectangle { vertical-stretch: 1; background: transparent; }
+                SelectField {
+                    accessibility-name: "Profile selector";
+                    entries: root.profile-names;
+                    viewport-height: root.height;
+                    height: 31px;
+                    current-index: root.profile-index;
+                    selected(index) => { root.change-profile(index); }
+                }
+                Rectangle { height: 5px; background: transparent; }
+                Separator {}
+                HorizontalBox {
+                    height: 26px;
+                    spacing: 10px;
+                    padding-left: 6px;
+                    Rectangle {
+                        width: 9px;
+                        background: transparent;
+                        Rectangle {
+                            y: (parent.height - self.height) / 2;
+                            width: 8px; height: 8px;
+                            border-radius: 4px;
+                            background: root.backend-enabled ? #70b48d : #fa9399;
+                        }
+                        automation-hint := StatusHint { detail: root.backend-automation-detail; }
+                    }
+                    Text {
+                        text: root.backend-game-name != "" ? root.backend-game-name :
+                            root.game-index == 0 ? "Path of Exile" : "Path of Exile 2";
+                        font-size: 12px;
+                        color: root.backend-failed ? #fa9399 :
+                            root.backend-connected ? #70b48d : #8d8e94;
+                        vertical-alignment: center;
+                        connection-hint := StatusHint { detail: root.backend-detail; }
+                    }
+                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                }
+                if root.backend-connected: VerticalLayout {
+                    spacing: 5px;
+                    padding-bottom: 10px;
+                    if root.live-character-name != "": Text {
+                        text: root.live-character-name;
+                        font-size: 12px;
+                        font-weight: 550;
+                        color: #c4c5cb;
+                        overflow: elide;
+                    }
+                    for pool in [
+                        { label: "Life", value: root.live-life },
+                        { label: "Mana", value: root.live-mana },
+                        { label: "Shield", value: root.live-shield },
+                    ]: HorizontalLayout {
+                        Text { text: pool.label; font-size: 11px; color: #96989f; }
+                        Text {
+                            text: pool.value; font-size: 11px; color: #c4c5cb;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    Text {
+                        text: root.live-area;
+                        font-size: 11px; color: #96989f;
+                        overflow: elide;
+                        StatusHint { detail: root.live-area-detail; }
+                    }
+                }
+                if root.backend-error != "": Text {
+                    text: root.backend-error;
+                    font-size: 11px;
+                    color: #fa9399;
+                    overflow: elide;
+                    StatusHint { detail: root.backend-detail; }
+                }
+                Rectangle { height: 8px; background: transparent; }
+            }
+        }
+
+        Rectangle {
+            border-radius: 11px;
+            border-width: 1px;
+            border-color: #353538;
+            background: #1f2021;
+            drop-shadow-blur: 6px;
+            drop-shadow-offset-x: 2px;
+            drop-shadow-offset-y: 3px;
+            drop-shadow-color: #00000066;
+            clip: true;
+            VerticalLayout {
+                spacing: 0px;
+                Rectangle {
+                    height: 47px;
+                    background: #1f2021;
+                    HorizontalBox {
+                        padding-left: 17px;
+                        padding-right: 12px;
+                        spacing: 7px;
+                        if root.page == 3: ChromeAction {
+                            back: true;
+                            pressed => { root.page = root.previous-page; }
+                        }
+                        WindowMoveArea {
+                            Rectangle {
+                                background: transparent;
+                                HorizontalLayout {
+                                    padding-left: 8px;
+                                    spacing: 12px;
+                                    cross-axis-alignment: center;
+                                    Text {
+                                        height: 24px;
+                                        text: root.page == 0 ? "Flasks" :
+                                            root.page == 1 ? "Skills" :
+                                            root.page == 2 ? "Profiles" : "Settings";
+                                        color: #d4d5d9;
+                                        font-size: 15px;
+                                        font-weight: 650;
+                                        vertical-alignment: center;
+                                    }
+                                    if root.page == 3: Text {
+                                        height: 24px;
+                                        text: root.app-version;
+                                        font-size: 11px;
+                                        color: #81838c;
+                                        vertical-alignment: center;
+                                    }
+                                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                                }
+                            }
+                        }
+                        ChromeAction {
+                            pressed => { root.minimize-window(); }
+                        }
+                        ChromeAction {
+                            danger: true;
+                            pressed => { root.close-window(); }
+                        }
+                    }
+                    Rectangle {
+                        x: 0px;
+                        y: parent.height - 1px;
+                        width: parent.width;
+                        height: 1px;
+                        background: #36373b;
+                    }
+                }
+                if root.error-line != "": Rectangle {
+                    height: 36px;
+                    background: #33272a;
+                    Text {
+                        x: 14px;
+                        width: parent.width - 28px;
+                        text: root.error-line;
+                        color: #f4b3b8;
+                        font-size: 12px;
+                        overflow: elide;
+                        vertical-alignment: center;
+                    }
+                }
+                if root.choose-game-open: HorizontalBox {
+                    height: 48px;
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    cross-axis-alignment: center;
+                    spacing: 8px;
+                    Text { text: "Choose the running game"; font-size: 13px; color: #ececf0; }
+                    Rectangle { horizontal-stretch: 1; }
+                    ActionButton { label: "PoE1"; width: 58px; clicked => { root.choose-running-game(0); } }
+                    ActionButton { label: "PoE2"; width: 58px; clicked => { root.choose-running-game(1); } }
+                }
+
+                if root.page == 2: HorizontalBox {
+                    height: 73px;
+                    padding-left: 20px;
+                    padding-right: 20px;
+                    padding-top: 15px;
+                    padding-bottom: 6px;
+                    SectionCard {
+                        vertical-inset: 4px;
+                        Rectangle {
+                            height: 43px;
+                            vertical-stretch: 0;
+                            background: transparent;
+                            HorizontalBox {
+                                spacing: 8px;
+                                cross-axis-alignment: center;
+                                padding-left: 8px;
+                                padding-right: 7px;
+                                if !root.profile-create-open: HorizontalLayout {
+                                    spacing: 8px;
+                                    Text {
+                                        text: "New Profile";
+                                        color: #a9aab2;
+                                        font-size: 13px;
+                                        vertical-alignment: center;
+                                    }
+                                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                                    TinyAction {
+                                        add: true;
+                                        accessibility-name: "New Profile";
+                                        clicked => {
+                                            root.profile-rename-open = false;
+                                            root.profile-delete-open = false;
+                                            root.profile-reset-open = false;
+                                            root.profile-create-duplicate = false;
+                                            root.profile-create-open = true;
+                                            root.new-profile-name = "";
+                                        }
+                                    }
+                                }
+                                if root.profile-create-open: HorizontalLayout {
+                                    spacing: 6px;
+                                    cross-axis-alignment: center;
+                                    FieldInput { text <=> root.new-profile-name; height: 29px; placeholder-text: "Name"; }
+                                    ActionButton {
+                                        label: "Cancel"; width: 58px;
+                                        clicked => {
+                                            root.profile-create-open = false;
+                                            root.profile-create-duplicate = false;
+                                            root.new-profile-name = "";
+                                        }
+                                    }
+                                    ActionButton {
+                                        label: "Create"; primary: true; width: 62px;
+                                        clicked => {
+                                            if root.profile-create-duplicate {
+                                                root.duplicate-profile();
+                                            } else {
+                                                root.create-profile();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    vertical-stretch: 1;
+                    background: #1f2021;
+                    clip: true;
+                    ScrollView {
+                        vertical-scrollbar-policy: as-needed;
+                        horizontal-scrollbar-policy: always-off;
+                    VerticalBox {
+                        width: parent.width;
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        padding-top: 15px;
+                        padding-bottom: 16px;
+                        spacing: 12px;
+
+if root.page == 0: VerticalBox {
+    horizontal-stretch: 1;
+    cross-axis-alignment: stretch;
+    spacing: 4px;
+
+    SectionHeading { text: "Recovery"; }
+    SectionCard {
+        RecoveryRow {
+            label: "Life";
+            enabled-color: #e05030;
+            checked <=> root.life-enabled;
+            value <=> root.life-threshold;
+        }
+        Separator {}
+        RecoveryRow {
+            label: "Mana";
+            enabled-color: #7070ff;
+            checked <=> root.mana-enabled;
+            value <=> root.mana-threshold;
+        }
+    }
+
+    if root.game-index == 0: SectionHeading { text: "Utility"; separated: true; }
+    if root.game-index == 0: SectionCard {
+        HorizontalLayout {
+            height: 37px;
+            spacing: 9px;
+            cross-axis-alignment: center;
+            SelectField {
+                width: 138px;
+                height: 29px;
+                accessibility-name: "Utility flask selector";
+                label-weight: 650;
+                viewport-height: root.height;
+                entries: root.utility-names;
+                enabled-entries: root.utility-enabled-entries;
+                current-entry-enabled: root.utility-enabled;
+                current-index: root.utility-index;
+                selected(index) => { root.change-utility(index); }
+            }
+            Rectangle { horizontal-stretch: 1; background: transparent; }
+            SwitchControl {
+                accessibility-name: "Enable selected utility flask";
+                checked <=> root.utility-enabled;
+            }
+        }
+        if root.utility-enabled: VerticalLayout {
+            spacing: 0px;
+            if root.utility-index == 0: VerticalLayout {
+                spacing: 0px;
+                Separator {}
+                NumberRow {
+                    label: "Minimum Run Time";
+                    value <=> root.quicksilver-ms;
+                    unit: "ms";
+                }
+            }
+            Separator {}
+            ToggleRow {
+                label: "Nearby Enemies";
+                checked <=> root.utility-nearby;
+            }
+            if root.utility-nearby: VerticalLayout {
+                spacing: 0px;
+                Separator { indent: 12px; }
+                NumberRow { label: "Count"; indent: 12px; value <=> root.utility-count; unit: ""; }
+                Separator { indent: 12px; }
+                RadiusRow { value <=> root.utility-radius; }
+                Separator { indent: 12px; }
+                ChoiceRow { label: "Rarity"; index <=> root.utility-rarity; viewport-height: root.height; }
+            }
+        }
+    }
+
+    if root.game-index == 0: SectionHeading { text: "Unique"; separated: true; }
+    if root.game-index == 0: SectionCard {
+        ToggleRow {
+            label: "The Writhing Jar";
+            strong-label: true;
+            enabled-color: #af6025;
+            checked <=> root.writhing-enabled;
+        }
+        if root.writhing-enabled: VerticalLayout {
+            spacing: 0px;
+            Separator {}
+            ToggleRow { label: "Nearby Enemies"; checked <=> root.writhing-nearby; }
+            if root.writhing-nearby: VerticalLayout {
+                spacing: 0px;
+                Separator { indent: 12px; }
+                NumberRow { label: "Count"; indent: 12px; value <=> root.writhing-count; unit: ""; }
+                Separator { indent: 12px; }
+                RadiusRow { value <=> root.writhing-radius; }
+                Separator { indent: 12px; }
+                ChoiceRow { label: "Rarity"; index <=> root.writhing-rarity; viewport-height: root.height; }
+            }
+        }
+    }
+
+}
+
+if root.page == 1 && root.game-index == 0: VerticalBox {
+    horizontal-stretch: 1;
+    spacing: 12px;
+    SectionCard {
+        ToggleRow {
+            label: "Molten Shell"; strong-label: true; enabled-color: #e05030;
+            checked <=> root.molten-enabled;
+            collapsible: true; expanded <=> root.molten-expanded;
+            toggled => { if (root.molten-enabled) { root.molten-expanded = true; } }
+        }
+        if root.molten-enabled && root.molten-expanded: VerticalLayout {
+            spacing: 0px;
+            Separator {}
+            SkillKeyRow { skill-name: "Molten Shell"; value <=> root.molten-key; }
+            Separator {}
+            NumberRow { label: "Maximum Life"; value <=> root.molten-life; unit: "%"; }
+        }
+    }
+    SectionCard {
+        ToggleRow {
+            label: "Blood Rage"; strong-label: true; enabled-color: #70ff70;
+            checked <=> root.blood-enabled;
+            collapsible: true; expanded <=> root.blood-expanded;
+            toggled => { if (root.blood-enabled) { root.blood-expanded = true; } }
+        }
+        if root.blood-enabled && root.blood-expanded: VerticalLayout {
+            spacing: 0px;
+            Separator {}
+            SkillKeyRow { skill-name: "Blood Rage"; value <=> root.blood-key; }
+            Separator {}
+            NumberRow { label: "Minimum Life"; value <=> root.blood-life; unit: "%"; }
+            Separator {}
+            ToggleRow { label: "Nearby Enemies"; checked <=> root.blood-nearby; }
+            if root.blood-nearby: VerticalLayout {
+                spacing: 0px;
+                Separator { indent: 12px; }
+                NumberRow { label: "Count"; indent: 12px; value <=> root.blood-count; unit: ""; }
+                Separator { indent: 12px; }
+                RadiusRow { value <=> root.blood-radius; }
+            }
+        }
+    }
+    SectionCard {
+        ToggleRow {
+            label: "Spirit Offering"; strong-label: true; enabled-color: #7070ff;
+            checked <=> root.offering-enabled;
+            collapsible: true; expanded <=> root.offering-expanded;
+            toggled => { if (root.offering-enabled) { root.offering-expanded = true; } }
+        }
+        if root.offering-enabled && root.offering-expanded: VerticalLayout {
+            spacing: 0px;
+            Separator {}
+            SkillKeyRow { skill-name: "Spirit Offering"; value <=> root.offering-key; }
+            Separator {}
+            NumberRow { label: "Corpses"; indent: 12px; value <=> root.offering-count; unit: ""; }
+            Separator { indent: 12px; }
+            RadiusRow { value <=> root.offering-radius; }
+        }
+    }
+}
+
+
+if root.page == 2: VerticalBox {
+    horizontal-stretch: 1;
+    spacing: 10px;
+    SectionCard {
+        vertical-inset: 4px;
+        for item[index] in root.profile-names: VerticalLayout {
+            height: 51px;
+            vertical-stretch: 0;
+            spacing: 0px;
+            Rectangle {
+                height: 50px;
+                background: transparent;
+                Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    width: parent.width;
+                    height: 44px;
+                    border-radius: 7px;
+                    background: index == root.profile-index ? #2c2c30 : transparent;
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 7px;
+                    cross-axis-alignment: center;
+                    spacing: 7px;
+                    if index == root.profile-action-index && root.profile-rename-open: HorizontalLayout {
+                        spacing: 6px;
+                        cross-axis-alignment: center;
+                        FieldInput { height: 29px; text <=> root.rename-to; placeholder-text: "Profile name"; }
+                        ActionButton {
+                            label: "Cancel"; width: 58px;
+                            clicked => {
+                                root.profile-rename-open = false;
+                                root.rename-to = root.profile-display;
+                            }
+                        }
+                        ActionButton {
+                            label: "Save"; width: 55px; primary: true;
+                            clicked => { root.rename-profile(); }
+                        }
+                    }
+                    if index == root.profile-action-index && (root.profile-delete-open || root.profile-reset-open): HorizontalLayout {
+                        spacing: 6px;
+                        cross-axis-alignment: center;
+                        Text {
+                            text: root.profile-reset-open ? "Restore defaults for " + item + "?" : "Delete " + item + "?";
+                            font-size: 13px;
+                            color: root.profile-reset-open ? #e3e4e8 : #f5aab0;
+                            overflow: elide;
+                            vertical-alignment: center;
+                        }
+                        Rectangle { horizontal-stretch: 1; background: transparent; }
+                        ActionButton {
+                            label: "Cancel"; width: 58px;
+                            clicked => {
+                                root.profile-delete-open = false;
+                                root.profile-reset-open = false;
+                            }
+                        }
+                        ActionButton {
+                            label: root.profile-reset-open ? "Reset" : "Delete";
+                            width: 60px;
+                            danger: root.profile-delete-open;
+                            primary: root.profile-reset-open;
+                            clicked => {
+                                if (root.profile-reset-open) {
+                                    root.reset-profile();
+                                } else {
+                                    root.delete-profile();
+                                }
+                            }
+                        }
+                    }
+                    if !(index == root.profile-action-index &&
+                        (root.profile-delete-open || root.profile-rename-open || root.profile-reset-open)): HorizontalLayout {
+                        spacing: 8px;
+                        cross-axis-alignment: center;
+                        Rectangle {
+                            background: transparent;
+                            horizontal-stretch: 1;
+                            cross-axis-self-alignment: stretch;
+                            Text {
+                                x: 2px; width: parent.width - 4px;
+                                text: item;
+                                font-size: 14px;
+                                font-weight: index == root.profile-index ? 600 : 400;
+                                color: index == root.profile-index ? #f0f1f4 : #e3e4e8;
+                                overflow: elide;
+                                vertical-alignment: center;
+                            }
+                            row-hit := TouchArea {
+                                accessible-role: button;
+                                accessible-label: "Load " + item;
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    if (root.profile-index != index) { root.change-profile(index); }
+                                }
+                            }
+                        }
+                        if index == root.profile-index: Rectangle {
+                            width: 52px;
+                            height: 21px;
+                            border-radius: 11px;
+                            background: #1e3441;
+                            border-width: 1px;
+                            border-color: #2c566f;
+                            Text {
+                                text: "Active";
+                                color: #9ad6f3;
+                                font-size: 11px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                        profile-action := TinyAction {
+                            accessibility-name: "Actions for " + item;
+                            clicked => {
+                                root.profile-action-index = index;
+                                root.profile-action-name = item;
+                                let anchor = profile-action.absolute-position;
+                                let below = anchor.y + profile-action.height + 4px;
+                                root.profile-menu-x = max(8px, min(root.width - 185px,
+                                    anchor.x + profile-action.width - 177px));
+                                root.profile-menu-y = below + root.profile-menu-height <= root.height - 8px
+                                    ? below : max(8px, anchor.y - root.profile-menu-height - 4px);
+                                profile-menu.show();
+                            }
+                        }
+                    }
+                }
+                }
+            }
+            if index + 1 < root.profile-names.length: Separator {}
+        }
+
+    }
+}
+
+if root.page == 3: VerticalBox {
+    horizontal-stretch: 1;
+    alignment: start;
+    spacing: 4px;
+    SectionHeading { text: "Automation"; }
+    SectionCard {
+        HorizontalLayout {
+            height: 37px;
+            spacing: 9px;
+            cross-axis-alignment: center;
+            Text { text: "Enable / Disable Key"; color: #ececf0; font-size: 13px; }
+            Rectangle { horizontal-stretch: 1; }
+            KeybindField {
+                accessibility-name: "Automation keybind";
+                value: root.automation-key;
+                allow-modifier: false;
+                captured(key) => { root.save-automation-key(key); }
+            }
+        }
+        Separator {}
+        ToggleRow { label: "Enable in Hideouts"; checked <=> root.hideout; }
+    }
+    SectionHeading { text: "Window"; separated: true; }
+    SectionCard {
+        ToggleRow {
+            label: "Close to Tray";
+            checked <=> root.hide-on-close;
+            toggled => { root.save-global(); }
+        }
+    }
+    SectionHeading { text: "Configuration Folder"; separated: true; }
+    SectionCard {
+        Text {
+            text: root.config-location;
+            color: #a0a2aa;
+            font-size: 13px;
+            wrap: word-wrap;
+        }
+    }
+}
+
+
+                    }
+                    }
+                }
+
+                if root.dirty-settings || root.status-line != "": VerticalLayout {
+                    spacing: 0px;
+                    Separator {}
+                    HorizontalLayout {
+                        padding-left: 19px;
+                        padding-right: 19px;
+                        spacing: 10px;
+                        height: 46px;
+                        cross-axis-alignment: center;
+                        Text {
+                            text: root.status-line;
+                            color: #98999e;
+                            font-size: 12px;
+                            overflow: elide;
+                            vertical-alignment: center;
+                        }
+                        Rectangle { horizontal-stretch: 1; background: transparent; }
+                        if root.dirty-settings: HorizontalLayout {
+                            spacing: 8px;
+                            ActionButton {
+                                width: 74px; label: "Discard";
+                                clicked => { root.discard-settings(); }
+                            }
+                            ActionButton {
+                                width: 63px; label: "Save"; primary: true;
+                                clicked => { root.save-settings(); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    status-tooltip := Rectangle {
+        visible: StatusTooltipState.visible;
+        width: min(root.width - 16px, tooltip-layout.preferred-width);
+        height: tooltip-layout.preferred-height;
+        x: clamp(StatusTooltipState.anchor-x, 8px, root.width - self.width - 8px);
+        y: max(8px, StatusTooltipState.anchor-y - self.height - 10px);
+        background: Palette.alternate-background;
+        border-color: Palette.border;
+        border-width: 1px;
+        border-radius: 4px;
+        tooltip-layout := VerticalLayout {
+            padding-left: 9px;
+            padding-right: 9px;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            StyledText {
+                text: StatusTooltipState.text;
+                default-color: Palette.foreground;
+            }
+        }
+    }
+}
+
+export component AppTray inherits SystemTrayIcon {
+    icon: @image-url("icon.png");
+    tooltip: "Auto Flask";
+    title: "Auto Flask";
+    callback restore-window();
+    callback open-settings();
+    callback quit-app();
+    clicked => { restore-window(); }
+    Menu {
+        MenuItem { title: "Open"; activated => { restore-window(); } }
+        MenuItem { title: "Settings"; activated => { open-settings(); } }
+        MenuSeparator {}
+        MenuItem { title: "Quit"; activated => { quit-app(); } }
+    }
+}

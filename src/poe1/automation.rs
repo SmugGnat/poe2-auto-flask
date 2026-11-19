@@ -28,9 +28,14 @@ use super::skills::SkillId;
 use super::state::{Preflight, TickState};
 use super::types::FlaskType;
 
-pub fn run(process: &Process, session: GameSession, manager: &mut ConfigManager) -> io::Result<()> {
+pub fn run(
+    process: &Process,
+    session: GameSession,
+    manager: &mut ConfigManager,
+    control: &mut crate::runtime::BackendControl,
+) -> io::Result<()> {
     let policy = Policy::new(manager.current())?;
-    crate::engine::run(process, session, manager, policy)
+    crate::engine::run(process, session, manager, policy, control)
 }
 
 struct Policy {
@@ -95,18 +100,19 @@ impl GameAutomationPolicy for Policy {
         println!("Settings:\n{}", config.poe1_summary());
         println!("{}", binding_label(self.bindings.current()));
         warn_key_conflicts(&self.skill_rules, self.bindings.current());
-        println!("Starts DISARMED. Press F11 while PoE1 is focused to arm/disarm. Ctrl+C exits.");
     }
 
     fn on_config_reload(&mut self, event: ConfigReload, config: &Config) {
         match event {
-            ConfigReload::Reloaded => {
+            ConfigReload::Reloaded | ConfigReload::ProfileSwitched => {
                 // ConfigManager validated these presets before applying the reload.
                 if let Ok(rules) = configured_rules(&config.poe1.skills) {
                     self.skill_rules = rules;
                 }
                 self.run_tracker.reset();
                 self.rotation.reset();
+                self.activation_guard.reset();
+                self.skill_attempts.clear();
                 println!("PoE1 config reloaded:\n{}", config.poe1_summary());
                 warn_key_conflicts(&self.skill_rules, self.bindings.current());
             }
@@ -124,7 +130,19 @@ impl GameAutomationPolicy for Policy {
         }
     }
 
-    fn bindings_pause(&self) -> Option<&'static str> {
+    fn bindings_pause(&self, toggle: crate::input::AutomationKey) -> Option<&'static str> {
+        if self
+            .skill_rules
+            .iter()
+            .any(|rule| toggle.conflicts_with(rule.key))
+        {
+            return Some("PAUSED (automation key conflicts with a skill)");
+        }
+        if let BindingState::Ready(keys) = self.bindings.current() {
+            if keys.iter().any(|key| toggle.conflicts_with(*key)) {
+                return Some("PAUSED (automation key conflicts with a flask)");
+            }
+        }
         if !self.skill_rules.is_empty() {
             return None;
         }
@@ -195,7 +213,7 @@ impl GameAutomationPolicy for Policy {
         });
         if !flask_demand && !skill_demand {
             self.run_tracker.reset();
-            return Ok(TickOutcome::Status("ARMED"));
+            return Ok(TickOutcome::Status("ENABLED"));
         }
 
         // Shared state readers run once per tick, regardless of which policy
@@ -210,7 +228,7 @@ impl GameAutomationPolicy for Policy {
             Err(error) => return Ok(TickOutcome::RefreshFailed(error.to_string())),
         };
         if blocks_grace_period(effects) {
-            return Ok(TickOutcome::Status("ARMED"));
+            return Ok(TickOutcome::Status("ENABLED"));
         }
 
         let flask = if flask_demand {
@@ -309,7 +327,7 @@ impl GameAutomationPolicy for Policy {
         }
 
         if flask.is_none() && skills.is_empty() {
-            return Ok(TickOutcome::Status("ARMED"));
+            return Ok(TickOutcome::Status("ENABLED"));
         }
 
         // A single fresh state check protects *both* candidates. Each
@@ -322,13 +340,13 @@ impl GameAutomationPolicy for Policy {
             return Ok(TickOutcome::Status("PAUSED (chat or focus)"));
         }
         if blocks_grace_period(&preflight.effects) {
-            return Ok(TickOutcome::Status("ARMED"));
+            return Ok(TickOutcome::Status("ENABLED"));
         }
 
         if let Some(candidate) = flask {
             let outcome =
                 self.send_flask(process, session, config, started, &preflight, candidate)?;
-            if outcome != TickOutcome::Status("ARMED") {
+            if outcome != TickOutcome::Status("ENABLED") {
                 // Focus loss and stale shared state legitimately halt the tick.
                 return Ok(outcome);
             }
@@ -385,7 +403,7 @@ impl GameAutomationPolicy for Policy {
                 }
             }
         }
-        Ok(TickOutcome::Status("ARMED"))
+        Ok(TickOutcome::Status("ENABLED"))
     }
 }
 
@@ -481,7 +499,7 @@ impl Policy {
             !self.activation_guard.life_input_pending(),
         ) == Some(slot);
         if !quicksilver_motion_ok || !still_selected {
-            return Ok(TickOutcome::Status("ARMED"));
+            return Ok(TickOutcome::Status("ENABLED"));
         }
 
         match dispatch(process, ActionRequest::flask(slot, key), || {
@@ -521,7 +539,7 @@ impl Policy {
             }
             Err(DispatchError::Input(error)) => return Err(error),
         }
-        Ok(TickOutcome::Status("ARMED"))
+        Ok(TickOutcome::Status("ENABLED"))
     }
 }
 

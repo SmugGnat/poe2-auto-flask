@@ -1,6 +1,8 @@
 //! Flask type is classified from base-item metadata, never the equipped slot.
 //! All 18 numbered PoE1 utility bases follow the BaseItemTypes metadata IDs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum FlaskType {
     Life,
@@ -29,7 +31,9 @@ pub enum FlaskType {
 }
 
 /// Unique identity comes from an equipped item modifier, not its base type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum UniqueFlask {
     WrithingJar,
