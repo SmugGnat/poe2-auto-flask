@@ -166,9 +166,10 @@ python3 scripts/test-app-run.py
 ```
 
 The **Build** workflow runs affected component checks and assembles Windows
-and AppImage artifacts on `develop`, `main` and the active UI feature branch.
-It can also be dispatched manually for a full build. Build and Release share
-packaging scripts, so `develop` artifacts exercise the release assembly path.
+and AppImage artifacts on `develop` and `main`. Documentation-only changes
+do not trigger automatic builds. It can also be dispatched manually for a
+full build. Build and Release share packaging scripts, so `develop` artifacts
+exercise the release assembly path.
 Test those artifacts before promoting `develop` to `main`.
 
 A push to `main` runs Build; it does **not** publish a release. **Release**

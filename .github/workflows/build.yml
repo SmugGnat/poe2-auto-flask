@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main, develop, feature/ui]
+    branches: [main, develop]
     paths:
       - "src/**"
       - "app-ui/**"
@@ -17,8 +17,12 @@ on:
       - "LICENSE"
       - ".github/workflows/build.yml"
       - ".github/workflows/release.yml"
+      - "!**/*.md"
+      - "!**/*.markdown"
+      - "!**/*.rst"
+      - "!**/*.adoc"
   pull_request:
-    branches: [main, develop, feature/ui]
+    branches: [main, develop]
     paths:
       - "src/**"
       - "app-ui/**"
@@ -33,6 +37,10 @@ on:
       - "LICENSE"
       - ".github/workflows/build.yml"
       - ".github/workflows/release.yml"
+      - "!**/*.md"
+      - "!**/*.markdown"
+      - "!**/*.rst"
+      - "!**/*.adoc"
   workflow_dispatch:
 
 permissions:
@@ -93,6 +101,9 @@ jobs:
 
           for file in "${files[@]}"; do
             case "$file" in
+              *.md|*.markdown|*.rst|*.adoc)
+                continue
+                ;;
               src/*|app-ui/*|Cargo.toml|Cargo.lock|config.example.toml)
                 windows_changed=true
                 appimage=true
