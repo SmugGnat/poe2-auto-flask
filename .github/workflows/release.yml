@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version without the v prefix (for example, 0.8.0)"
+        description: "Release version without the v prefix (for example, 1.0.0)"
         required: true
         type: string
 
@@ -33,6 +33,8 @@ jobs:
       - name: Verify release source and version
         id: release
         shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           git fetch origin main --tags
@@ -40,7 +42,7 @@ jobs:
           main=$(git rev-parse origin/main)
 
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
-            version='${{ inputs.version }}'
+            version="$REQUESTED_VERSION"
             if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "Manual release version must use MAJOR.MINOR.PATCH format; got '$version'." >&2
               exit 1
@@ -89,12 +91,24 @@ jobs:
           PY
           )
 
+          ui_version=$(python3 - <<'PYVERSION'
+          import tomllib
+          with open("app-ui/Cargo.toml", "rb") as f:
+              print(tomllib.load(f)["package"]["version"])
+          PYVERSION
+          )
+
           if [[ "$root_version" != "$version" ]]; then
             echo "Release version $version does not match Cargo.toml version $root_version." >&2
             exit 1
           fi
           if [[ "$launcher_version" != "$version" ]]; then
             echo "Release version $version does not match linux-launcher/Cargo.toml version $launcher_version." >&2
+            exit 1
+          fi
+
+          if [[ "$ui_version" != "$version" ]]; then
+            echo "Release version $version does not match app-ui/Cargo.toml version $ui_version." >&2
             exit 1
           fi
 
@@ -112,55 +126,43 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.sha }}
 
-      - name: Install Rust 1.85
-        uses: dtolnay/rust-toolchain@1.85.0
+      - name: Install Rust 1.100.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           targets: x86_64-pc-windows-msvc
           components: clippy, rustfmt
 
-      - name: Check formatting
+      - name: Cache Windows Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            app-ui -> target
+
+      - name: Backend formatting
         run: cargo fmt --all -- --check
 
-      - name: Clippy
+      - name: UI formatting
+        run: cargo fmt --manifest-path app-ui/Cargo.toml -- --check
+
+      - name: Backend Clippy
         run: cargo clippy --locked --target x86_64-pc-windows-msvc --all-targets -- -D warnings
 
-      - name: Test
+      - name: UI Clippy
+        run: cargo clippy --locked --manifest-path app-ui/Cargo.toml --target x86_64-pc-windows-msvc --all-targets -- -D warnings
+
+      - name: Backend tests
         run: cargo test --locked --target x86_64-pc-windows-msvc
 
+      - name: UI tests
+        run: cargo test --locked --manifest-path app-ui/Cargo.toml --target x86_64-pc-windows-msvc
+
       - name: Build release
-        run: cargo build --locked --release --target x86_64-pc-windows-msvc
+        run: cargo build --locked --release --manifest-path app-ui/Cargo.toml --target x86_64-pc-windows-msvc
 
-      - name: Prepare release assets
+      - name: Package Windows application
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path dist -Force | Out-Null
-          Copy-Item target/x86_64-pc-windows-msvc/release/poe2-auto-flask.exe dist/poe2-auto-flask-windows-x64.exe
-
-          $licenses = 'dist/LICENSES.txt'
-          $thirdParty = Join-Path $env:RUNNER_TEMP 'THIRD_PARTY_NOTICES.txt'
-
-          & ./scripts/collect-third-party-licenses.ps1 `
-            -OutputDir "$env:RUNNER_TEMP/poe2-auto-flask-third-party-licenses" `
-            -NoticePath $thirdParty
-
-          @(
-            'PoE2 Auto Flask'
-            'GPL-3.0-only and third-party dependency licenses'
-            ''
-            '=============================================================================='
-            'PROJECT LICENSE'
-            '=============================================================================='
-            ''
-          ) | Set-Content -LiteralPath $licenses -Encoding utf8
-          Get-Content -LiteralPath LICENSE -Raw | Add-Content -LiteralPath $licenses -Encoding utf8
-          @(
-            ''
-            '=============================================================================='
-            'THIRD-PARTY DEPENDENCY LICENSES'
-            '=============================================================================='
-            ''
-          ) | Add-Content -LiteralPath $licenses -Encoding utf8
-          Get-Content -LiteralPath $thirdParty -Raw | Add-Content -LiteralPath $licenses -Encoding utf8
+        run: ./scripts/package-windows.ps1
 
       - name: Upload Windows release assets
         uses: actions/upload-artifact@v7
@@ -179,10 +181,15 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.sha }}
 
-      - name: Install Rust 1.85
-        uses: dtolnay/rust-toolchain@1.85.0
+      - name: Install Rust 1.100.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: clippy, rustfmt
+
+      - name: Cache launcher Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "linux-launcher -> target"
 
       - name: Check formatting
         working-directory: linux-launcher
@@ -195,6 +202,9 @@ jobs:
       - name: Test
         working-directory: linux-launcher
         run: cargo test --locked
+
+      - name: Test desktop launch routing
+        run: python3 scripts/test-app-run.py
 
       - name: Build release
         working-directory: linux-launcher
@@ -217,7 +227,7 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.sha }}
 
-      - name: Download Windows helper
+      - name: Download Windows application
         uses: actions/download-artifact@v8
         with:
           name: release-windows-x64
@@ -229,54 +239,11 @@ jobs:
           name: release-linux-launcher
           path: linux-artifact
 
-      - name: Prepare AppDir
+      - name: Package AppImage
         run: |
-          mkdir -p \
-            AppDir/usr/bin \
-            AppDir/usr/lib/poe2-auto-flask \
-            AppDir/usr/share/licenses/poe2-auto-flask
-
-          cp linux-artifact/poe2-auto-flask-linux-launcher AppDir/usr/bin/poe2-auto-flask
-          cp windows-artifact/poe2-auto-flask-windows-x64.exe AppDir/usr/lib/poe2-auto-flask/poe2-auto-flask.exe
-          cp LICENSE AppDir/usr/share/licenses/poe2-auto-flask/LICENSE
-          cp windows-artifact/LICENSES.txt AppDir/usr/share/licenses/poe2-auto-flask/LICENSES.txt
-          cp packaging/linux/AppRun AppDir/AppRun
-          cp packaging/linux/terminal-wrapper AppDir/usr/bin/poe2-auto-flask-terminal
-          cp packaging/linux/poe2-auto-flask.desktop AppDir/poe2-auto-flask.desktop
-          cp packaging/linux/poe2-auto-flask.svg AppDir/poe2-auto-flask.svg
-          ln -s poe2-auto-flask.svg AppDir/.DirIcon
-
-          chmod +x \
-            AppDir/AppRun \
-            AppDir/usr/bin/poe2-auto-flask \
-            AppDir/usr/bin/poe2-auto-flask-terminal
-
-      - name: Download AppImage tools
-        run: |
-          curl --fail --location --retry 3 \
-            --output appimagetool-x86_64.AppImage \
-            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
-          echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool-x86_64.AppImage" \
-            | sha256sum --check -
-
-          curl --fail --location --retry 3 \
-            --output runtime-x86_64 \
-            https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
-          echo "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  runtime-x86_64" \
-            | sha256sum --check -
-
-          chmod +x appimagetool-x86_64.AppImage
-
-      - name: Build AppImage
-        run: |
-          mkdir -p dist
-          ARCH=x86_64 ./appimagetool-x86_64.AppImage \
-            --appimage-extract-and-run \
-            --no-appstream \
-            --runtime-file runtime-x86_64 \
-            AppDir \
+          bash scripts/package-appimage.sh windows-artifact \
+            linux-artifact/poe2-auto-flask-linux-launcher \
             dist/poe2-auto-flask-x86_64.AppImage
-          chmod +x dist/poe2-auto-flask-x86_64.AppImage
 
       - name: Upload Linux release asset
         uses: actions/upload-artifact@v7

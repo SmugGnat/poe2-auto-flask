@@ -1,7 +1,7 @@
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs;
-use std::io;
+use std::io::{self, IsTerminal};
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -43,6 +43,7 @@ impl Game {
 
 const BUNDLED_HELPER_ENV: &str = "POE2_AUTO_FLASK_BUNDLED_HELPER";
 const HELPER_CONFIG_ENV: &str = "POE2_AUTO_FLASK_CONFIG";
+const HELPER_PROFILE_ROOT_ENV: &str = "POE2_AUTO_FLASK_PROFILE_DIR";
 
 struct LaunchEnvironment {
     pid: u32,
@@ -62,7 +63,40 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("poe2-auto-flask: {error}");
+            if !io::stderr().is_terminal()
+                && (env::var_os("DISPLAY").is_some() || env::var_os("WAYLAND_DISPLAY").is_some())
+                && !env::args_os().any(|arg| arg == "--debug")
+            {
+                show_launch_error(&error);
+            }
             ExitCode::FAILURE
+        }
+    }
+}
+
+fn show_launch_error(error: &str) {
+    // Desktop launches have no console. Use an installed desktop dialog;
+    // terminal launches retain the normal error text and exit status.
+    for (program, arguments) in [
+        (
+            "kdialog",
+            vec!["--title", "PoE Auto Flask", "--error", error],
+        ),
+        (
+            "zenity",
+            vec!["--error", "--title=PoE Auto Flask", "--text", error],
+        ),
+        (
+            "notify-send",
+            vec!["--urgency=critical", "PoE Auto Flask", error],
+        ),
+    ] {
+        if Command::new(program)
+            .args(arguments)
+            .status()
+            .is_ok_and(|s| s.success())
+        {
+            return;
         }
     }
 }
@@ -73,7 +107,7 @@ fn run() -> Result<(), String> {
     };
 
     // Normal automation is the helper's default for either game; this launcher
-    // only selects the matching Steam/Proton environment. Arming still requires F11.
+    // only selects the matching Steam/Proton environment.
     let nearby = args.helper_args.iter().any(|arg| arg == "--nearby");
     let debug = args.helper_args.iter().any(|arg| arg == "--debug");
     if nearby && (!debug || args.game == Some(Game::Poe2)) {
@@ -93,7 +127,16 @@ fn run() -> Result<(), String> {
     }
 
     let config = prepare_config_path()?;
-    let wine_config = host_path_to_wine_z(&config)?;
+    let config_root = config
+        .parent()
+        .ok_or("missing XDG configuration directory")?;
+    let wine_profile_root = host_path_to_wine_z(config_root)?;
+
+    // An explicit legacy override remains supported for existing scripts.
+    let legacy_override = env::var_os(HELPER_CONFIG_ENV)
+        .filter(|path| !path.is_empty())
+        .map(|path| host_path_to_wine_z(Path::new(&path)))
+        .transpose()?;
 
     println!(
         "Selected    : {} (Steam AppID {}, {})",
@@ -112,7 +155,8 @@ fn run() -> Result<(), String> {
     println!("Config      : {}", config.display());
     println!();
 
-    let status = Command::new(&launch.proton)
+    let mut command = Command::new(&launch.proton);
+    command
         .arg("runinprefix")
         .arg(&helper)
         .args(&args.helper_args)
@@ -123,7 +167,14 @@ fn run() -> Result<(), String> {
         })
         .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &launch.steam_client)
         .env("STEAM_COMPAT_DATA_PATH", &launch.compat_data)
-        .env(HELPER_CONFIG_ENV, wine_config)
+        .env(HELPER_PROFILE_ROOT_ENV, &wine_profile_root);
+
+    if let Some(path) = legacy_override {
+        command.env(HELPER_CONFIG_ENV, path);
+    } else {
+        command.env_remove(HELPER_CONFIG_ENV);
+    }
+    let status = command
         .status()
         .map_err(|error| format!("failed to start Proton: {error}"))?;
 
@@ -352,7 +403,8 @@ fn print_help() {
     println!("Without --game, detect the single running game by its Steam AppID.");
     println!("When both games are running, use --game poe1 or --game poe2.");
     println!("When neither is detected, PoE2 remains the default (and still must be running).");
-    println!("Normal automation is the default for either game and starts DISARMED (F11 to arm).");
+    println!("Normal launch opens the UI with automation disabled.");
+    println!("F11 enables/disables automation by default; change it in Settings.");
     println!("Use --debug for read-only diagnostics; --auto remains an optional alias.");
 }
 

@@ -1,0 +1,46 @@
+{
+  "clipboard-win-5.4.3": [
+    "https://raw.githubusercontent.com/DoumanAsh/clipboard-win/ed27008ae5d1f10cfbb266de039f0fb35fd05a56/LICENSE"
+  ],
+  "gl_generator-0.14.0": [
+    "https://raw.githubusercontent.com/brendanzab/gl-rs/ea503e8d5fb6d73c6030e6191ce738cd3bf3433e/LICENSE"
+  ],
+  "khronos_api-3.1.0": [
+    "https://raw.githubusercontent.com/brendanzab/gl-rs/f150967b1c44ae888e6676f93f639ebc82771bdc/LICENSE"
+  ],
+  "lyon_algorithms-1.0.22": [
+    "https://raw.githubusercontent.com/nical/lyon/db98d26a1a90076a7a894262dcb51117eef643c8/LICENSE-MIT",
+    "https://raw.githubusercontent.com/nical/lyon/db98d26a1a90076a7a894262dcb51117eef643c8/LICENSE-APACHE"
+  ],
+  "lyon_extra-1.1.0": [
+    "https://raw.githubusercontent.com/nical/lyon/56219c95c658d4f39de7b190d98e57d5773ba241/LICENSE-MIT",
+    "https://raw.githubusercontent.com/nical/lyon/56219c95c658d4f39de7b190d98e57d5773ba241/LICENSE-APACHE"
+  ],
+  "lyon_geom-1.0.20": [
+    "https://raw.githubusercontent.com/nical/lyon/db98d26a1a90076a7a894262dcb51117eef643c8/LICENSE-MIT",
+    "https://raw.githubusercontent.com/nical/lyon/db98d26a1a90076a7a894262dcb51117eef643c8/LICENSE-APACHE"
+  ],
+  "lyon_path-1.0.19": [
+    "https://raw.githubusercontent.com/nical/lyon/56219c95c658d4f39de7b190d98e57d5773ba241/LICENSE-MIT",
+    "https://raw.githubusercontent.com/nical/lyon/56219c95c658d4f39de7b190d98e57d5773ba241/LICENSE-APACHE"
+  ],
+  "profiling-1.0.18": [
+    "https://raw.githubusercontent.com/aclysma/profiling/8271551172eb6fa4cba47369aedd93790c623df9/LICENSE-MIT",
+    "https://raw.githubusercontent.com/aclysma/profiling/8271551172eb6fa4cba47369aedd93790c623df9/LICENSE-APACHE"
+  ],
+  "rspolib-0.1.2": [
+    "https://raw.githubusercontent.com/mondeja/rspolib/8170d99ebad29d894712ccb3dc6d0be2198d3055/LICENSE"
+  ],
+  "skia-bindings-0.157.0": [
+    "https://raw.githubusercontent.com/rust-skia/rust-skia/30669978c3f39a73e8a7ac74eead8d414eb1891d/LICENSE"
+  ],
+  "skia-safe-0.157.0": [
+    "https://raw.githubusercontent.com/rust-skia/rust-skia/30669978c3f39a73e8a7ac74eead8d414eb1891d/LICENSE"
+  ],
+  "spirv-0.4.0+sdk-1.4.341.0": [
+    "https://raw.githubusercontent.com/gfx-rs/rspirv/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/LICENSE"
+  ],
+  "taffy-0.15.1": [
+    "https://raw.githubusercontent.com/DioxusLabs/taffy/0064bd54cbe38bf1d8bcd6ec6ab0704d45fb048a/LICENSE"
+  ]
+}

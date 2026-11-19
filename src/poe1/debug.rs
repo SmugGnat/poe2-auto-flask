@@ -1,9 +1,15 @@
-//! PoE1 milestone-1 diagnostics. This module NEVER sends input to the game.
+//! Read-only PoE1 diagnostics for flasks, status effects and skill presets.
+//! This module NEVER sends input to the game.
 use std::io;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use super::config::Poe1SkillsConfig;
 use super::movement::RUN_ANIMATION_ID;
+use super::skill_rules::{
+    configured_rules, evaluate, BLOOD_RAGE_BUFF, MOLTEN_SHELL_BUFF, SPIRIT_OFFERING_BUFF,
+};
+use super::skills::SkillId;
 use crate::process::Process;
 use crate::session::GameSession;
 use windows_sys::Win32::Foundation::FILETIME;
@@ -26,6 +32,12 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
         println!("Experimental nearby census ENABLED (read-only, 750ms cache, 1500-node limit).");
     }
 
+    let mut diagnostic_config = Poe1SkillsConfig::default();
+    diagnostic_config.molten_shell.enabled = true;
+    let diagnostic_rule = configured_rules(&diagnostic_config)?
+        .into_iter()
+        .next()
+        .expect("diagnostic Molten Shell preset exists");
     let mut report_at = Instant::now();
     let mut refresh_at = Instant::now();
     let mut waiting = false;
@@ -78,6 +90,11 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                                     census.counts_at(100.0)
                                 );
                                 println!(
+                                    "  Corpse candidates: within 60 {} | within 100 {} (dead, targetable)",
+                                    census.corpses_at(60.0),
+                                    census.corpses_at(100.0)
+                                );
+                                println!(
                                     "  Nearby last full scan: {:.2} ms wall (includes cross-process read latency)",
                                     census.scan_wall.as_secs_f64() * 1000.0
                                 );
@@ -107,7 +124,10 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                                 "  Flask {}: {} ({}) | charges {} | raw cost {} | effective cost {} | effect {} | recovery {}",
                                 index + 1,
                                 flask.item_path,
-                                flask.flask_type.name(),
+                                flask.unique.map_or_else(
+                                    || flask.flask_type.name().to_string(),
+                                    |kind| format!("{} ({})", kind.name(), flask.flask_type.name()),
+                                ),
                                 flask.current_charges,
                                 flask.raw_per_use,
                                 flask.effective_per_use.map_or_else(|| "unavailable".into(), |v| v.to_string()),
@@ -134,6 +154,74 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                             .map(|e| e.name.as_str())
                             .collect::<Vec<_>>()
                             .join(", "),
+                    );
+                    // The debug reader shares one Actor pass for both actual
+                    // presets, even when only one is equipped.
+                    let skills = session.poe1_skills(
+                        process,
+                        &[
+                            SkillId::MoltenShell,
+                            SkillId::BloodRage,
+                            SkillId::SpiritOffering,
+                        ],
+                    );
+                    let skill = skills
+                        .as_ref()
+                        .map(|snapshot| snapshot[&SkillId::MoltenShell]);
+                    let blood_rage = skills
+                        .as_ref()
+                        .map(|snapshot| snapshot[&SkillId::BloodRage]);
+                    let spirit_offering = skills
+                        .as_ref()
+                        .map(|snapshot| snapshot[&SkillId::SpiritOffering]);
+                    let rule = evaluate(
+                        &diagnostic_rule,
+                        vitals,
+                        &buffs,
+                        None,
+                        skill.as_ref().ok().copied(),
+                    );
+                    println!(
+                        "  Molten Shell (read-only): buff {} | skill {} | rule at {}% Life {:?}",
+                        if buffs.effects.iter().any(|effect| effect.name == MOLTEN_SHELL_BUFF && effect.time_left > 0.0) {
+                            "active"
+                        } else {
+                            "absent"
+                        },
+                        match &skill {
+                            Ok(state) => format!("{state:?}"),
+                            Err(error) => format!("unavailable ({error})"),
+                        },
+                        diagnostic_config.molten_shell.threshold_percent,
+                        rule
+                    );
+                    println!(
+                        "  Blood Rage (read-only): buff {} | skill {}",
+                        if buffs
+                            .effects
+                            .iter()
+                            .any(|effect| effect.name == BLOOD_RAGE_BUFF && effect.time_left > 0.0)
+                        {
+                            "active"
+                        } else {
+                            "absent"
+                        },
+                        match &blood_rage {
+                            Ok(state) => format!("{state:?}"),
+                            Err(error) => format!("unavailable ({error})"),
+                        }
+                    );
+                    println!(
+                        "  Spirit Offering (read-only): player buff {} | skill {} | corpse trigger requires --nearby census",
+                        if buffs.effects.iter().any(|effect| effect.name == SPIRIT_OFFERING_BUFF) {
+                            "visible"
+                        } else {
+                            "not visible"
+                        },
+                        match &spirit_offering {
+                            Ok(state) => format!("{state:?}"),
+                            Err(error) => format!("unavailable ({error})"),
+                        }
                     );
                     if let Some(line) = cpu_meter.report() {
                         println!("  {line}");

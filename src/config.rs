@@ -2,15 +2,19 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::file_watch::{file_stamp, FileStamp};
+use crate::game::Game;
+use crate::input::AutomationKey;
 use crate::poe1::config::Poe1Config;
+use crate::profiles::{ProfileStartup, ProfileStore};
 
 const DEFAULT_CONFIG_TEXT: &str = include_str!("../config.example.toml");
 const CONFIG_PATH_ENV: &str = "POE2_AUTO_FLASK_CONFIG";
+const PROFILE_ROOT_ENV: &str = "POE2_AUTO_FLASK_PROFILE_DIR";
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub general: GeneralConfig,
@@ -19,13 +23,13 @@ pub struct Config {
     pub poe1: Poe1Config,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GeneralConfig {
     pub enable_in_hideout: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FlaskConfig {
     pub enabled: bool,
@@ -36,6 +40,7 @@ pub struct FlaskConfig {
 pub enum ConfigStartup {
     Loaded,
     Created,
+    Migrated,
     BuiltInFallback(String),
 }
 
@@ -47,11 +52,13 @@ pub struct ConfigManager {
     current_from_file: bool,
     startup: ConfigStartup,
     last_read_error: Option<String>,
+    profiles: Option<ProfileStore>,
 }
 
 pub enum ConfigReload {
     Unchanged,
     Reloaded,
+    ProfileSwitched,
     Removed,
     Invalid(String),
     ReadError(String),
@@ -97,7 +104,7 @@ impl Config {
         )
     }
 
-    fn parse(path: &Path, text: &str) -> io::Result<Self> {
+    pub(crate) fn parse(path: &Path, text: &str) -> io::Result<Self> {
         let config: Self = toml::from_str(text).map_err(|error| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -105,10 +112,14 @@ impl Config {
             )
         })?;
         config.validate()?;
+        config
+            .poe1
+            .skills
+            .validate_toggle_key(AutomationKey::default())?;
         Ok(config)
     }
 
-    fn validate(&self) -> io::Result<()> {
+    pub fn validate(&self) -> io::Result<()> {
         validate_flask("health", &self.health)?;
         validate_flask("mana", &self.mana)?;
         self.poe1.validate()?;
@@ -128,18 +139,56 @@ impl ConfigManager {
             .unwrap_or_else(|| Path::new("."))
             .join("config.toml");
 
-        let path = std::env::var_os("APPDATA")
+        // The Linux AppImage launcher passes its XDG profile directory mapped
+        // through Wine's Z: drive. Both UI and helper must share this root;
+        // POE2_AUTO_FLASK_CONFIG remains an explicit legacy single-file override.
+        let shared_root = std::env::var_os(PROFILE_ROOT_ENV)
             .filter(|path| !path.is_empty())
-            .map(PathBuf::from)
-            .map(|path| path.join("poe2-auto-flask").join("config.toml"))
+            .map(PathBuf::from);
+        let path = shared_root
+            .as_ref()
+            .map(|root| root.join("config.toml"))
+            .or_else(|| {
+                std::env::var_os("APPDATA")
+                    .filter(|path| !path.is_empty())
+                    .map(PathBuf::from)
+                    .map(|path| path.join("poe2-auto-flask").join("config.toml"))
+            })
             .unwrap_or_else(|| legacy_path.clone());
 
-        if path != legacy_path && !path.is_file() && legacy_path.is_file() {
-            create_parent_directory(&path)?;
-            fs::copy(&legacy_path, &path)?;
-        }
+        // When explicitly sharing an XDG directory, migrate that directory's
+        // existing legacy config.toml rather than the executable's copy.
+        // Migration preserves the original config.toml.
+        let root = path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
+        let legacy = if shared_root.is_some() {
+            path.as_path()
+        } else {
+            &legacy_path
+        };
+        Self::load_profiles(root, legacy)
+    }
 
-        Self::load(path)
+    pub fn load_profiles(root: PathBuf, legacy: &Path) -> io::Result<Self> {
+        let path = root.join("settings.toml");
+        let (profiles, status) = ProfileStore::open(root, legacy)?;
+        let startup = match status {
+            ProfileStartup::Loaded => ConfigStartup::Loaded,
+            ProfileStartup::Created => ConfigStartup::Created,
+            ProfileStartup::Migrated => ConfigStartup::Migrated,
+        };
+        Ok(Self {
+            current: profiles.current().clone(),
+            path,
+            observed_stamp: None,
+            file_present: true,
+            current_from_file: true,
+            startup,
+            last_read_error: None,
+            profiles: Some(profiles),
+        })
     }
 
     fn load(path: PathBuf) -> io::Result<Self> {
@@ -167,6 +216,7 @@ impl ConfigManager {
                     current_from_file: true,
                     startup: ConfigStartup::Created,
                     last_read_error: None,
+                    profiles: None,
                 })
             }
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
@@ -186,6 +236,7 @@ impl ConfigManager {
                 current_from_file: false,
                 startup: ConfigStartup::BuiltInFallback(error.to_string()),
                 last_read_error: None,
+                profiles: None,
             }),
         }
     }
@@ -201,11 +252,34 @@ impl ConfigManager {
             current_from_file: true,
             startup,
             last_read_error: None,
+            profiles: None,
         })
+    }
+
+    /// The game is selected after process identification, before its policy
+    /// starts. Selecting a game loads that game's independently active profile.
+    pub fn select_game(&mut self, game: Game) -> io::Result<()> {
+        if let Some(profiles) = &mut self.profiles {
+            profiles.select_game(game)?;
+            self.current = profiles.current().clone();
+        }
+        Ok(())
     }
 
     pub fn current(&self) -> &Config {
         &self.current
+    }
+
+    pub fn active_profile_id(&self) -> Option<&str> {
+        self.profiles.as_ref().map(ProfileStore::active_profile_id)
+    }
+
+    pub fn automation_key(&self) -> AutomationKey {
+        self.profiles
+            .as_ref()
+            .map_or_else(AutomationKey::default, |profiles| {
+                profiles.settings().automation_key
+            })
     }
 
     pub fn current_from_file(&self) -> bool {
@@ -217,6 +291,16 @@ impl ConfigManager {
     }
 
     pub fn check_for_reload(&mut self) -> ConfigReload {
+        if let Some(profiles) = &mut self.profiles {
+            let result = profiles.check_for_reload();
+            if matches!(
+                result,
+                ConfigReload::Reloaded | ConfigReload::ProfileSwitched
+            ) {
+                self.current = profiles.current().clone();
+            }
+            return result;
+        }
         let stamp = match file_stamp(&self.path) {
             Ok(stamp) => stamp,
             Err(error) => return self.read_error(error.to_string()),
@@ -321,6 +405,86 @@ mod tests {
     use crate::poe1::types::FlaskType;
 
     static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn writhing_jar_toggle_and_optional_nearby_parse_independently() {
+        use super::Config;
+        use crate::poe1::types::UniqueFlask;
+        use std::path::Path;
+
+        let enabled = Config::parse(
+            Path::new("test.toml"),
+            "[poe1.unique]\nwrithing_jar = true\n",
+        )
+        .unwrap();
+        assert!(enabled.poe1.unique.writhing_jar);
+        assert!(enabled.poe1.unique_conditions.is_empty());
+
+        let gated = Config::parse(
+            Path::new("test.toml"),
+            concat!(
+                "[poe1.unique]\nwrithing_jar = true\n",
+                "[poe1.unique_conditions.writhing_jar.nearby]\n",
+                "enabled = true\nradius = 60\nminimum_count = 1\nminimum_rarity = \"normal\"\n"
+            ),
+        )
+        .unwrap();
+        assert!(gated.poe1.unique.writhing_jar);
+        assert!(
+            gated
+                .poe1
+                .unique_conditions
+                .get(&UniqueFlask::WrithingJar)
+                .unwrap()
+                .nearby
+                .unwrap()
+                .enabled
+        );
+        assert!(Config::parse(
+            Path::new("test.toml"),
+            "[poe1.unique_conditions.writhing_jar.nearby]\nradius = 151\n"
+        )
+        .is_err());
+        assert!(Config::parse(
+            Path::new("test.toml"),
+            "[poe1.unique]\nunknown_unique = true\n"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn spirit_offering_configuration_is_opt_in_and_validated() {
+        let defaults = Config::default();
+        assert!(!defaults.poe1.skills.spirit_offering.enabled);
+        let configured = Config::parse(
+            Path::new("test.toml"),
+            "[poe1.skills.spirit_offering]\nenabled = true\nkey = \"E\"\nnearby_radius = 50\nnearby_minimum_count = 2\n",
+        )
+        .unwrap();
+        assert!(configured.poe1.skills.spirit_offering.enabled);
+        assert_eq!(configured.poe1.skills.spirit_offering.nearby_radius, 50);
+        assert_eq!(
+            configured.poe1.skills.spirit_offering.nearby_minimum_count,
+            2
+        );
+        for bad in [
+            "nearby_radius = 0",
+            "nearby_radius = 151",
+            "nearby_minimum_count = 0",
+            "nearby_minimum_count = 513",
+        ] {
+            let input = format!("[poe1.skills.spirit_offering]\n{bad}\n");
+            assert!(
+                Config::parse(Path::new("test.toml"), &input).is_err(),
+                "{bad}"
+            );
+        }
+        assert!(Config::parse(
+            Path::new("test.toml"),
+            "[poe1.skills.blood_rage]\nenabled = true\nkey = \"T\"\n[poe1.skills.spirit_offering]\nenabled = true\nkey = \"T\"\n",
+        )
+        .is_err());
+    }
 
     #[test]
     fn bundled_default_config_matches_built_in_defaults() {
@@ -497,6 +661,89 @@ radius = 60
         assert!(
             Config::parse(Path::new("test.toml"), "[poe1.nearby.life]\nradius = 60\n").is_err()
         );
+    }
+
+    #[test]
+    fn molten_shell_is_opt_in_and_validated() {
+        let default = Config::default();
+        assert!(!default.poe1.skills.molten_shell.enabled);
+        let parsed = Config::parse(
+            Path::new("config.toml"),
+            "[poe1.skills.molten_shell]\nenabled = true\nthreshold_percent = 95\nkey = \"Q\"\n",
+        )
+        .expect("valid Molten Shell config");
+        assert!(parsed.poe1.skills.molten_shell.enabled);
+        assert_eq!(
+            parsed.poe1.skills.molten_shell.binding().unwrap().vk,
+            u16::from(b'Q')
+        );
+        for (key, expected) in [
+            ("ctrl + q", "Ctrl+Q"),
+            ("Shift+B", "Shift+B"),
+            ("Alt+F12", "Alt+F12"),
+        ] {
+            let text = format!("[poe1.skills.molten_shell]\nenabled = true\nkey = \"{key}\"\n");
+            let parsed = Config::parse(Path::new("test.toml"), &text).unwrap();
+            assert_eq!(
+                parsed.poe1.skills.molten_shell.binding().unwrap().label(),
+                expected
+            );
+        }
+        for key in [
+            "F11",
+            "Ctrl+F11",
+            "Ctrl+Alt+Q",
+            "Super+Q",
+            "Mouse1",
+            "F13",
+            "",
+        ] {
+            let text = format!("[poe1.skills.molten_shell]\nenabled = true\nkey = \"{key}\"\n");
+            assert!(
+                Config::parse(Path::new("config.toml"), &text).is_err(),
+                "{key}"
+            );
+        }
+        for percent in [0, 100] {
+            let text = format!("[poe1.skills.molten_shell]\nthreshold_percent = {percent}\n");
+            assert!(Config::parse(Path::new("config.toml"), &text).is_err());
+        }
+    }
+
+    #[test]
+    fn blood_rage_config_is_opt_in_and_bounds_checked() {
+        let defaults = Config::default();
+        assert!(!defaults.poe1.skills.blood_rage.enabled);
+        assert!(defaults.poe1.skills.blood_rage.require_nearby_monsters);
+        let parsed = Config::parse(
+            Path::new("test.toml"),
+            "[poe1.skills.blood_rage]\nenabled = true\nkey = \"T\"\nmin_life_percent = 80\n",
+        )
+        .unwrap();
+        assert!(parsed.poe1.skills.blood_rage.enabled);
+        assert_eq!(
+            parsed.poe1.skills.blood_rage.binding().unwrap().vk,
+            u16::from(b'T')
+        );
+        for invalid in [
+            "key = \"Mouse1\"",
+            "min_life_percent = 0",
+            "min_life_percent = 101",
+            "nearby_radius = 0",
+            "nearby_radius = 151",
+            "nearby_minimum_count = 0",
+            "nearby_minimum_count = 513",
+        ] {
+            let config = format!("[poe1.skills.blood_rage]\n{invalid}\n");
+            assert!(
+                Config::parse(Path::new("test.toml"), &config).is_err(),
+                "{invalid}"
+            );
+        }
+        let duplicate = "[poe1.skills.molten_shell]\nenabled = true\nkey = \"R\"\n[poe1.skills.blood_rage]\nenabled = true\nkey = \"R\"\n";
+        let distinct = "[poe1.skills.molten_shell]\nenabled = true\nkey = \"R\"\n[poe1.skills.blood_rage]\nenabled = true\nkey = \"T\"\n";
+        assert!(Config::parse(Path::new("test.toml"), duplicate).is_err());
+        assert!(Config::parse(Path::new("test.toml"), distinct).is_ok());
     }
 
     #[test]

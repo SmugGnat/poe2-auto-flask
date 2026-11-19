@@ -10,6 +10,7 @@ use super::buffs::{EffectCache, EffectsSnapshot};
 use super::flasks::{FlaskCache, FlaskSnapshot};
 use super::movement::MotionCache;
 use super::nearby::{NearbyCache, NearbySnapshot};
+use super::skills::{SkillCache, SkillId, SkillReadiness};
 use super::Probe;
 
 #[derive(Default)]
@@ -26,6 +27,7 @@ pub struct Adapter {
     flask_cache: FlaskCache,
     effect_cache: EffectCache,
     motion_cache: MotionCache,
+    skill_cache: SkillCache,
     nearby_cache: NearbyCache,
 }
 
@@ -37,6 +39,7 @@ impl Adapter {
             flask_cache: FlaskCache::default(),
             effect_cache: EffectCache::default(),
             motion_cache: MotionCache::default(),
+            skill_cache: SkillCache::default(),
             nearby_cache: NearbyCache::default(),
         })
     }
@@ -47,6 +50,10 @@ impl Adapter {
 
     pub fn player_metadata(&self) -> &str {
         &self.probe.metadata
+    }
+
+    pub fn character_name(&self, process: &Process) -> io::Result<String> {
+        super::player::name(process, &self.probe)
     }
 
     pub fn verify_vitals(&self, process: &Process) -> io::Result<LiveVitals> {
@@ -68,6 +75,32 @@ impl Adapter {
 
     pub fn verify_animation(&mut self, process: &Process) -> io::Result<i32> {
         self.motion_cache.sample(process, &self.probe)
+    }
+
+    /// All requested skills from one bounded Actor scan. Per-tick results
+    /// are held by PoE1 TickState, not re-read by this adapter.
+    pub fn skills(
+        &mut self,
+        process: &Process,
+        requested: &[SkillId],
+    ) -> io::Result<std::collections::BTreeMap<SkillId, SkillReadiness>> {
+        self.skill_cache
+            .sample_many(process, &self.probe, requested)
+    }
+
+    /// Bypass the within-tick cache for a fresh pre-input buff check.
+    pub fn verify_effects(&mut self, process: &Process) -> io::Result<EffectsSnapshot> {
+        super::buffs::sample(process, &self.probe, &mut self.effect_cache)
+    }
+
+    /// Bypass the within-tick cache before authorizing skill input.
+    pub fn verify_skills(
+        &mut self,
+        process: &Process,
+        requested: &[SkillId],
+    ) -> io::Result<std::collections::BTreeMap<SkillId, SkillReadiness>> {
+        self.skill_cache
+            .sample_many(process, &self.probe, requested)
     }
 
     pub fn nearby(&mut self, process: &Process) -> io::Result<NearbySnapshot> {
@@ -116,6 +149,7 @@ impl GameStateReader for Adapter {
         self.flask_cache.clear();
         self.effect_cache.clear();
         self.motion_cache.clear();
+        self.skill_cache.clear();
         self.nearby_cache.clear();
         self.probe = super::refresh(process, &self.probe)?;
         Ok(())

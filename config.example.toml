@@ -1,3 +1,6 @@
+# Automation fields for legacy migration or profiles (add profile metadata for a profile file).
+# Live configuration uses settings.toml and profiles/*.toml; see docs/PROFILES.md.
+
 [general]
 # Auto-flask is always disabled in towns. Hideouts are disabled by default; set this to true to
 # allow auto-flask use in hideouts.
@@ -14,7 +17,7 @@ threshold_percent = 30.0
 # PoE1 uses the same Life/Mana percentage thresholds above; percentages are based on the
 # unreserved pool. Quicksilver and other supported utility-flask types are opt-in.
 # No per-slot keys are needed: both games read their own production_Config.ini.
-# Unknown utility bases and hybrid flasks remain manual-only in this milestone.
+# Unknown utility bases and ordinary hybrid flasks remain manual-only.
 [poe1]
 # 0 = use Quicksilver as before. 750 = require 750 ms of continuously
 # observed Run animation before using Quicksilver; does not restrict Life/Mana.
@@ -56,4 +59,54 @@ iron = false
 # before the enemy is damageable. An unavailable census blocks only gated
 # utility flasks, not emergency Life/Mana recovery.
 
-# Existing PoE2 operation is unchanged: two slots, F11, 100 ms polling.
+# Unique flasks are opt-in. Writhing Jar is identified from its worm-spawning
+# equipped modifier, not by hybrid-flask base type. It fires as soon as its
+# verified effective charge cost is available (existing safety gates apply).
+# It is NOT used as an ordinary Life/Mana hybrid flask.
+[poe1.unique]
+writhing_jar = false
+
+# Optional nearby condition for Writhing Jar (disabled by omission).
+# Keep this separate from [poe1.unique]: TOML keys cannot be both Boolean
+# toggles and nested tables. The nearby census reuses the existing 750 ms cache.
+# [poe1.unique_conditions.writhing_jar.nearby]
+# enabled = true
+# radius = 60
+# minimum_count = 1
+# minimum_rarity = "normal"
+
+# PoE1 defensive skill presets are separately configurable. Skills are
+# disabled by default and share the existing 100 ms loop with flask rules.
+# Match the in-game binding with A-Z, 0-9, F1-F12 and an optional
+# Ctrl, Shift or Alt modifier (for example, "Ctrl+Q"). Reserve the
+# automation key (F11 by default) for enabling and disabling the helper.
+# Enabled skills must use different bindings.
+# The skill rule cannot run in town, or in hideouts unless permitted above.
+[poe1.skills.molten_shell]
+enabled = false
+threshold_percent = 95
+key = "Q"
+
+# Blood Rage maintains its duration through kills, so don't repeatedly
+# cast it while its buff is active. Requiring nearby monsters by default
+# avoids starting the self-damage effect while standing alone.
+# Proximity reuses the existing throttled 750ms PoE1 monster census.
+[poe1.skills.blood_rage]
+enabled = false
+key = "T"
+min_life_percent = 80
+require_nearby_monsters = true
+nearby_radius = 60
+nearby_minimum_count = 1
+
+# Spirit Offering (PoE1) consumes a corpse, so this optional preset checks
+# dead, targetable hostile monster entities in the existing 750 ms census.
+# It uses the existing key-only skill dispatcher; it does not aim at a corpse
+# or account for the skill's cast time. Verify behavior in --debug --nearby.
+[poe1.skills.spirit_offering]
+enabled = false
+key = "E"
+nearby_radius = 60
+nearby_minimum_count = 1
+
+# PoE2 uses two slots and 100 ms polling. F11 is the default automation key.

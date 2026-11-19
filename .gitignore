@@ -1,4 +1,6 @@
 /target/
+/app-ui/target/
+/linux-launcher/target/
 *.pdb
 *.log
 config.toml

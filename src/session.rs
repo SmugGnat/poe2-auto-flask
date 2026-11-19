@@ -72,6 +72,13 @@ impl GameSession {
         }
     }
 
+    pub fn poe1_character_name(&self, process: &Process) -> io::Result<String> {
+        match &self.reader {
+            Reader::Poe1(adapter) => adapter.character_name(process),
+            Reader::Poe2(_) => Err(unsupported()),
+        }
+    }
+
     /// Directly verify current identity and vitals before a PoE1 key press.
     pub fn poe1_verify_vitals(&self, process: &Process) -> io::Result<LiveVitals> {
         match &self.reader {
@@ -101,6 +108,18 @@ impl GameSession {
         }
     }
 
+    pub fn poe1_skills(
+        &mut self,
+        process: &Process,
+        requested: &[poe1::skills::SkillId],
+    ) -> io::Result<std::collections::BTreeMap<poe1::skills::SkillId, poe1::skills::SkillReadiness>>
+    {
+        match &mut self.reader {
+            Reader::Poe1(adapter) => adapter.skills(process, requested),
+            Reader::Poe2(_) => Err(unsupported()),
+        }
+    }
+
     pub fn poe1_nearby(&mut self, process: &Process) -> io::Result<poe1::nearby::NearbySnapshot> {
         match &mut self.reader {
             Reader::Poe1(adapter) => adapter.nearby(process),
@@ -125,6 +144,27 @@ impl GameSession {
     pub fn poe1_effects(&mut self, process: &Process) -> io::Result<&EffectsSnapshot> {
         match &mut self.reader {
             Reader::Poe1(adapter) => adapter.effects(process),
+            Reader::Poe2(_) => Err(unsupported()),
+        }
+    }
+
+    /// Fresh PoE1 status-effect read; used only immediately before skill input.
+    pub fn poe1_verify_effects(&mut self, process: &Process) -> io::Result<EffectsSnapshot> {
+        match &mut self.reader {
+            Reader::Poe1(adapter) => adapter.verify_effects(process),
+            Reader::Poe2(_) => Err(unsupported()),
+        }
+    }
+
+    /// Fresh PoE1 skill-usability check. Does not reuse the tick snapshot.
+    pub fn poe1_verify_skills(
+        &mut self,
+        process: &Process,
+        requested: &[poe1::skills::SkillId],
+    ) -> io::Result<std::collections::BTreeMap<poe1::skills::SkillId, poe1::skills::SkillReadiness>>
+    {
+        match &mut self.reader {
+            Reader::Poe1(adapter) => adapter.verify_skills(process, requested),
             Reader::Poe2(_) => Err(unsupported()),
         }
     }

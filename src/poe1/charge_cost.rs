@@ -7,6 +7,7 @@ use crate::process::Process;
 
 use super::offsets::*;
 use super::recovery::RecoveryKind;
+use super::types::UniqueFlask;
 use super::{invalid, plausible_ptr, read_ptr};
 
 const FLASK_CHARGES_USED_STAT: i32 = 0x2E5;
@@ -40,6 +41,7 @@ pub fn player_charge_modifier(process: &Process, player: usize) -> io::Result<i3
 pub struct LocalFlaskMods {
     pub charge_multiplier: f64,
     pub recovery: RecoveryKind,
+    pub unique: Option<UniqueFlask>,
 }
 
 pub fn inspect_flask_modifiers(process: &Process, item: usize) -> io::Result<LocalFlaskMods> {
@@ -48,6 +50,7 @@ pub fn inspect_flask_modifiers(process: &Process, item: usize) -> io::Result<Loc
     let (first, count) = read_vector(process, mods + EXPLICIT_MODS_VECTOR, MOD_STRIDE, MAX_MODS)?;
     let mut multiplier = 1.0;
     let mut recovery = RecoveryKind::Gradual;
+    let mut unique = None;
     for idx in 0..count {
         let entry = process.read_bytes(first + idx * MOD_STRIDE, MOD_STRIDE)?;
         let dat_row = u64_at(&entry, MOD_DATA_PTR) as usize;
@@ -59,6 +62,9 @@ pub fn inspect_flask_modifiers(process: &Process, item: usize) -> io::Result<Loc
         }
         let name_ptr = read_ptr(process, dat_row)?;
         let name = read_utf16_z(process, name_ptr, MAX_NAME_UNITS)?;
+        if let Some(found) = UniqueFlask::from_mod_id(&name) {
+            unique = Some(found);
+        }
         if let Some(found) = RecoveryKind::from_mod_name(&name) {
             if recovery != RecoveryKind::Gradual && recovery != found {
                 return Err(invalid("conflicting PoE1 flask recovery modifiers"));
@@ -83,6 +89,7 @@ pub fn inspect_flask_modifiers(process: &Process, item: usize) -> io::Result<Loc
     Ok(LocalFlaskMods {
         charge_multiplier: multiplier,
         recovery,
+        unique,
     })
 }
 

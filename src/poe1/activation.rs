@@ -9,7 +9,7 @@ use crate::game_state::LiveVitals;
 
 use super::buffs::EffectsSnapshot;
 use super::flasks::{FlaskSnapshot, FLASK_SLOT_COUNT};
-use super::types::FlaskType;
+use super::types::{FlaskType, UniqueFlask};
 
 pub const SETTLING_GUARD: Duration = Duration::from_millis(350);
 pub const RECOVERY_SETTLING_GUARD: Duration = Duration::from_millis(100);
@@ -28,6 +28,7 @@ pub struct ActivationGuard {
     last_sent: [Option<(FlaskType, Instant)>; FLASK_SLOT_COUNT],
     life: Option<RecoveryAttempt>,
     mana: Option<RecoveryAttempt>,
+    unique_pending: [Option<i32>; FLASK_SLOT_COUNT],
 }
 
 impl ActivationGuard {
@@ -35,6 +36,7 @@ impl ActivationGuard {
         self.last_sent.fill(None);
         self.life = None;
         self.mana = None;
+        self.unique_pending.fill(None);
     }
     /// Queried after apply_to() has consumed any acknowledged recovery.
     /// An unacknowledged input cannot use the active-Life emergency bypass.
@@ -80,6 +82,17 @@ impl ActivationGuard {
         }
     }
 
+    /// A unique charges-ready rule must not repeat a failed or unacknowledged
+    /// activation. Retry only after we observe the spent charges.
+    pub fn mark_unique(&mut self, slot: usize, flasks: &FlaskSnapshot) {
+        if let Some(entry) = self.unique_pending.get_mut(slot) {
+            *entry = flasks.slots[slot]
+                .as_ref()
+                .filter(|flask| flask.unique == Some(UniqueFlask::WrithingJar))
+                .map(|flask| flask.current_charges);
+        }
+    }
+
     /// Adds temporary virtual effects only to the current decision snapshot.
     /// Active in-game effects are never removed or overwritten.
     pub fn apply_to(
@@ -100,6 +113,22 @@ impl ActivationGuard {
                 {
                     effects.slots_active[slot] = true;
                 }
+            }
+        }
+
+        for (slot, pending) in self.unique_pending.iter_mut().enumerate() {
+            let Some(charges_before) = *pending else {
+                continue;
+            };
+            match flasks.slots[slot].as_ref() {
+                Some(flask) if flask.unique == Some(UniqueFlask::WrithingJar) => {
+                    if flask.current_charges < charges_before {
+                        *pending = None;
+                    } else {
+                        effects.slots_active[slot] = true;
+                    }
+                }
+                _ => *pending = None, // The equipped unique was removed.
             }
         }
 

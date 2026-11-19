@@ -3,7 +3,12 @@ set -eu
 
 APPDIR=${APPDIR:-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"}
 
-if [ -z "${POE2_AUTO_FLASK_TERMINAL_LAUNCH:-}" ] && [ ! -t 1 ] && [ -n "${APPIMAGE:-}" ]; then
+debug=0
+for argument in "$@"; do
+    if [ "$argument" = "--debug" ]; then debug=1; fi
+done
+
+if [ "$debug" -eq 1 ] && [ -z "${POE2_AUTO_FLASK_TERMINAL_LAUNCH:-}" ] && [ ! -t 1 ] && [ -n "${APPIMAGE:-}" ]; then
     export POE2_AUTO_FLASK_TERMINAL_LAUNCH=1
     wrapper="$APPDIR/usr/bin/poe2-auto-flask-terminal"
 

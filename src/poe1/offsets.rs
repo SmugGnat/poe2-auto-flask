@@ -1,6 +1,7 @@
-//! PoE1 offsets based on the GameHelper reference layouts.
-//! Refreshed from GameOffsets.dll .NET FieldLayout metadata on 2026-11-18.
-//! Compile-time checks do not replace live validation after a game update.
+//! PoE1 offsets from GameHelper structures. The 3.30 candidates below were
+//! extracted from updated GameOffsets.dll metadata (2026-11-13); UI/chat fields
+//! refreshed from the 2026-11-18 DLL. Live verification is still required.
+//! Older C# reference: branch reference/gamehelper-poe1, references/GameHelper/GameOffsets.
 pub(super) const GAME_STATE_PATTERN: [Option<u8>; 16] = [
     Some(0x48),
     Some(0x83),
@@ -40,6 +41,8 @@ pub(super) const VITAL_TOTAL: usize = 0x2C;
 pub(super) const VITAL_CURRENT: usize = 0x30;
 pub(super) const WORLD_AREA_DETAILS: usize = 0xA0;
 pub(super) const WORLD_DETAILS_ROW: usize = 0xC0;
+// GameHelper's ServerDataStructure omits SKIP (0xAD00) bytes from its C# field
+// layout: actual game offset = DLL FieldLayout (0x2170) + SKIP (0xAD00).
 pub(super) const SERVER_PLAYER_INVENTORIES: usize = 0xCE70;
 pub(super) const INVENTORY_DESCRIPTOR_STRIDE: usize = 0x18;
 pub(super) const FLASK_INVENTORY_ID: i32 = 12;
@@ -64,6 +67,16 @@ pub(super) const CHAT_BACKGROUND_COLOR: usize = 0x2BC;
 // From movement.rs:
 pub(super) const ACTOR_ANIMATION_ID: usize = 0x248;
 
+// Actor active-skill and cooldown structures (2026-09 GameHelper candidate layout).
+pub(super) const ACTOR_SKILLS: usize = 0x6F0;
+pub(super) const ACTOR_COOLDOWNS: usize = 0x708;
+pub(super) const SKILL_DETAIL_ID: usize = 0x40;
+pub(super) const SKILL_DETAIL_GRANTED_ROW: usize = 0x58;
+pub(super) const SKILL_DETAIL_CANNOT_USE: usize = 0xB1;
+pub(super) const COOLDOWN_SKILL_ID: usize = 0x3C;
+pub(super) const COOLDOWN_USES: usize = 0x30;
+pub(super) const COOLDOWN_VECTOR: usize = 0x10;
+
 // From charge_cost.rs:
 pub(super) const STATS_DATA_PTR: usize = 0x20;
 pub(super) const STATS_VECTOR: usize = 0xF0;
@@ -86,6 +99,18 @@ pub(super) mod nearby {
     pub(crate) const POSITIONED_REACTION: usize = 0x1E0;
     pub(crate) const TARGETABLE_FLAG: usize = 0x50;
     pub(crate) const MONSTER_RARITY: usize = 0x90 + 0xB4;
+}
+
+#[cfg(test)]
+mod november_2026_ui_offset_tests {
+    use super::*;
+
+    #[test]
+    fn ui_and_chat_offsets_match_2026_11_18_gameoffsets_dll() {
+        assert_eq!(IN_GAME_UI, 0xBE8);
+        assert_eq!(CHAT_PARENT, 0x570);
+        assert_eq!(CHAT_BACKGROUND_COLOR, 0x2BC);
+    }
 }
 
 #[cfg(test)]

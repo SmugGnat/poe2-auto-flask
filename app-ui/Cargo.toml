@@ -1,0 +1,36 @@
+[package]
+name = "poe2-auto-flask-ui"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.100.0"
+publish = false
+license = "GPL-3.0-only"
+description = "Production Slint settings and profile editor for PoE Auto Flask"
+build = "build.rs"
+
+[dependencies]
+poe2-auto-flask = { path = ".." }
+toml = "0.8"
+slint = { version = "=1.19.0", default-features = false, features = [
+  "std", "backend-winit", "renderer-software", "renderer-femtovg",
+  "compat-1-2", "system-tray", "unstable-winit-030",
+] }
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem",
+  "Win32_Security", "Win32_System_Console", "Win32_System_Threading",
+  "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+slint-build = "=1.19.0"
+winresource = "0.1"
+toml = "0.8"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+[dev-dependencies]
+i-slint-backend-testing = "=1.19.0"

@@ -3,22 +3,209 @@
 use std::collections::BTreeMap;
 use std::io;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use super::types::FlaskType;
-use crate::config::{flask_summary, invalid, Config};
+use super::types::{FlaskType, UniqueFlask};
+use crate::config::{invalid, Config, FlaskConfig};
+use crate::input::{named_key_code, AutomationKey, KeyBinding};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Poe1Config {
     pub utility: Poe1UtilityConfig,
+    pub unique: Poe1UniqueConfig,
+    /// Optional gates are stored separately from Boolean unique toggles,
+    /// because TOML cannot use the same key as both a bool and a table.
+    pub unique_conditions: BTreeMap<UniqueFlask, UniqueConditions>,
+    pub skills: Poe1SkillsConfig,
     /// Optional type-specific proximity requirements. Absent = no scan/gate.
     pub nearby: BTreeMap<FlaskType, NearbyRule>,
     /// 0 disables the optional movement gate; 100..=5000 requires continuous Run animation.
     pub quicksilver_min_run_ms: u64,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+/// Skill-specific settings remain explicit, rather than forcing every skill to
+/// use a Life threshold or the same conditions.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Poe1SkillsConfig {
+    pub molten_shell: MoltenShellConfig,
+    pub blood_rage: BloodRageConfig,
+    pub spirit_offering: SpiritOfferingConfig,
+}
+
+impl Poe1SkillsConfig {
+    pub fn validate_toggle_key(&self, toggle: AutomationKey) -> io::Result<()> {
+        for (enabled, binding) in [
+            (self.molten_shell.enabled, self.molten_shell.binding()),
+            (self.blood_rage.enabled, self.blood_rage.binding()),
+            (self.spirit_offering.enabled, self.spirit_offering.binding()),
+        ] {
+            if enabled && toggle.conflicts_with(binding?) {
+                return Err(invalid(format!(
+                    "{} is already assigned to an enabled skill. Choose a different automation key or skill keybind.",
+                    toggle.label()
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MoltenShellConfig {
+    pub enabled: bool,
+    pub threshold_percent: u8,
+    /// Windows keyboard key; the user must bind the same key to Molten Shell in PoE1.
+    pub key: String,
+}
+
+impl Default for MoltenShellConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold_percent: 95,
+            key: "Q".to_string(),
+        }
+    }
+}
+
+impl MoltenShellConfig {
+    pub fn binding(&self) -> io::Result<KeyBinding> {
+        skill_binding(&self.key, "poe1.skills.molten_shell.key")
+    }
+
+    pub fn validate(&self) -> io::Result<()> {
+        if !(1..=99).contains(&self.threshold_percent) {
+            return Err(invalid(
+                "poe1.skills.molten_shell.threshold_percent must be 1..=99",
+            ));
+        }
+        self.binding()?;
+        Ok(())
+    }
+}
+
+/// Optional self-damaging buff preset. Nearby monsters are required by
+/// default so Blood Rage doesn't activate automatically while idle.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BloodRageConfig {
+    pub enabled: bool,
+    pub key: String,
+    pub min_life_percent: u8,
+    pub require_nearby_monsters: bool,
+    pub nearby_radius: u16,
+    pub nearby_minimum_count: u16,
+}
+
+impl Default for BloodRageConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            key: "T".to_string(),
+            min_life_percent: 80,
+            require_nearby_monsters: true,
+            nearby_radius: 60,
+            nearby_minimum_count: 1,
+        }
+    }
+}
+
+impl BloodRageConfig {
+    pub fn binding(&self) -> io::Result<KeyBinding> {
+        skill_binding(&self.key, "poe1.skills.blood_rage.key")
+    }
+
+    pub fn validate(&self) -> io::Result<()> {
+        if !(1..=100).contains(&self.min_life_percent) {
+            return Err(invalid(
+                "poe1.skills.blood_rage.min_life_percent must be 1..=100",
+            ));
+        }
+        if !(1..=150).contains(&self.nearby_radius) {
+            return Err(invalid(
+                "poe1.skills.blood_rage.nearby_radius must be 1..=150",
+            ));
+        }
+        if !(1..=512).contains(&self.nearby_minimum_count) {
+            return Err(invalid(
+                "poe1.skills.blood_rage.nearby_minimum_count must be 1..=512",
+            ));
+        }
+        self.binding()?;
+        Ok(())
+    }
+}
+
+/// Corpse-triggered skill. This does not manipulate the mouse or account for
+/// cast duration; the ordinary skill readiness and attempt guard still apply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SpiritOfferingConfig {
+    pub enabled: bool,
+    pub key: String,
+    pub nearby_radius: u16,
+    pub nearby_minimum_count: u16,
+}
+
+impl Default for SpiritOfferingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            key: "E".to_string(),
+            nearby_radius: 60,
+            nearby_minimum_count: 1,
+        }
+    }
+}
+
+impl SpiritOfferingConfig {
+    pub fn binding(&self) -> io::Result<KeyBinding> {
+        skill_binding(&self.key, "poe1.skills.spirit_offering.key")
+    }
+
+    pub fn validate(&self) -> io::Result<()> {
+        if !(1..=150).contains(&self.nearby_radius) {
+            return Err(invalid(
+                "poe1.skills.spirit_offering.nearby_radius must be 1..=150",
+            ));
+        }
+        if !(1..=512).contains(&self.nearby_minimum_count) {
+            return Err(invalid(
+                "poe1.skills.spirit_offering.nearby_minimum_count must be 1..=512",
+            ));
+        }
+        self.binding()?;
+        Ok(())
+    }
+}
+
+pub fn skill_binding(key: &str, config_path: &str) -> io::Result<KeyBinding> {
+    let key = key.trim().to_ascii_uppercase();
+    let invalid_format = || {
+        invalid(format!(
+            "{config_path} must be A-Z, 0-9 or F1-F12 with at most one Ctrl, Shift or Alt modifier"
+        ))
+    };
+    let (key, modifier) = match key.split_once('+') {
+        Some((modifier, key)) => {
+            let modifier = match modifier.trim() {
+                "SHIFT" => 1,
+                "CTRL" => 2,
+                "ALT" => 3,
+                _ => return Err(invalid_format()),
+            };
+            (key.trim(), modifier)
+        }
+        None => (key.as_str(), 0),
+    };
+    let vk = named_key_code(key).ok_or_else(invalid_format)?;
+    KeyBinding::from_poe(vk, modifier)
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Poe1UtilityConfig {
     pub quicksilver: bool,
@@ -67,8 +254,28 @@ impl Poe1UtilityConfig {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Poe1UniqueConfig {
+    pub writhing_jar: bool,
+}
+
+impl Poe1UniqueConfig {
+    pub fn enabled(&self, kind: UniqueFlask) -> bool {
+        match kind {
+            UniqueFlask::WrithingJar => self.writhing_jar,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UniqueConditions {
+    pub nearby: Option<NearbyRule>,
+}
+
 /// Ordering is cumulative: Rare permits Rare or Unique, Normal permits all four.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MinimumRarity {
     #[default]
@@ -91,7 +298,7 @@ impl MinimumRarity {
 
 /// A table's presence adds a nearby gate; enabled=false temporarily disables it.
 /// All numeric values use the same grid-unit scale as --debug --nearby.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NearbyRule {
     pub enabled: bool,
@@ -111,58 +318,165 @@ impl Default for NearbyRule {
     }
 }
 
+/// Startup and hot-reload status use one compact, grouped layout.
+/// Each utility's gates are displayed with that utility, never as a
+/// separate repeated section.
 impl Config {
     pub fn poe1_summary(&self) -> String {
-        let enabled = crate::poe1::types::UTILITY_TYPES
-            .into_iter()
-            .filter(|kind| self.poe1.utility.enabled(*kind))
-            .map(FlaskType::name)
-            .collect::<Vec<_>>();
-        let base = format!(
-            "{} | {} | Utility {} | Quicksilver movement {} | Hideout {}",
-            flask_summary("Life", &self.health),
-            flask_summary("Mana", &self.mana),
-            if enabled.is_empty() {
-                "OFF".to_string()
-            } else {
-                enabled.join(", ")
-            },
-            if self.poe1.quicksilver_min_run_ms == 0 {
-                "OFF".to_string()
-            } else {
-                format!("{}ms", self.poe1.quicksilver_min_run_ms)
-            },
+        let mut flasks = Vec::new();
+        for kind in crate::poe1::types::UTILITY_TYPES {
+            if !self.poe1.utility.enabled(kind) {
+                continue;
+            }
+
+            let mut gates = Vec::new();
+            if kind == FlaskType::Quicksilver && self.poe1.quicksilver_min_run_ms != 0 {
+                gates.push(format!("run >={}ms", self.poe1.quicksilver_min_run_ms));
+            }
+            if let Some(rule) = self.poe1.nearby.get(&kind).filter(|rule| rule.enabled) {
+                gates.push(nearby_summary(
+                    rule.minimum_count,
+                    rule.minimum_rarity,
+                    rule.radius,
+                ));
+            }
+            flasks.push(summary_entry(kind.name(), &gates));
+        }
+
+        for unique in [UniqueFlask::WrithingJar] {
+            if !self.poe1.unique.enabled(unique) {
+                continue;
+            }
+            let mut gates = Vec::new();
+            if let Some(rule) = self
+                .poe1
+                .unique_conditions
+                .get(&unique)
+                .and_then(|conditions| conditions.nearby)
+                .filter(|rule| rule.enabled)
+            {
+                gates.push(nearby_summary(
+                    rule.minimum_count,
+                    rule.minimum_rarity,
+                    rule.radius,
+                ));
+            }
+            flasks.push(summary_entry(unique.name(), &gates));
+        }
+
+        let mut skills = Vec::new();
+        let shell = &self.poe1.skills.molten_shell;
+        if shell.enabled {
+            skills.push(summary_entry(
+                "Molten Shell",
+                &[format!(
+                    "{}, Life <={}%",
+                    shell.key, shell.threshold_percent
+                )],
+            ));
+        }
+        let blood = &self.poe1.skills.blood_rage;
+        if blood.enabled {
+            let mut gates = vec![
+                blood.key.clone(),
+                format!("Life >={}%", blood.min_life_percent),
+            ];
+            if blood.require_nearby_monsters {
+                gates.push(nearby_summary(
+                    blood.nearby_minimum_count,
+                    MinimumRarity::Normal,
+                    blood.nearby_radius,
+                ));
+            }
+            skills.push(summary_entry("Blood Rage", &gates));
+        }
+        let offering = &self.poe1.skills.spirit_offering;
+        if offering.enabled {
+            skills.push(summary_entry(
+                "Spirit Offering",
+                &[
+                    offering.key.clone(),
+                    format!(
+                        "corpses >={} @{}",
+                        offering.nearby_minimum_count, offering.nearby_radius
+                    ),
+                ],
+            ));
+        }
+
+        format!(
+            "Options : Hideout {}\nLife    : {}\nMana    : {}\n{}\n{}",
             if self.general.enable_in_hideout {
                 "ON"
             } else {
                 "OFF"
             },
-        );
-        let rules = self
-            .poe1
-            .nearby
-            .iter()
-            .filter(|(kind, rule)| rule.enabled && self.poe1.utility.enabled(**kind))
-            .map(|(kind, rule)| {
-                format!(
-                    "{} >= {} {:?}+ within {}",
-                    kind.name(),
-                    rule.minimum_count,
-                    rule.minimum_rarity,
-                    rule.radius
-                )
-            })
-            .collect::<Vec<_>>();
-        if rules.is_empty() {
-            base
-        } else {
-            format!("{base} | Nearby {}", rules.join(", "))
-        }
+            threshold_summary(&self.health),
+            threshold_summary(&self.mana),
+            summary_group("Flasks", &flasks),
+            summary_group("Skills", &skills),
+        )
+    }
+}
+
+fn threshold_summary(config: &FlaskConfig) -> String {
+    if config.enabled {
+        format!("<={}%", config.threshold_percent)
+    } else {
+        "OFF".to_string()
+    }
+}
+
+fn nearby_summary(count: u16, rarity: MinimumRarity, radius: u16) -> String {
+    format!("nearby >={count} {rarity:?}+ @{radius}")
+}
+
+fn summary_entry(name: &str, details: &[String]) -> String {
+    if details.is_empty() {
+        name.to_string()
+    } else {
+        format!("{name} [{}]", details.join(", "))
+    }
+}
+
+fn summary_group(label: &str, entries: &[String]) -> String {
+    if entries.is_empty() {
+        format!("{label:<7} : OFF")
+    } else {
+        format!("{label:<7} : {}", entries.join("\n          "))
     }
 }
 
 impl Poe1Config {
     pub(crate) fn validate(&self) -> io::Result<()> {
+        self.skills.molten_shell.validate()?;
+        self.skills.blood_rage.validate()?;
+        self.skills.spirit_offering.validate()?;
+        let enabled_keys = [
+            (
+                self.skills.molten_shell.enabled,
+                self.skills.molten_shell.binding()?,
+            ),
+            (
+                self.skills.blood_rage.enabled,
+                self.skills.blood_rage.binding()?,
+            ),
+            (
+                self.skills.spirit_offering.enabled,
+                self.skills.spirit_offering.binding()?,
+            ),
+        ];
+        for (index, (enabled, key)) in enabled_keys.iter().enumerate() {
+            if *enabled
+                && enabled_keys[index + 1..]
+                    .iter()
+                    .any(|(other_enabled, other_key)| *other_enabled && key == other_key)
+            {
+                return Err(invalid(
+                    "enabled PoE1 skill presets cannot use the same key",
+                ));
+            }
+        }
         let ms = self.quicksilver_min_run_ms;
         if ms != 0 && !(100..=5000).contains(&ms) {
             return Err(invalid(
@@ -182,6 +496,111 @@ impl Poe1Config {
                 )));
             }
         }
+        for (kind, conditions) in &self.unique_conditions {
+            if let Some(rule) = conditions.nearby {
+                if !(1..=150).contains(&rule.radius) || !(1..=512).contains(&rule.minimum_count) {
+                    return Err(invalid(format!(
+                        "poe1.unique_conditions.{kind:?}.nearby requires radius 1..=150 and minimum_count 1..=512"
+                    )));
+                }
+            }
+        }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::*;
+
+    #[test]
+    fn unique_status_keeps_optional_nearby_gate_with_its_owner() {
+        let mut config = Config::default();
+        config.poe1.unique.writhing_jar = true;
+        assert!(config
+            .poe1_summary()
+            .contains("Flasks  : Writhing Jar\nSkills"));
+        config.poe1.unique_conditions.insert(
+            UniqueFlask::WrithingJar,
+            UniqueConditions {
+                nearby: Some(NearbyRule::default()),
+            },
+        );
+        assert!(config
+            .poe1_summary()
+            .contains("Flasks  : Writhing Jar [nearby >=1 Normal+ @60]"));
+    }
+
+    #[test]
+    fn grouped_status_keeps_all_conditions_with_their_owners() {
+        let mut config = Config::default();
+        config.health.threshold_percent = 50.0;
+        config.mana.threshold_percent = 25.0;
+        config.poe1.utility.quicksilver = true;
+        config.poe1.utility.granite = true;
+        config.poe1.quicksilver_min_run_ms = 500;
+        config
+            .poe1
+            .nearby
+            .insert(FlaskType::Granite, NearbyRule::default());
+        config.poe1.skills.molten_shell.enabled = true;
+        config.poe1.skills.molten_shell.key = "R".into();
+        config.poe1.skills.blood_rage.enabled = true;
+        config.poe1.skills.blood_rage.key = "T".into();
+
+        assert_eq!(
+            config.poe1_summary(),
+            concat!(
+                "Options : Hideout OFF\n",
+                "Life    : <=50%\n",
+                "Mana    : <=25%\n",
+                "Flasks  : Quicksilver [run >=500ms]\n",
+                "          Granite [nearby >=1 Normal+ @60]\n",
+                "Skills  : Molten Shell [R, Life <=95%]\n",
+                "          Blood Rage [T, Life >=80%, nearby >=1 Normal+ @60]",
+            )
+        );
+    }
+
+    #[test]
+    fn grouped_status_only_shows_enabled_conditions_and_handles_empty_groups() {
+        let mut config = Config::default();
+        config.health.enabled = false;
+        config.mana.enabled = false;
+        config.general.enable_in_hideout = true;
+        config.poe1.quicksilver_min_run_ms = 500;
+        config
+            .poe1
+            .nearby
+            .insert(FlaskType::Granite, NearbyRule::default());
+
+        assert_eq!(
+            config.poe1_summary(),
+            "Options : Hideout ON\nLife    : OFF\nMana    : OFF\nFlasks  : OFF\nSkills  : OFF"
+        );
+
+        config.poe1.utility.granite = true;
+        let rule = config.poe1.nearby.get_mut(&FlaskType::Granite).unwrap();
+        rule.minimum_count = 2;
+        rule.minimum_rarity = MinimumRarity::Magic;
+        rule.radius = 40;
+        config.poe1.skills.blood_rage.enabled = true;
+        config.poe1.skills.blood_rage.require_nearby_monsters = false;
+
+        assert_eq!(
+            config.poe1_summary(),
+            "Options : Hideout ON\nLife    : OFF\nMana    : OFF\nFlasks  : Granite [nearby >=2 Magic+ @40]\nSkills  : Blood Rage [T, Life >=80%]"
+        );
+    }
+    #[test]
+    fn offering_summary_uses_existing_skill_group() {
+        let mut config = Config::default();
+        config.poe1.skills.spirit_offering.enabled = true;
+        config.poe1.skills.spirit_offering.key = "E".into();
+        config.poe1.skills.spirit_offering.nearby_minimum_count = 2;
+        config.poe1.skills.spirit_offering.nearby_radius = 50;
+        assert!(config
+            .poe1_summary()
+            .contains("Skills  : Spirit Offering [E, corpses >=2 @50]"));
     }
 }

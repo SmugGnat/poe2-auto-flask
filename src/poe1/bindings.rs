@@ -144,9 +144,9 @@ fn parse_reader<R: BufRead>(input: R, path: &Path) -> io::Result<[KeyBinding; SL
             ))
         })?;
         let binding = parse_binding(path, &label, value)?;
-        if binding.vk == 0x7A || result.contains(&binding) {
+        if result.contains(&binding) {
             return Err(invalid(format!(
-                "flask slot {} is bound to the arm toggle or a duplicate key",
+                "flask slot {} is bound to a duplicate key",
                 index + 1
             )));
         }
