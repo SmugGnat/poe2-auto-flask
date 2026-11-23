@@ -27,13 +27,12 @@ it; change the shortcut in **Settings → Enable / Disable Key**. Automation
 pauses when the game loses focus, in towns, while dead or when required game
 state cannot be validated. Hideouts are blocked unless enabled in Settings.
 
-## Version 1.0.2
+## Version 1.0.3
 
-Adds Immortal Call and an optional Shield threshold for all three Guard
-presets. Either Life or Shield can trigger a Guard, with Life taking priority;
-Shield at 0% disables that condition, and characters without Shield ignore it.
-Active Guard effects, shared attempts and game cooldowns prevent repeated or
-simultaneous Guard presses. All skill presets default off.
+PoE1 Nearby Enemies conditions now exclude hidden Unique enemies, bosses
+frozen during Covens Fate selection, and more encounter objects that cannot
+be fought. Enemies count again when the applicable effect clears. Read-only
+boss diagnostics report changes to Life, effects, and encounter state.
 
 ## Download and run
 
@@ -125,7 +124,10 @@ poe2-auto-flask-windows-x64.exe --debug --game poe1
 ./poe2-auto-flask-x86_64.AppImage --debug --game poe1
 ```
 
-PoE1 `--debug --nearby` adds the bounded nearby-monster/corpse census.
+PoE1 `--debug --nearby` adds the bounded nearby-monster/corpse census and
+read-only Unique-boss details at a 250 ms target cadence. Timestamped snapshots
+include identity, Life percentage, targetable/hidden fields, named boss states,
+buffs, modifiers and numeric stats; later reports show changes.
 **Ctrl+C** exits diagnostics. A game update that invalidates required memory
 structures causes the helper to pause rather than guess.
 

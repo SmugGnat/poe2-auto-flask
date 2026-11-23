@@ -98,7 +98,17 @@ pub(super) mod nearby {
     pub(crate) const LIFE_CURRENT: usize = 0x178 + 0x30;
     pub(crate) const POSITIONED_REACTION: usize = 0x1E0;
     pub(crate) const TARGETABLE_FLAG: usize = 0x50;
+    // Diagnostic-only candidates from current GameHelper Targetable/StateMachine.
+    pub(crate) const TARGETABLE_EXTRA: usize = 0x54;
+    pub(crate) const STATE_MACHINE_STATES_PTR: usize = 0x158;
+    pub(crate) const STATE_MACHINE_VALUES: usize = 0x160;
+    pub(crate) const STATE_MACHINE_NAMES: usize = 0x10;
+    pub(crate) const STATE_MACHINE_NAME_STRIDE: usize = 0xC0;
     pub(crate) const MONSTER_RARITY: usize = 0x90 + 0xB4;
+    // ObjectMagicProperties.Details1.Mods: five StdVector<ModArrayStruct> fields.
+    pub(crate) const MONSTER_MODS: usize = 0x90 + 0xC0;
+    pub(crate) const MONSTER_MOD_VECTOR_COUNT: usize = 5;
+    pub(crate) const MOD_VECTOR_STRIDE: usize = 0x18;
 }
 
 #[cfg(test)]

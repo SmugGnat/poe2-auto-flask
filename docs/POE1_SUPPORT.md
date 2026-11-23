@@ -109,11 +109,29 @@ A table gates only its matching flask type. `enabled = false` retains the
 condition values without gating; omitting it restores ordinary effect
 maintenance. Unknown types and invalid ranges are rejected.
 
-The scanner excludes dead/friendly/untargetable living-monster candidates and
-known noncombat categories such as Harbingers and Tormented Spirits.
-**Targetable does not prove damageable**: live testing counted Kitava and
-its Heart before vulnerable phases. Unique-only rules can therefore trigger
-early. No damageability/aggro guarantee is made.
+The scanner follows GameHelper's encounter filters. It excludes
+dead/friendly/untargetable living-monster candidates, invulnerable Harbingers,
+Tormented Spirits, and known noncombat objects in Maven, Sirus, Cortex,
+Archnemesis, Ritual and Tier 17 encounters. Standalone Elderslayer variants
+remain eligible.
+
+Hidden Unique enemies (including campaign and pinnacle bosses), inactive or
+already defeated Legion targets, captured beasts and protected Betrayal NPCs
+do not contribute to enemy counts.
+Bosses frozen during the Covens Fate selection are excluded until released,
+including campaign bosses.
+Attackable frozen Legion monsters and other eligible enemies still count.
+Temporary status effects are reread on each census refresh, while static
+classifications and definitions are cached within the area. Additional reads
+are bounded; malformed or over-budget state fails closed for nearby-gated
+actions. Life/Mana recovery does not depend on these observations, and
+corpse counting remains separate.
+
+These filters apply to existing Nearby Enemies conditions; utility flasks with
+that condition off retain ordinary effect maintenance. **Targetable does not
+prove damageable**: unsupported invulnerable phases can still count, including
+Kitava transitions before the hidden effect appears. No universal damageability
+or aggro guarantee is made.
 
 ## Writhing Jar
 
@@ -205,7 +223,19 @@ absent; a confirmed active offering buff blocks another attempt.
 
 Both modes are read-only and send no automation input. The second reports
 monster rarity counts and corpse candidates at 60/100 units, plus optional
-skill readiness. Normal diagnostics include vitals, area, chat, flasks,
+skill readiness. It also captures up to 16 Unique bosses within 150 units,
+including their identity, Life percentage, targetable/hidden fields, current
+filter category, named boss states, full buff/modifier names and numeric stat
+IDs/values. Boss observations target a 250 ms cadence and include elapsed
+timestamps. Full snapshots print on first detection; later output reports
+changes, including added/removed buffs and old/new state and stat values.
+Bosses entering or leaving the diagnostic view are reported; a departure can
+also mean the boss moved outside range or beyond the 16-boss limit. Interrupted
+captures restart with full snapshots. Unavailable fields remain explicitly
+unavailable; raw flags and state values do not establish damageability.
+This extra work runs only in read-only debug mode. Automation retains its
+750 ms census cache.
+Normal diagnostics include vitals, area, chat, flasks,
 charges/costs, effects and movement. `Helper CPU` reports process CPU relative
 to one logical core over roughly five seconds; census wall time is remote
 scan duration, not CPU time. These diagnostics remain supported tooling.

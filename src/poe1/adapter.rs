@@ -107,6 +107,13 @@ impl Adapter {
         self.nearby_cache.sample(process, &self.probe)
     }
 
+    pub(crate) fn nearby_debug(
+        &mut self,
+        process: &Process,
+    ) -> io::Result<super::nearby::NearbyDiagnostic> {
+        self.nearby_cache.sample_debug(process, &self.probe)
+    }
+
     pub fn area(&mut self, process: &Process) -> io::Result<&AreaInfo> {
         if self.tick.area.is_none() {
             self.tick.area = Some(super::area::read(process, &self.probe)?);

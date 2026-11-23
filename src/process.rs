@@ -76,6 +76,21 @@ impl Process {
         Self::open_pid(pid, names)
     }
 
+    /// Exercise read-only decoders against owned test buffers, never the game.
+    #[cfg(test)]
+    pub(crate) fn current_for_tests() -> io::Result<Self> {
+        let pid = unsafe { windows_sys::Win32::System::Threading::GetCurrentProcessId() };
+        Ok(Self {
+            pid,
+            handle: open_read_only(pid)?,
+            main_module: ModuleInfo {
+                name: "test.exe".into(),
+                base_address: 0,
+                size: 0,
+            },
+        })
+    }
+
     fn open_pid(pid: u32, names: &[&str]) -> io::Result<Self> {
         let handle = open_read_only(pid)?;
         let main_module = find_main_module(pid, names)?;

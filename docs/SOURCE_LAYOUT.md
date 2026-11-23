@@ -49,6 +49,10 @@ character-name reads and skill readiness. Its `state.rs` caches demand-driven
 tick data and one shared pre-dispatch verification. `skill_rules.rs` holds
 preset rules and attempt guards. Longer pure-policy tests live alongside the
 implementation in `activation_tests.rs` and `decision_tests.rs`.
+`nearby_filters.rs` holds GameHelper encounter exclusions and temporary-state
+eligibility rules used by the shared nearby census.
+`nearby_debug.rs` adds opt-in Unique-boss observations and change reports to
+read-only diagnostics; automation never consumes these observations.
 
 ## Runtime boundaries
 

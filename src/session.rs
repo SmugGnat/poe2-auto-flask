@@ -127,6 +127,16 @@ impl GameSession {
         }
     }
 
+    pub(crate) fn poe1_nearby_debug(
+        &mut self,
+        process: &Process,
+    ) -> io::Result<poe1::nearby::NearbyDiagnostic> {
+        match &mut self.reader {
+            Reader::Poe1(adapter) => adapter.nearby_debug(process),
+            Reader::Poe2(_) => Err(unsupported()),
+        }
+    }
+
     pub fn poe1_area(&mut self, process: &Process) -> io::Result<&AreaInfo> {
         match &mut self.reader {
             Reader::Poe1(adapter) => adapter.area(process),

@@ -3177,7 +3177,7 @@ dependencies = [
 
 [[package]]
 name = "poe2-auto-flask"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "serde",
  "toml 0.8.23",
@@ -3186,7 +3186,7 @@ dependencies = [
 
 [[package]]
 name = "poe2-auto-flask-ui"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "i-slint-backend-testing",
  "poe2-auto-flask",

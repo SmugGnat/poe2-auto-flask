@@ -142,7 +142,7 @@ fn bounded_range(
     Ok((first, count))
 }
 
-fn read_utf16_z(process: &Process, address: usize, max: usize) -> io::Result<String> {
+pub(super) fn read_utf16_z(process: &Process, address: usize, max: usize) -> io::Result<String> {
     let bytes = process.read_bytes(address, max * 2)?;
     let mut units = Vec::with_capacity(32);
     for pair in bytes.chunks_exact(2) {

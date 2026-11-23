@@ -21,6 +21,7 @@ const REPORT_INTERVAL: Duration = Duration::from_secs(1);
 const CPU_REPORT_INTERVAL: Duration = Duration::from_secs(5);
 
 pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> io::Result<()> {
+    let debug_started = Instant::now();
     println!("Connected to Path of Exile 1 (read-only diagnostic mode).");
     if let Some(metadata) = session.poe1_player_metadata() {
         println!("Player metadata: {metadata}");
@@ -30,7 +31,10 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
     );
     println!("Press Ctrl+C to exit. No automation or keyboard input is enabled.\n");
     if nearby_debug {
-        println!("Experimental nearby census ENABLED (read-only, 750ms cache, 1500-node limit).");
+        println!("Experimental nearby census ENABLED (read-only, 250ms debug cadence, 1500-node limit). Automation retains its 750ms cache.");
+        println!("Unique-boss details ENABLED (within 150 grid units, up to 16 bosses). Full state first, then changes only.");
+        println!("Boss observations include timestamps, Life percentage, StateMachine values and raw targetable/hidden fields; these are not damageability decisions.");
+        println!("base_cannot_be_damaged: numeric stat identity unverified; all stat IDs/values remain in the dump.");
     }
 
     let mut diagnostic_config = Poe1SkillsConfig::default();
@@ -45,6 +49,7 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
     // Diagnostic-only Win32 process CPU timer. Reads the current helper's CPU
     // time, not game CPU or Wine server CPU, and never runs in --auto.
     let mut cpu_meter = CpuMeter::new();
+    let mut boss_reporter = super::nearby::BossReporter::default();
     loop {
         let started = Instant::now();
         if !process.is_alive().unwrap_or(false) {
@@ -69,6 +74,10 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
         match sampled {
             Ok((vitals, area, flasks, buffs, chat, animation)) => {
                 waiting = false;
+                // Only debug --nearby takes these fresh observations each poll.
+                // Ordinary diagnostics retain their once-per-second reports.
+                let nearby = (nearby_debug && !area.is_town && !area.is_hideout)
+                    .then(|| session.poe1_nearby_debug(process));
                 if started >= report_at {
                     println!(
                         "Area: {} [{}] | Life: {}/{} | Mana: {} | ES: {}",
@@ -80,9 +89,10 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                         format_pool(vitals.energy_shield),
                     );
                     println!("  Chat: {chat}");
-                    if nearby_debug && !area.is_town && !area.is_hideout {
-                        match session.poe1_nearby(process) {
-                            Ok(census) => {
+                    if let Some(observation) = &nearby {
+                        match observation {
+                            Ok(diagnostic) => {
+                                let census = &diagnostic.census;
                                 println!(
                                     "  Nearby nodes {} | candidate monsters {} | within 60 grid units (N/M/R/U): {:?} | within 100: {:?}",
                                     census.awake_nodes,
@@ -147,7 +157,7 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                         }
                     }
                     println!(
-                        "  Effects ({}): {}",
+                        "  Player effects ({}): {}",
                         buffs.effects.len(),
                         buffs
                             .effects
@@ -256,8 +266,31 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                     }
                     report_at = started + REPORT_INTERVAL;
                 }
+                let elapsed = started.saturating_duration_since(debug_started);
+                match nearby {
+                    Some(Ok(diagnostic)) => print!(
+                        "{}",
+                        boss_reporter.report(&diagnostic.bosses, elapsed, &area.name)
+                    ),
+                    Some(Err(error)) => {
+                        print!("{}", boss_reporter.interrupted(elapsed, &error.to_string()));
+                    }
+                    None if nearby_debug => {
+                        print!("{}", boss_reporter.interrupted(elapsed, "noncombat area"));
+                    }
+                    None => {}
+                }
             }
             Err(error) => {
+                if nearby_debug {
+                    print!(
+                        "{}",
+                        boss_reporter.interrupted(
+                            started.saturating_duration_since(debug_started),
+                            &error.to_string(),
+                        )
+                    );
+                }
                 if !waiting {
                     eprintln!("WAITING FOR POE1 GAME STATE: {error}");
                     waiting = true;

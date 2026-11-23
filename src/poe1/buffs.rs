@@ -1,4 +1,4 @@
-//! Player-only PoE1 status effects, with a bounded vector and cached definitions.
+//! PoE1 status effects, with separate player and nearby-monster caches.
 use std::collections::HashMap;
 use std::io;
 
@@ -43,6 +43,128 @@ impl EffectCache {
         self.component = None;
         self.definitions.clear();
     }
+}
+
+/// Presence-based encounter markers. These can have no countdown;
+/// only the current effect list determines whether a monster is still blocked.
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct MonsterEffects {
+    pub hidden: bool,
+    pub captured: bool,
+    pub betrayal_safe: bool,
+    pub augury_frozen: bool,
+}
+
+impl MonsterEffects {
+    pub fn from_name(name: &str) -> Self {
+        Self {
+            hidden: name == "hidden_monster",
+            captured: name == "capture_monster_trapped",
+            betrayal_safe: name == "betrayal_target_safety_aura",
+            augury_frozen: name == "augury_boss_frozen",
+        }
+    }
+
+    fn include(&mut self, other: Self) {
+        self.hidden |= other.hidden;
+        self.captured |= other.captured;
+        self.betrayal_safe |= other.betrayal_safe;
+        self.augury_frozen |= other.augury_frozen;
+    }
+}
+
+#[derive(Debug, Default)]
+pub(super) struct MonsterEffectCache {
+    definitions: HashMap<usize, MonsterEffects>,
+}
+
+impl MonsterEffectCache {
+    pub fn clear(&mut self) {
+        self.definitions.clear();
+    }
+
+    pub fn sample(
+        &mut self,
+        process: &Process,
+        component: usize,
+        remaining: &mut usize,
+    ) -> io::Result<MonsterEffects> {
+        let header = process.read_bytes(component + BUFFS_EFFECTS, 16)?;
+        let first = u64_at(&header, 0) as usize;
+        let last = u64_at(&header, 8) as usize;
+        let count = effect_count(first, last)?;
+        consume_monster_effect_budget(remaining, count)?;
+        let pointers = if count == 0 {
+            Vec::new()
+        } else {
+            process.read_bytes(first, count * 8)?
+        };
+        let mut result = MonsterEffects::default();
+        for pointer in pointers.chunks_exact(8) {
+            let at = u64_at(pointer, 0) as usize;
+            if !plausible_ptr(at) {
+                return Err(invalid("PoE1 monster effect pointer invalid"));
+            }
+            let definition = process.read_u64(at + STATUS_DEFINITION)? as usize;
+            if definition == 0 {
+                continue;
+            }
+            if !plausible_ptr(definition) {
+                return Err(invalid("PoE1 monster effect definition invalid"));
+            }
+            if self.definitions.len() >= MAX_DEFINITIONS {
+                self.definitions.clear();
+            }
+            let flags = match self.definitions.get(&definition) {
+                Some(value) => *value,
+                None => {
+                    let value =
+                        MonsterEffects::from_name(&read_definition(process, definition)?.name);
+                    self.definitions.insert(definition, value);
+                    value
+                }
+            };
+            result.include(flags);
+        }
+        Ok(result)
+    }
+}
+
+fn consume_monster_effect_budget(remaining: &mut usize, count: usize) -> io::Result<()> {
+    *remaining = remaining
+        .checked_sub(count)
+        .ok_or_else(|| invalid("PoE1 nearby monster effects exceed scan budget"))?;
+    Ok(())
+}
+
+/// Full names for read-only boss diagnostics, independent of the automation cache.
+pub(super) fn debug_monster_names(process: &Process, component: usize) -> io::Result<Vec<String>> {
+    let header = process.read_bytes(component + BUFFS_EFFECTS, 16)?;
+    let first = u64_at(&header, 0) as usize;
+    let count = effect_count(first, u64_at(&header, 8) as usize)?;
+    let pointers = if count == 0 {
+        Vec::new()
+    } else {
+        process.read_bytes(first, count * 8)?
+    };
+    let mut names = Vec::new();
+    for pointer in pointers.chunks_exact(8) {
+        let at = u64_at(pointer, 0) as usize;
+        if !plausible_ptr(at) {
+            return Err(invalid("PoE1 diagnostic monster effect pointer invalid"));
+        }
+        let definition = process.read_u64(at + STATUS_DEFINITION)? as usize;
+        if definition == 0 {
+            continue;
+        }
+        if !plausible_ptr(definition) {
+            return Err(invalid("PoE1 diagnostic monster effect definition invalid"));
+        }
+        names.push(read_definition(process, definition)?.name);
+    }
+    names.sort();
+    names.dedup();
+    Ok(names)
 }
 
 pub fn sample(
@@ -231,5 +353,25 @@ mod tests {
         assert_eq!(effect_count(0x10000, 0x10028).unwrap(), 5);
         assert!(effect_count(0x10000, 0x11008).is_err());
         assert!(effect_count(0x10000, 0x10009).is_err());
+    }
+
+    #[test]
+    fn encounter_effect_names_are_exact_and_scan_budget_is_shared() {
+        let mut flags = MonsterEffects::from_name("hidden_monster");
+        flags.include(MonsterEffects::from_name("capture_monster_trapped"));
+        assert!(flags.hidden && flags.captured && !flags.betrayal_safe);
+        assert!(!MonsterEffects::from_name("hidden_monster_effect").hidden);
+        assert!(!MonsterEffects::from_name("frozen_in_time").hidden);
+        flags.include(MonsterEffects::from_name("augury_boss_frozen"));
+        assert!(flags.augury_frozen);
+        assert!(!MonsterEffects::from_name("augury_boss_frozen_other").augury_frozen);
+        assert!(!MonsterEffects::from_name("frozen_in_time").augury_frozen);
+        let mut remaining = 100;
+        consume_monster_effect_budget(&mut remaining, 60).unwrap();
+        assert_eq!(remaining, 40);
+        assert!(consume_monster_effect_budget(&mut remaining, 41).is_err());
+        assert_eq!(remaining, 40);
+        consume_monster_effect_budget(&mut remaining, 40).unwrap();
+        assert_eq!(remaining, 0);
     }
 }

@@ -14,6 +14,7 @@ pub mod flasks;
 mod layout;
 pub mod movement;
 pub mod nearby;
+mod nearby_filters;
 mod offsets;
 pub mod player;
 mod reader;
