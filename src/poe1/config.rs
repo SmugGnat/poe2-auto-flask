@@ -32,6 +32,8 @@ pub struct Poe1SkillsConfig {
     pub molten_shell: MoltenShellConfig,
     pub blood_rage: BloodRageConfig,
     pub spirit_offering: SpiritOfferingConfig,
+    pub steelskin: SteelskinConfig,
+    pub bladefall_of_trarthus: BladefallOfTrarthusConfig,
 }
 
 impl Poe1SkillsConfig {
@@ -40,6 +42,11 @@ impl Poe1SkillsConfig {
             (self.molten_shell.enabled, self.molten_shell.binding()),
             (self.blood_rage.enabled, self.blood_rage.binding()),
             (self.spirit_offering.enabled, self.spirit_offering.binding()),
+            (self.steelskin.enabled, self.steelskin.binding()),
+            (
+                self.bladefall_of_trarthus.enabled,
+                self.bladefall_of_trarthus.binding(),
+            ),
         ] {
             if enabled && toggle.conflicts_with(binding?) {
                 return Err(invalid(format!(
@@ -48,6 +55,68 @@ impl Poe1SkillsConfig {
                 )));
             }
         }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SteelskinConfig {
+    pub enabled: bool,
+    pub threshold_percent: u8,
+    pub key: String,
+}
+
+impl Default for SteelskinConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold_percent: 95,
+            key: "R".to_string(),
+        }
+    }
+}
+
+impl SteelskinConfig {
+    pub fn binding(&self) -> io::Result<KeyBinding> {
+        skill_binding(&self.key, "poe1.skills.steelskin.key")
+    }
+
+    pub fn validate(&self) -> io::Result<()> {
+        if !(1..=99).contains(&self.threshold_percent) {
+            return Err(invalid(
+                "poe1.skills.steelskin.threshold_percent must be 1..=99",
+            ));
+        }
+        self.binding()?;
+        Ok(())
+    }
+}
+
+/// Sustained skill: the game owns resource costs and usability.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BladefallOfTrarthusConfig {
+    pub enabled: bool,
+    pub key: String,
+}
+
+impl Default for BladefallOfTrarthusConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            key: "F".to_string(),
+        }
+    }
+}
+
+impl BladefallOfTrarthusConfig {
+    pub fn binding(&self) -> io::Result<KeyBinding> {
+        skill_binding(&self.key, "poe1.skills.bladefall_of_trarthus.key")
+    }
+
+    pub fn validate(&self) -> io::Result<()> {
+        self.binding()?;
         Ok(())
     }
 }
@@ -365,6 +434,13 @@ impl Config {
         }
 
         let mut skills = Vec::new();
+        let bladefall = &self.poe1.skills.bladefall_of_trarthus;
+        if bladefall.enabled {
+            skills.push(summary_entry(
+                "Bladefall of Trarthus",
+                std::slice::from_ref(&bladefall.key),
+            ));
+        }
         let shell = &self.poe1.skills.molten_shell;
         if shell.enabled {
             skills.push(summary_entry(
@@ -401,6 +477,16 @@ impl Config {
                         offering.nearby_minimum_count, offering.nearby_radius
                     ),
                 ],
+            ));
+        }
+        let steel = &self.poe1.skills.steelskin;
+        if steel.enabled {
+            skills.push(summary_entry(
+                "Steelskin",
+                &[format!(
+                    "{}, Life <={}%",
+                    steel.key, steel.threshold_percent
+                )],
             ));
         }
 
@@ -452,6 +538,8 @@ impl Poe1Config {
         self.skills.molten_shell.validate()?;
         self.skills.blood_rage.validate()?;
         self.skills.spirit_offering.validate()?;
+        self.skills.steelskin.validate()?;
+        self.skills.bladefall_of_trarthus.validate()?;
         let enabled_keys = [
             (
                 self.skills.molten_shell.enabled,
@@ -464,6 +552,14 @@ impl Poe1Config {
             (
                 self.skills.spirit_offering.enabled,
                 self.skills.spirit_offering.binding()?,
+            ),
+            (
+                self.skills.steelskin.enabled,
+                self.skills.steelskin.binding()?,
+            ),
+            (
+                self.skills.bladefall_of_trarthus.enabled,
+                self.skills.bladefall_of_trarthus.binding()?,
             ),
         ];
         for (index, (enabled, key)) in enabled_keys.iter().enumerate() {

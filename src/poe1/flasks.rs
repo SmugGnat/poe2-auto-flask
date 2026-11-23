@@ -43,7 +43,8 @@ pub struct FlaskSnapshot {
 struct CachedItem {
     inventory_item: usize,
     entity: usize,
-    charges_component: usize,
+    /// Tinctures are cached as manual-only belt items without flask charges.
+    charges_component: Option<usize>,
     item_path: String,
     local_charge_multiplier: Option<f64>,
     recovery: RecoveryKind,
@@ -153,15 +154,12 @@ pub fn sample(
             .filter(|c| c.inventory_item == inventory_item && c.entity == entity);
         if existing.is_none() {
             let item_path = read_metadata(process, entity)?;
-            if !item_path.starts_with("Metadata/Items/Flasks/") {
-                return Err(invalid(format!(
-                    "PoE1 slot {} is not a recognized flask: {item_path}",
-                    slot + 1
-                )));
-            }
-            let component = resolve_component(process, entity, "Charges")
-                .ok_or_else(|| invalid(format!("PoE1 slot {} is missing Charges", slot + 1)))?;
-            let mods = charge_cost::inspect_flask_modifiers(process, entity).ok();
+            let component = resolve_flask_charges(&item_path, slot, || {
+                resolve_component(process, entity, "Charges")
+                    .ok_or_else(|| invalid(format!("PoE1 slot {} is missing Charges", slot + 1)))
+            })?;
+            let mods =
+                component.and_then(|_| charge_cost::inspect_flask_modifiers(process, entity).ok());
             let local_charge_multiplier = mods.map(|value| value.charge_multiplier);
             let recovery = mods.map_or(RecoveryKind::Gradual, |value| value.recovery);
             let unique = mods.and_then(|value| value.unique);
@@ -179,8 +177,12 @@ pub fn sample(
             });
         }
         let cached = cache.slots[slot].as_ref().expect("item cached above");
+        let Some(charges_component) = cached.charges_component else {
+            // Keep the original belt index; tinctures never enter flask policy.
+            continue;
+        };
         // Read the live field every time. It might already reflect charge modifiers.
-        let charge_data = process.read_bytes(cached.charges_component + CHARGES_INTERNAL, 12)?;
+        let charge_data = process.read_bytes(charges_component + CHARGES_INTERNAL, 12)?;
         let internal = u64_at(&charge_data, 0) as usize;
         if !plausible_ptr(internal) {
             return Err(invalid("PoE1 Charges internal pointer invalid"));
@@ -211,6 +213,26 @@ pub fn sample(
         });
     }
     Ok(result)
+}
+
+fn resolve_flask_charges(
+    item_path: &str,
+    slot: usize,
+    resolve: impl FnOnce() -> io::Result<usize>,
+) -> io::Result<Option<usize>> {
+    if item_path
+        .strip_prefix("Metadata/Items/Tinctures/")
+        .is_some_and(|base| !base.is_empty())
+    {
+        return Ok(None);
+    }
+    if !item_path.starts_with("Metadata/Items/Flasks/") {
+        return Err(invalid(format!(
+            "PoE1 slot {} is not a recognized flask: {item_path}",
+            slot + 1
+        )));
+    }
+    resolve().map(Some)
 }
 
 fn read_vector(
@@ -271,7 +293,7 @@ mod tests {
         cache.slots[0] = Some(CachedItem {
             inventory_item: 0x20000,
             entity: 0x30000,
-            charges_component: 0x40000,
+            charges_component: Some(0x40000),
             item_path: "Metadata/Items/Flasks/Flask".into(),
             local_charge_multiplier: Some(1.0),
             recovery: RecoveryKind::Gradual,
@@ -281,6 +303,51 @@ mod tests {
         assert!(cache.inventory.is_none());
         assert!(cache.slots.iter().all(Option::is_none));
     }
+
+    #[test]
+    fn tinctures_do_not_require_flask_components() {
+        for base in 1..=10 {
+            for slot in 0..FLASK_SLOT_COUNT {
+                let path = format!("Metadata/Items/Tinctures/Tincture{base}");
+                let component = resolve_flask_charges(&path, slot, || {
+                    panic!("manual tinctures must not request a Charges component")
+                })
+                .unwrap();
+                assert_eq!(component, None);
+            }
+        }
+    }
+
+    #[test]
+    fn real_flasks_still_require_valid_charge_components() {
+        let path = "Metadata/Items/Flasks/FlaskLife11";
+        assert_eq!(
+            resolve_flask_charges(path, 0, || Ok(0x40000)).unwrap(),
+            Some(0x40000)
+        );
+        let error = resolve_flask_charges(path, 0, || Err(invalid("missing Charges"))).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(error.to_string(), "missing Charges");
+    }
+
+    #[test]
+    fn unrecognized_belt_items_still_fail_closed() {
+        for path in [
+            "Metadata/Items/Weapons/Test",
+            "Metadata/Items/TincturesFake/Tincture1",
+            "Metadata/Items/Tinctures",
+            "Metadata/Items/Tinctures/",
+            "",
+        ] {
+            let error = resolve_flask_charges(path, 2, || {
+                panic!("unrecognized items must not request flask components")
+            })
+            .unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+            assert!(error.to_string().contains("slot 3"));
+        }
+    }
+
     #[test]
     fn remaining_uses_requires_verified_effective_cost() {
         let mut slot = FlaskSlot {

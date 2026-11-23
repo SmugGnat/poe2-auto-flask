@@ -1018,6 +1018,11 @@ export component AppWindow inherits Window {
     in-out property <bool> molten-enabled: false;
     in-out property <string> molten-key: "Q";
     in-out property <string> molten-life: "95";
+    in-out property <bool> steel-enabled: false;
+    in-out property <string> steel-key: "R";
+    in-out property <string> steel-life: "95";
+    in-out property <bool> bladefall-enabled: false;
+    in-out property <string> bladefall-key: "F";
     in-out property <bool> blood-enabled: false;
     in-out property <string> blood-key: "T";
     in-out property <string> blood-life: "80";
@@ -1033,10 +1038,14 @@ export component AppWindow inherits Window {
     in-out property <bool> molten-expanded: true;
     in-out property <bool> blood-expanded: true;
     in-out property <bool> offering-expanded: true;
+    in-out property <bool> steel-expanded: true;
+    in-out property <bool> bladefall-expanded: true;
     callback save-skill-sections();
     changed molten-expanded => { root.save-skill-sections(); }
     changed blood-expanded => { root.save-skill-sections(); }
     changed offering-expanded => { root.save-skill-sections(); }
+    changed steel-expanded => { root.save-skill-sections(); }
+    changed bladefall-expanded => { root.save-skill-sections(); }
 
     callback profile-draft-changed();
     changed hideout => { root.profile-draft-changed(); }
@@ -1058,6 +1067,11 @@ export component AppWindow inherits Window {
     changed molten-enabled => { root.profile-draft-changed(); }
     changed molten-key => { root.profile-draft-changed(); }
     changed molten-life => { root.profile-draft-changed(); }
+    changed steel-enabled => { root.profile-draft-changed(); }
+    changed steel-key => { root.profile-draft-changed(); }
+    changed steel-life => { root.profile-draft-changed(); }
+    changed bladefall-enabled => { root.profile-draft-changed(); }
+    changed bladefall-key => { root.profile-draft-changed(); }
     changed blood-enabled => { root.profile-draft-changed(); }
     changed blood-key => { root.profile-draft-changed(); }
     changed blood-life => { root.profile-draft-changed(); }
@@ -1625,19 +1639,18 @@ if root.page == 0: VerticalBox {
 if root.page == 1 && root.game-index == 0: VerticalBox {
     horizontal-stretch: 1;
     spacing: 12px;
+    // Keep skill cards alphabetical by display name.
     SectionCard {
         ToggleRow {
-            label: "Molten Shell"; strong-label: true; enabled-color: #e05030;
-            checked <=> root.molten-enabled;
-            collapsible: true; expanded <=> root.molten-expanded;
-            toggled => { if (root.molten-enabled) { root.molten-expanded = true; } }
+            label: "Bladefall of Trarthus"; strong-label: true; enabled-color: #70ff70;
+            checked <=> root.bladefall-enabled;
+            collapsible: true; expanded <=> root.bladefall-expanded;
+            toggled => { if (root.bladefall-enabled) { root.bladefall-expanded = true; } }
         }
-        if root.molten-enabled && root.molten-expanded: VerticalLayout {
+        if root.bladefall-enabled && root.bladefall-expanded: VerticalLayout {
             spacing: 0px;
             Separator {}
-            SkillKeyRow { skill-name: "Molten Shell"; value <=> root.molten-key; }
-            Separator {}
-            NumberRow { label: "Maximum Life"; value <=> root.molten-life; unit: "%"; }
+            SkillKeyRow { skill-name: "Bladefall of Trarthus"; value <=> root.bladefall-key; }
         }
     }
     SectionCard {
@@ -1666,6 +1679,21 @@ if root.page == 1 && root.game-index == 0: VerticalBox {
     }
     SectionCard {
         ToggleRow {
+            label: "Molten Shell"; strong-label: true; enabled-color: #e05030;
+            checked <=> root.molten-enabled;
+            collapsible: true; expanded <=> root.molten-expanded;
+            toggled => { if (root.molten-enabled) { root.molten-expanded = true; } }
+        }
+        if root.molten-enabled && root.molten-expanded: VerticalLayout {
+            spacing: 0px;
+            Separator {}
+            SkillKeyRow { skill-name: "Molten Shell"; value <=> root.molten-key; }
+            Separator {}
+            NumberRow { label: "Maximum Life"; value <=> root.molten-life; unit: "%"; }
+        }
+    }
+    SectionCard {
+        ToggleRow {
             label: "Spirit Offering"; strong-label: true; enabled-color: #7070ff;
             checked <=> root.offering-enabled;
             collapsible: true; expanded <=> root.offering-expanded;
@@ -1679,6 +1707,21 @@ if root.page == 1 && root.game-index == 0: VerticalBox {
             NumberRow { label: "Corpses"; indent: 12px; value <=> root.offering-count; unit: ""; }
             Separator { indent: 12px; }
             RadiusRow { value <=> root.offering-radius; }
+        }
+    }
+    SectionCard {
+        ToggleRow {
+            label: "Steelskin"; strong-label: true; enabled-color: #e05030;
+            checked <=> root.steel-enabled;
+            collapsible: true; expanded <=> root.steel-expanded;
+            toggled => { if (root.steel-enabled) { root.steel-expanded = true; } }
+        }
+        if root.steel-enabled && root.steel-expanded: VerticalLayout {
+            spacing: 0px;
+            Separator {}
+            SkillKeyRow { skill-name: "Steelskin"; value <=> root.steel-key; }
+            Separator {}
+            NumberRow { label: "Maximum Life"; value <=> root.steel-life; unit: "%"; }
         }
     }
 }

@@ -487,6 +487,65 @@ mod tests {
     }
 
     #[test]
+    fn new_skill_presets_default_off_and_validate_their_settings() {
+        let defaults = Config::default();
+        assert!(!defaults.poe1.skills.steelskin.enabled);
+        assert!(!defaults.poe1.skills.bladefall_of_trarthus.enabled);
+        let source = "[poe1.skills.steelskin]\nenabled = true\nkey = \"Ctrl+R\"\nthreshold_percent = 65\n[poe1.skills.bladefall_of_trarthus]\nenabled = true\nkey = \"Alt+F\"\n";
+        let config = Config::parse(Path::new("test.toml"), source).unwrap();
+        assert_eq!(config.poe1.skills.steelskin.threshold_percent, 65);
+        assert_eq!(
+            config.poe1.skills.steelskin.binding().unwrap().label(),
+            "Ctrl+R"
+        );
+        assert_eq!(
+            config
+                .poe1
+                .skills
+                .bladefall_of_trarthus
+                .binding()
+                .unwrap()
+                .label(),
+            "Alt+F"
+        );
+        for percent in [0, 100, 255] {
+            let source = format!("[poe1.skills.steelskin]\nthreshold_percent = {percent}\n");
+            assert!(Config::parse(Path::new("test.toml"), &source).is_err());
+        }
+        for skill in ["steelskin", "bladefall_of_trarthus"] {
+            let source = format!("[poe1.skills.{skill}]\nkey = \"Ctrl+Shift+R\"\n");
+            assert!(Config::parse(Path::new("test.toml"), &source).is_err());
+        }
+    }
+
+    #[test]
+    fn new_skills_share_existing_key_conflict_validation() {
+        let path = Path::new("test.toml");
+        for added in ["steelskin", "bladefall_of_trarthus"] {
+            for other in [
+                "molten_shell",
+                "blood_rage",
+                "spirit_offering",
+                "steelskin",
+                "bladefall_of_trarthus",
+            ] {
+                if added == other {
+                    continue;
+                }
+                let source = format!("[poe1.skills.{added}]\nenabled = true\nkey = \"Ctrl+Q\"\n[poe1.skills.{other}]\nenabled = true\nkey = \"Ctrl+Q\"\n");
+                assert!(Config::parse(path, &source).is_err(), "{added}/{other}");
+            }
+            let source = format!("[poe1.skills.{added}]\nenabled = true\nkey = \"Ctrl+F8\"\n");
+            let config = Config::parse(path, &source).unwrap();
+            assert!(config
+                .poe1
+                .skills
+                .validate_toggle_key(crate::input::AutomationKey::parse("F8").unwrap())
+                .is_err());
+        }
+    }
+
+    #[test]
     fn bundled_default_config_matches_built_in_defaults() {
         let config = Config::parse(Path::new("config.toml"), DEFAULT_CONFIG_TEXT)
             .expect("bundled default config must parse");

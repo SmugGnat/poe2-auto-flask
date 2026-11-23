@@ -1,6 +1,6 @@
 [package]
 name = "poe2-auto-flask"
-version = "0.8.1"
+version = "1.0.1"
 edition = "2021"
 rust-version = "1.100.0"
 description = "A lightweight Path of Exile 1 and 2 auto-flask companion for Windows and Proton"

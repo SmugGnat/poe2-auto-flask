@@ -26,6 +26,12 @@ it; change the shortcut in **Settings → Enable / Disable Key**. Automation
 pauses when the game loses focus, in towns, while dead or when required game
 state cannot be validated. Hideouts are blocked unless enabled in Settings.
 
+## Version 1.0.1
+
+Adds Steelskin and Bladefall of Trarthus presets and an alphabetical skill
+list. Tinctures remain manual and no longer interrupt automation for the
+other equipped flasks. All skill presets default off.
+
 ## Download and run
 
 Public assets on the [Releases page](https://github.com/SmugGnat/poe2-auto-flask/releases):

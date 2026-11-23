@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version without the v prefix (for example, 0.8.0)"
+        description: "Release version without the v prefix (for example, 1.0.1)"
         required: true
         type: string
 
@@ -91,12 +91,24 @@ jobs:
           PY
           )
 
+          ui_version=$(python3 - <<'PYVERSION'
+          import tomllib
+          with open("app-ui/Cargo.toml", "rb") as f:
+              print(tomllib.load(f)["package"]["version"])
+          PYVERSION
+          )
+
           if [[ "$root_version" != "$version" ]]; then
             echo "Release version $version does not match Cargo.toml version $root_version." >&2
             exit 1
           fi
           if [[ "$launcher_version" != "$version" ]]; then
             echo "Release version $version does not match linux-launcher/Cargo.toml version $launcher_version." >&2
+            exit 1
+          fi
+
+          if [[ "$ui_version" != "$version" ]]; then
+            echo "Release version $version does not match app-ui/Cargo.toml version $ui_version." >&2
             exit 1
           fi
 

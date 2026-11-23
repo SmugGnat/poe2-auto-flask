@@ -7,7 +7,8 @@ use std::time::{Duration, Instant};
 use super::config::Poe1SkillsConfig;
 use super::movement::RUN_ANIMATION_ID;
 use super::skill_rules::{
-    configured_rules, evaluate, BLOOD_RAGE_BUFF, MOLTEN_SHELL_BUFF, SPIRIT_OFFERING_BUFF,
+    configured_rules, evaluate, BLADEFALL_OF_TRARTHUS_BUFF, BLOOD_RAGE_BUFF, MOLTEN_SHELL_BUFF,
+    SPIRIT_OFFERING_BUFF, STEELSKIN_BUFF,
 };
 use super::skills::SkillId;
 use crate::process::Process;
@@ -155,14 +156,15 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                             .collect::<Vec<_>>()
                             .join(", "),
                     );
-                    // The debug reader shares one Actor pass for both actual
-                    // presets, even when only one is equipped.
+                    // All preset readiness comes from one shared Actor pass.
                     let skills = session.poe1_skills(
                         process,
                         &[
                             SkillId::MoltenShell,
                             SkillId::BloodRage,
                             SkillId::SpiritOffering,
+                            SkillId::Steelskin,
+                            SkillId::BladefallOfTrarthus,
                         ],
                     );
                     let skill = skills
@@ -174,6 +176,22 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                     let spirit_offering = skills
                         .as_ref()
                         .map(|snapshot| snapshot[&SkillId::SpiritOffering]);
+                    for (id, buff) in [
+                        (SkillId::BladefallOfTrarthus, BLADEFALL_OF_TRARTHUS_BUFF),
+                        (SkillId::Steelskin, STEELSKIN_BUFF),
+                    ] {
+                        let active = buffs.effects.iter().any(|effect| effect.name == buff);
+                        let readiness = match &skills {
+                            Ok(snapshot) => format!("{:?}", snapshot[&id]),
+                            Err(error) => format!("unavailable ({error})"),
+                        };
+                        println!(
+                            "  {} (read-only): buff {} | skill {}",
+                            id.label(),
+                            if active { "active" } else { "absent" },
+                            readiness
+                        );
+                    }
                     let rule = evaluate(
                         &diagnostic_rule,
                         vitals,

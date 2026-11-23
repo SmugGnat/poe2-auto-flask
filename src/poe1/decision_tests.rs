@@ -53,6 +53,44 @@ fn duplicate_life_flasks_prefer_more_uses() {
 }
 
 #[test]
+fn manual_belt_slot_preserves_other_flask_bindings_and_priority() {
+    for manual_slot in 0..FLASK_SLOT_COUNT {
+        let (mut config, mut vitals, mut flasks, mut effects) = setup();
+        let mut remaining = (0..FLASK_SLOT_COUNT).filter(|&slot| slot != manual_slot);
+        let life = remaining.next().unwrap();
+        let mana = remaining.next().unwrap();
+        let granite = remaining.next().unwrap();
+        flasks.slots[life] = slot(FlaskType::Life, 45, Some(15));
+        flasks.slots[mana] = slot(FlaskType::Mana, 45, Some(15));
+        flasks.slots[granite] = slot(FlaskType::Granite, 60, Some(30));
+        config.poe1.utility.granite = true;
+        vitals.mana.as_mut().unwrap().current = 10;
+        // A manual tincture remains absent from flask policy, even when active.
+        effects.slots_active[manual_slot] = true;
+
+        assert_eq!(
+            choose_action(&config, vitals, &flasks, &effects, true),
+            Some(life)
+        );
+        vitals.health.current = 100;
+        assert_eq!(
+            choose_action(&config, vitals, &flasks, &effects, true),
+            Some(mana)
+        );
+        vitals.mana.as_mut().unwrap().current = 100;
+        assert_eq!(
+            choose_action(&config, vitals, &flasks, &effects, true),
+            Some(granite)
+        );
+        flasks.slots[granite] = None;
+        assert_eq!(
+            choose_action(&config, vitals, &flasks, &effects, true),
+            None
+        );
+    }
+}
+
+#[test]
 fn equal_uses_prefer_charges_then_first_slot() {
     let (config, vitals, mut flasks, effects) = setup();
     flasks.slots[0] = slot(FlaskType::Life, 45, Some(15));

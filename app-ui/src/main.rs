@@ -488,6 +488,8 @@ impl Editor {
         ui.set_molten_expanded(sections.molten_shell_expanded);
         ui.set_blood_expanded(sections.blood_rage_expanded);
         ui.set_offering_expanded(sections.spirit_offering_expanded);
+        ui.set_steel_expanded(sections.steelskin_expanded);
+        ui.set_bladefall_expanded(sections.bladefall_of_trarthus_expanded);
         ui.set_quicksilver_ms((c.poe1.quicksilver_min_run_ms as i32).to_string().into());
         ui.set_writhing_enabled(c.poe1.unique.writhing_jar);
         let writhing = c
@@ -504,6 +506,13 @@ impl Editor {
         ui.set_molten_enabled(ms.enabled);
         ui.set_molten_key(ms.key.as_str().into());
         ui.set_molten_life((ms.threshold_percent as i32).to_string().into());
+        let steel = &c.poe1.skills.steelskin;
+        ui.set_steel_enabled(steel.enabled);
+        ui.set_steel_key(steel.key.as_str().into());
+        ui.set_steel_life(steel.threshold_percent.to_string().into());
+        let bladefall = &c.poe1.skills.bladefall_of_trarthus;
+        ui.set_bladefall_enabled(bladefall.enabled);
+        ui.set_bladefall_key(bladefall.key.as_str().into());
         let blood = &c.poe1.skills.blood_rage;
         ui.set_blood_enabled(blood.enabled);
         ui.set_blood_key(blood.key.as_str().into());
@@ -616,6 +625,19 @@ impl Editor {
                 update_skill_key(&mut ms.key, &ui.get_molten_key());
                 ms.threshold_percent =
                     parse_integer(&ui.get_molten_life(), "Molten Shell Life", 1, 99)? as u8;
+            }
+
+            let steel = &mut c.poe1.skills.steelskin;
+            steel.enabled = ui.get_steel_enabled();
+            if steel.enabled {
+                update_skill_key(&mut steel.key, &ui.get_steel_key());
+                steel.threshold_percent =
+                    parse_integer(&ui.get_steel_life(), "Steelskin Life", 1, 99)? as u8;
+            }
+            let bladefall = &mut c.poe1.skills.bladefall_of_trarthus;
+            bladefall.enabled = ui.get_bladefall_enabled();
+            if bladefall.enabled {
+                update_skill_key(&mut bladefall.key, &ui.get_bladefall_key());
             }
 
             let blood = &mut c.poe1.skills.blood_rage;
@@ -1108,6 +1130,8 @@ fn bind_profile_editor(window: &AppWindow, editor: &Rc<RefCell<Editor>>) {
                     molten_shell_expanded: ui.get_molten_expanded(),
                     blood_rage_expanded: ui.get_blood_expanded(),
                     spirit_offering_expanded: ui.get_offering_expanded(),
+                    steelskin_expanded: ui.get_steel_expanded(),
+                    bladefall_of_trarthus_expanded: ui.get_bladefall_expanded(),
                 };
                 if editor.store.settings().ui.skills == sections {
                     return Ok(());
@@ -1937,13 +1961,15 @@ mod tests {
         config.poe1.skills.molten_shell.enabled = true;
         config.poe1.skills.blood_rage.enabled = true;
         config.poe1.skills.spirit_offering.enabled = true;
+        config.poe1.skills.steelskin.enabled = true;
+        config.poe1.skills.bladefall_of_trarthus.enabled = true;
         state
             .store
             .save_profile(state.game, &state.edit.info.id, config)
             .unwrap();
         state.reload_selected().unwrap();
         let ui = AppWindow::new().unwrap();
-        ui.window().set_size(PhysicalSize::new(780, 900));
+        ui.window().set_size(PhysicalSize::new(780, 1400));
         state.update_ui(&ui);
         let editor = Rc::new(RefCell::new(state));
         bind_profile_editor(&ui, &editor);
@@ -1963,10 +1989,28 @@ mod tests {
                 .next()
                 .is_some()
         };
-        for (index, name) in ["Molten Shell", "Blood Rage", "Spirit Offering"]
+        let names = [
+            "Bladefall of Trarthus",
+            "Blood Rage",
+            "Molten Shell",
+            "Spirit Offering",
+            "Steelskin",
+        ];
+        let positions: Vec<_> = names
             .iter()
-            .enumerate()
-        {
+            .map(|name| {
+                ElementHandle::find_by_accessible_label(&ui, &format!("{name} options"))
+                    .next()
+                    .unwrap()
+                    .absolute_position()
+                    .y
+            })
+            .collect();
+        assert!(
+            positions.windows(2).all(|pair| pair[0] < pair[1]),
+            "Skills must be alphabetical"
+        );
+        for (index, name) in names.iter().enumerate() {
             assert!(has_keybind(name), "Loaded enabled skills start expanded");
             let saved = editor.borrow().snapshot(&ui).unwrap();
             // The header's center is blank space, away from both label and toggle.
@@ -1978,9 +2022,11 @@ mod tests {
             click(&format!("{name} options"));
             assert!(has_keybind(name));
             match index {
-                0 => ui.set_molten_key("Ctrl+Q".into()),
+                0 => ui.set_bladefall_key("Ctrl+F".into()),
                 1 => ui.set_blood_key("Shift+T".into()),
-                _ => ui.set_offering_key("Alt+E".into()),
+                2 => ui.set_molten_key("Ctrl+Q".into()),
+                3 => ui.set_offering_key("Alt+E".into()),
+                _ => ui.set_steel_key("Ctrl+R".into()),
             }
             i_slint_backend_testing::mock_elapsed_time(Duration::ZERO);
             let draft = editor.borrow().snapshot(&ui).unwrap();
@@ -1997,9 +2043,11 @@ mod tests {
             let disabled = editor.borrow().snapshot(&ui).unwrap();
             let skills = &disabled.poe1.skills;
             assert!(!match index {
-                0 => skills.molten_shell.enabled,
+                0 => skills.bladefall_of_trarthus.enabled,
                 1 => skills.blood_rage.enabled,
-                _ => skills.spirit_offering.enabled,
+                2 => skills.molten_shell.enabled,
+                3 => skills.spirit_offering.enabled,
+                _ => skills.steelskin.enabled,
             });
             assert!(!has_keybind(name));
             click(&format!("{name} options"));
@@ -2013,7 +2061,7 @@ mod tests {
         ui.set_page(0);
         ui.set_page(1);
         i_slint_backend_testing::mock_elapsed_time(Duration::ZERO);
-        for name in ["Molten Shell", "Blood Rage", "Spirit Offering"] {
+        for name in names {
             assert!(!has_keybind(name), "Navigation must preserve folding");
         }
         ui.hide().unwrap();
@@ -2026,7 +2074,7 @@ mod tests {
         restored.set_page(1);
         restored.show().unwrap();
         i_slint_backend_testing::mock_elapsed_time(Duration::ZERO);
-        for name in ["Molten Shell", "Blood Rage", "Spirit Offering"] {
+        for name in names {
             assert!(
                 ElementHandle::find_by_accessible_label(&restored, &format!("{name} keybind"))
                     .next()

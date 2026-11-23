@@ -22,7 +22,7 @@ use super::nearby::NearbySnapshot;
 use super::rotation::FlaskRotation;
 use super::skill_rules::{
     configured_rules, evaluate, nearby_conditions_met, observations_allow, preconditions_met,
-    requires_nearby, Condition, RuleDecision, SkillAttemptGuard, SkillRule,
+    requires_nearby, skill_attempt_ready, Condition, RuleDecision, SkillAttemptGuard, SkillRule,
 };
 use super::skills::SkillId;
 use super::state::{Preflight, TickState};
@@ -70,9 +70,7 @@ impl Policy {
     }
 
     fn guard_ready(&self, skill: SkillId, now: Instant) -> bool {
-        self.skill_attempts
-            .get(&skill)
-            .is_none_or(|guard| guard.ready(now))
+        skill_attempt_ready(&self.skill_attempts, skill, now)
     }
 
     fn mark_skill(&mut self, skill: SkillId, sent_at: Instant) {
@@ -371,6 +369,9 @@ impl GameAutomationPolicy for Policy {
             }
         };
         for rule in skills {
+            if !self.guard_ready(rule.id, started) {
+                continue;
+            }
             let readiness = fresh_statuses
                 .as_ref()
                 .and_then(|all| all.get(&rule.id))

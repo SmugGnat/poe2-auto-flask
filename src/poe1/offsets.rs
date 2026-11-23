@@ -112,3 +112,23 @@ mod november_2026_ui_offset_tests {
         assert_eq!(CHAT_BACKGROUND_COLOR, 0x2BC);
     }
 }
+
+#[cfg(test)]
+mod gameoffsets_dll_2026_11_18_tests {
+    use super::*;
+
+    #[test]
+    fn compiled_poe1_struct_layout_offsets() {
+        // FieldLayout metadata in GameOffsets.dll, dated 2026-11-18.
+        // ServerDataStructure.PlayerInventories = 0x2170 + SKIP (0xAD00).
+        assert_eq!(GAME_STATE_CURRENT_VECTOR, 0x10);
+        assert_eq!(GAME_STATE_STATES, 0x50);
+        assert_eq!(AREA_PLAYER_INFO, 0x978);
+        assert_eq!(nearby::AREA_AWAKE_ENTITIES, 0xA58);
+        assert_eq!(WORLD_DETAILS_ROW, 0xC0);
+        assert_eq!(SERVER_PLAYER_INVENTORIES, 0xCE70);
+        assert_eq!(IN_GAME_UI, 0xBE8);
+        assert_eq!(CHAT_PARENT, 0x570);
+        assert_eq!(CHAT_BACKGROUND_COLOR, 0x2BC);
+    }
+}

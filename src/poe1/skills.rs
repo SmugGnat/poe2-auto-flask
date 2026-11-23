@@ -23,6 +23,8 @@ pub enum SkillId {
     MoltenShell,
     BloodRage,
     SpiritOffering,
+    Steelskin,
+    BladefallOfTrarthus,
 }
 
 impl SkillId {
@@ -31,6 +33,8 @@ impl SkillId {
             Self::MoltenShell => "Molten Shell",
             Self::BloodRage => "Blood Rage",
             Self::SpiritOffering => "Spirit Offering",
+            Self::Steelskin => "Steelskin",
+            Self::BladefallOfTrarthus => "Bladefall of Trarthus",
         }
     }
 
@@ -47,7 +51,20 @@ impl SkillId {
                 name.eq_ignore_ascii_case("SpiritOffering")
                     || name.eq_ignore_ascii_case("spirit_offering")
             }
+            Self::Steelskin => {
+                name.eq_ignore_ascii_case("QuickGuard")
+                    || name.eq_ignore_ascii_case("steelskin")
+                    || name.eq_ignore_ascii_case("quick_guard")
+            }
+            Self::BladefallOfTrarthus => {
+                name.eq_ignore_ascii_case("BladefallAltZ")
+                    || name.eq_ignore_ascii_case("bladefall_alt_z")
+            }
         }
+    }
+
+    pub fn is_guard(self) -> bool {
+        matches!(self, Self::MoltenShell | Self::Steelskin)
     }
 }
 
@@ -301,6 +318,26 @@ mod tests {
         assert!(SkillId::BloodRage.matches_internal_name("BloodRage"));
         assert!(SkillId::BloodRage.matches_internal_name("blood_rage"));
         assert!(!SkillId::BloodRage.matches_internal_name("blood_rage_leech"));
+    }
+
+    #[test]
+    fn new_presets_match_only_their_published_skill_identifiers() {
+        for name in ["QuickGuard", "steelskin", "quick_guard"] {
+            assert!(SkillId::Steelskin.matches_internal_name(name));
+        }
+        for name in ["BladefallAltZ", "bladefall_alt_z"] {
+            assert!(SkillId::BladefallOfTrarthus.matches_internal_name(name));
+        }
+        for name in [
+            "Bladefall",
+            "BladefallAltX",
+            "BladefallAltY",
+            "BladefallAltMercenary",
+            "righteous_blades",
+        ] {
+            assert!(!SkillId::BladefallOfTrarthus.matches_internal_name(name));
+        }
+        assert!(!SkillId::Steelskin.matches_internal_name("VaalQuickGuard"));
     }
 
     #[test]

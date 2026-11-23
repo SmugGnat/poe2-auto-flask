@@ -1,5 +1,6 @@
 //! Skill-preset definitions and pure condition evaluation for PoE1.
 //! No game-memory calls, input dispatch or scheduling belong here.
+use std::collections::BTreeMap;
 use std::io;
 use std::time::{Duration, Instant};
 
@@ -13,6 +14,9 @@ use super::skills::{SkillId, SkillReadiness};
 
 pub const MOLTEN_SHELL_BUFF: &str = "molten_shell_shield";
 pub const BLOOD_RAGE_BUFF: &str = "blood_rage";
+/// Active effects published in PoEDB's Steelskin and Bladefall of Trarthus data.
+pub const STEELSKIN_BUFF: &str = "quick_guard";
+pub const BLADEFALL_OF_TRARTHUS_BUFF: &str = "righteous_blades";
 /// Verified in the player's PoE1 Buffs snapshot during live Spirit Offering.
 pub const SPIRIT_OFFERING_BUFF: &str = "offering_spirit";
 const MIN_ATTEMPT_GAP: Duration = Duration::from_secs(1);
@@ -45,6 +49,7 @@ pub fn configured_rules(config: &Poe1SkillsConfig) -> io::Result<Vec<SkillRule>>
             conditions: vec![
                 Condition::LifeAtOrBelow(molten.threshold_percent),
                 Condition::BuffAbsent(MOLTEN_SHELL_BUFF),
+                Condition::BuffAbsent(STEELSKIN_BUFF),
                 Condition::SkillUsable,
             ],
         });
@@ -79,6 +84,30 @@ pub fn configured_rules(config: &Poe1SkillsConfig) -> io::Result<Vec<SkillRule>>
                     radius: offering.nearby_radius,
                     minimum_count: offering.nearby_minimum_count,
                 },
+                Condition::SkillUsable,
+            ],
+        });
+    }
+    let steel = &config.steelskin;
+    if steel.enabled {
+        rules.push(SkillRule {
+            id: SkillId::Steelskin,
+            key: steel.binding()?,
+            conditions: vec![
+                Condition::LifeAtOrBelow(steel.threshold_percent),
+                Condition::BuffAbsent(STEELSKIN_BUFF),
+                Condition::BuffAbsent(MOLTEN_SHELL_BUFF),
+                Condition::SkillUsable,
+            ],
+        });
+    }
+    let bladefall = &config.bladefall_of_trarthus;
+    if bladefall.enabled {
+        rules.push(SkillRule {
+            id: SkillId::BladefallOfTrarthus,
+            key: bladefall.binding()?,
+            conditions: vec![
+                Condition::BuffAbsent(BLADEFALL_OF_TRARTHUS_BUFF),
                 Condition::SkillUsable,
             ],
         });
@@ -231,11 +260,11 @@ pub fn evaluate(
     RuleDecision::Eligible
 }
 
-/// A visible offering remains active even when the status has no finite
-/// countdown. Other timed buff rules retain their original duration semantics.
+/// Sustained effects and offerings remain active even without a countdown.
+/// Other timed buff rules retain their original duration semantics.
 fn buff_present(effect: &super::buffs::Effect, name: &str) -> bool {
     effect.name == name
-        && (name == SPIRIT_OFFERING_BUFF
+        && (matches!(name, SPIRIT_OFFERING_BUFF | BLADEFALL_OF_TRARTHUS_BUFF)
             || !effect.time_left.is_finite()
             || effect.time_left >= 0.0)
 }
@@ -265,6 +294,24 @@ pub struct SkillAttemptGuard {
     last_sent: Option<Instant>,
     retry_after: Option<Instant>,
 }
+
+/// Guard skills share a cooldown. Recheck this after each successful send so
+/// two candidates from one preflight cannot send both guard keys in one tick.
+pub fn skill_attempt_ready(
+    attempts: &BTreeMap<SkillId, SkillAttemptGuard>,
+    skill: SkillId,
+    now: Instant,
+) -> bool {
+    if skill.is_guard() {
+        attempts
+            .iter()
+            .filter(|(id, _)| id.is_guard())
+            .all(|(_, guard)| guard.ready(now))
+    } else {
+        attempts.get(&skill).is_none_or(|guard| guard.ready(now))
+    }
+}
+
 impl SkillAttemptGuard {
     pub fn ready(&self, now: Instant) -> bool {
         self.last_sent
@@ -326,7 +373,7 @@ mod tests {
         let rules = configured_rules(&cfg).unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].id, SkillId::MoltenShell);
-        assert_eq!(rules[0].conditions.len(), 3);
+        assert_eq!(rules[0].conditions.len(), 4);
     }
     #[test]
     fn evaluates_life_buff_and_readiness_independently() {
@@ -672,5 +719,155 @@ mod tests {
         guard.defer(at + Duration::from_secs(1));
         assert!(!guard.ready(at + Duration::from_millis(1500)));
         assert!(guard.ready(at + Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn steelskin_uses_life_readiness_and_shared_guard_effect_checks() {
+        let mut config = Poe1SkillsConfig::default();
+        config.molten_shell.enabled = true;
+        config.steelskin.enabled = true;
+        let rules = configured_rules(&config).unwrap();
+        let steel = rules
+            .iter()
+            .find(|rule| rule.id == SkillId::Steelskin)
+            .unwrap();
+        let molten = rules
+            .iter()
+            .find(|rule| rule.id == SkillId::MoltenShell)
+            .unwrap();
+        let ready = Some(SkillReadiness::Usable);
+        assert!(!requires_nearby(steel));
+        assert_eq!(
+            evaluate(steel, vitals(96), &empty(), None, ready),
+            RuleDecision::LifeAboveThreshold
+        );
+        assert_eq!(
+            evaluate(steel, vitals(95), &empty(), None, ready),
+            RuleDecision::Eligible
+        );
+        for status in [
+            SkillReadiness::NotFound,
+            SkillReadiness::Ambiguous,
+            SkillReadiness::NotUsable,
+        ] {
+            assert_ne!(
+                evaluate(steel, vitals(50), &empty(), None, Some(status)),
+                RuleDecision::Eligible
+            );
+        }
+        for name in [STEELSKIN_BUFF, MOLTEN_SHELL_BUFF] {
+            let mut effects = empty();
+            effects.effects.push(Effect {
+                name: name.into(),
+                flask_slot: None,
+                buff_type: 2,
+                time_left: 1.0,
+            });
+            for rule in [steel, molten] {
+                assert!(!observations_allow(rule, vitals(50), &effects));
+                assert_eq!(
+                    evaluate(rule, vitals(50), &effects, None, ready),
+                    RuleDecision::AlreadyActive
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn bladefall_uses_game_readiness_without_assuming_a_resource_type() {
+        let mut config = Poe1SkillsConfig::default();
+        config.bladefall_of_trarthus.enabled = true;
+        let rule = configured_rules(&config).unwrap().remove(0);
+        assert_eq!(rule.id, SkillId::BladefallOfTrarthus);
+        assert!(!requires_nearby(&rule));
+        let mut state = vitals(1);
+        for mana in [
+            None,
+            Some(crate::game_state::VitalPool {
+                current: 0,
+                total: 100,
+                reserved_flat: 0,
+                reserved_fraction: 0,
+            }),
+        ] {
+            state.mana = mana;
+            assert!(preconditions_met(&rule, state));
+            assert_eq!(
+                evaluate(&rule, state, &empty(), None, Some(SkillReadiness::Usable)),
+                RuleDecision::Eligible
+            );
+            assert_eq!(
+                evaluate(
+                    &rule,
+                    state,
+                    &empty(),
+                    None,
+                    Some(SkillReadiness::NotUsable)
+                ),
+                RuleDecision::SkillNotUsable
+            );
+        }
+        for status in [
+            None,
+            Some(SkillReadiness::NotFound),
+            Some(SkillReadiness::Ambiguous),
+        ] {
+            assert_eq!(
+                evaluate(&rule, state, &empty(), None, status),
+                RuleDecision::SkillUnavailable
+            );
+        }
+        for time_left in [-1.0, 0.0, 5.0, f32::NAN] {
+            let mut effects = empty();
+            effects.effects.push(Effect {
+                name: BLADEFALL_OF_TRARTHUS_BUFF.into(),
+                flask_slot: None,
+                buff_type: 2,
+                time_left,
+            });
+            assert!(!observations_allow(&rule, state, &effects));
+            assert_eq!(
+                evaluate(&rule, state, &effects, None, Some(SkillReadiness::Usable)),
+                RuleDecision::AlreadyActive
+            );
+            effects.effects.clear();
+            assert_eq!(
+                evaluate(&rule, state, &effects, None, Some(SkillReadiness::Usable)),
+                RuleDecision::Eligible
+            );
+        }
+    }
+
+    #[test]
+    fn a_guard_attempt_blocks_its_shared_cooldown_partner_only() {
+        let at = Instant::now();
+        for sent in [SkillId::MoltenShell, SkillId::Steelskin] {
+            let mut attempts = BTreeMap::new();
+            let mut guard = SkillAttemptGuard::default();
+            guard.mark(at);
+            attempts.insert(sent, guard);
+            for skill in [SkillId::MoltenShell, SkillId::Steelskin] {
+                assert!(!skill_attempt_ready(&attempts, skill, at));
+                assert!(!skill_attempt_ready(
+                    &attempts,
+                    skill,
+                    at + Duration::from_millis(999)
+                ));
+                assert!(skill_attempt_ready(
+                    &attempts,
+                    skill,
+                    at + Duration::from_secs(1)
+                ));
+            }
+            for skill in [
+                SkillId::BloodRage,
+                SkillId::SpiritOffering,
+                SkillId::BladefallOfTrarthus,
+            ] {
+                assert!(skill_attempt_ready(&attempts, skill, at));
+            }
+            attempts.clear();
+            assert!(skill_attempt_ready(&attempts, sent, at));
+        }
     }
 }

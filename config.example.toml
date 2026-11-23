@@ -109,4 +109,17 @@ key = "E"
 nearby_radius = 60
 nearby_minimum_count = 1
 
+# Steelskin follows the same Life threshold rule as Molten Shell.
+# Both Guard skills share their cooldown in game and are never sent together.
+[poe1.skills.steelskin]
+enabled = false
+threshold_percent = 95
+key = "R"
+
+# Start Bladefall of Trarthus only while its sustained effect is absent.
+# The game controls usability and resource costs; no mana threshold is required.
+[poe1.skills.bladefall_of_trarthus]
+enabled = false
+key = "F"
+
 # PoE2 uses two slots and 100 ms polling. F11 is the default automation key.

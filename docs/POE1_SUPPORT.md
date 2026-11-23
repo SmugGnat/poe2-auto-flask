@@ -54,6 +54,9 @@ Amethyst, Quartz, Jade, Basalt, Aquamarine, Stibnite, Sulphur, Silver, Bismuth,
 Gold, Corundum and Iron. Unknown bases and ordinary Hybrid flasks remain
 manual-only. The UI lists all supported types; enable only the ones needed.
 
+Tinctures can share the flask bar with supported flasks. They remain manual
+and do not prevent automation from using the other equipped flasks.
+
 Keys come from `Documents/My Games/Path of Exile/production_Config.ini`,
 using all five `use_flask_in_slotN` entries in the selected input section.
 Invalid, ambiguous, missing, controller, mouse-button or duplicate flask
@@ -137,17 +140,27 @@ the utility settling guard remains active.
 
 ## Skill presets
 
-Molten Shell, Blood Rage and Spirit Offering use declarative rules on the
-same 100 ms scheduler, with per-skill attempt guards and shared preflight.
+Skill presets use declarative rules on the same 100 ms scheduler, with
+attempt guards and shared preflight. The UI lists skills alphabetically.
 Keys must match in-game bindings and can include Ctrl, Shift or Alt. Enabled
 skills must use distinct bindings and cannot use the automation toggle key.
 Flask-key conflicts are warned on configuration/binding changes.
 
-- **Molten Shell:** maximum-Life threshold and validated skill readiness.
+- **Bladefall of Trarthus:** starts the sustained skill when its effect is
+  absent and the game reports it usable. Its only settings are Enable and
+  Keybind; the game handles resource costs, including build-specific changes.
 - **Blood Rage:** minimum-Life threshold, absent-buff check and optional nearby
   enemies; nearby gating defaults on when the preset is configured.
+- **Molten Shell:** maximum-Life threshold and validated skill readiness.
 - **Spirit Offering:** usable Actor skill, absent `offering_spirit` player buff
   and enough nearby corpse candidates, with a one-second attempt interval.
+- **Steelskin:** maximum-Life threshold and validated skill readiness, like
+  Molten Shell. Both Guard presets share an attempt guard and avoid casting
+  over either active Guard effect. Their shared cooldown remains game-controlled.
+
+All presets default off. Bladefall does not receive repeated key presses while
+its sustained effect is present, including effects without a countdown. If it
+ends, the preset can reactivate it after the ordinary checks and attempt guard.
 
 ```toml
 [poe1.skills.spirit_offering]

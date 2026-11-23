@@ -47,6 +47,8 @@ pub struct SkillSections {
     pub molten_shell_expanded: bool,
     pub blood_rage_expanded: bool,
     pub spirit_offering_expanded: bool,
+    pub steelskin_expanded: bool,
+    pub bladefall_of_trarthus_expanded: bool,
 }
 
 impl Default for SkillSections {
@@ -55,6 +57,8 @@ impl Default for SkillSections {
             molten_shell_expanded: true,
             blood_rage_expanded: true,
             spirit_offering_expanded: true,
+            steelskin_expanded: true,
+            bladefall_of_trarthus_expanded: true,
         }
     }
 }
