@@ -490,6 +490,7 @@ impl Editor {
         ui.set_offering_expanded(sections.spirit_offering_expanded);
         ui.set_steel_expanded(sections.steelskin_expanded);
         ui.set_bladefall_expanded(sections.bladefall_of_trarthus_expanded);
+        ui.set_convocation_expanded(sections.convocation_expanded);
         ui.set_quicksilver_ms((c.poe1.quicksilver_min_run_ms as i32).to_string().into());
         ui.set_writhing_enabled(c.poe1.unique.writhing_jar);
         let writhing = c
@@ -513,6 +514,9 @@ impl Editor {
         let bladefall = &c.poe1.skills.bladefall_of_trarthus;
         ui.set_bladefall_enabled(bladefall.enabled);
         ui.set_bladefall_key(bladefall.key.as_str().into());
+        let convocation = &c.poe1.skills.convocation;
+        ui.set_convocation_enabled(convocation.enabled);
+        ui.set_convocation_key(convocation.key.as_str().into());
         let blood = &c.poe1.skills.blood_rage;
         ui.set_blood_enabled(blood.enabled);
         ui.set_blood_key(blood.key.as_str().into());
@@ -638,6 +642,11 @@ impl Editor {
             bladefall.enabled = ui.get_bladefall_enabled();
             if bladefall.enabled {
                 update_skill_key(&mut bladefall.key, &ui.get_bladefall_key());
+            }
+            let convocation = &mut c.poe1.skills.convocation;
+            convocation.enabled = ui.get_convocation_enabled();
+            if convocation.enabled {
+                update_skill_key(&mut convocation.key, &ui.get_convocation_key());
             }
 
             let blood = &mut c.poe1.skills.blood_rage;
@@ -1132,6 +1141,7 @@ fn bind_profile_editor(window: &AppWindow, editor: &Rc<RefCell<Editor>>) {
                     spirit_offering_expanded: ui.get_offering_expanded(),
                     steelskin_expanded: ui.get_steel_expanded(),
                     bladefall_of_trarthus_expanded: ui.get_bladefall_expanded(),
+                    convocation_expanded: ui.get_convocation_expanded(),
                 };
                 if editor.store.settings().ui.skills == sections {
                     return Ok(());
@@ -1963,6 +1973,7 @@ mod tests {
         config.poe1.skills.spirit_offering.enabled = true;
         config.poe1.skills.steelskin.enabled = true;
         config.poe1.skills.bladefall_of_trarthus.enabled = true;
+        config.poe1.skills.convocation.enabled = true;
         state
             .store
             .save_profile(state.game, &state.edit.info.id, config)
@@ -1992,6 +2003,7 @@ mod tests {
         let names = [
             "Bladefall of Trarthus",
             "Blood Rage",
+            "Convocation",
             "Molten Shell",
             "Spirit Offering",
             "Steelskin",
@@ -2024,8 +2036,9 @@ mod tests {
             match index {
                 0 => ui.set_bladefall_key("Ctrl+F".into()),
                 1 => ui.set_blood_key("Shift+T".into()),
-                2 => ui.set_molten_key("Ctrl+Q".into()),
-                3 => ui.set_offering_key("Alt+E".into()),
+                2 => ui.set_convocation_key("Alt+W".into()),
+                3 => ui.set_molten_key("Ctrl+Q".into()),
+                4 => ui.set_offering_key("Alt+E".into()),
                 _ => ui.set_steel_key("Ctrl+R".into()),
             }
             i_slint_backend_testing::mock_elapsed_time(Duration::ZERO);
@@ -2045,8 +2058,9 @@ mod tests {
             assert!(!match index {
                 0 => skills.bladefall_of_trarthus.enabled,
                 1 => skills.blood_rage.enabled,
-                2 => skills.molten_shell.enabled,
-                3 => skills.spirit_offering.enabled,
+                2 => skills.convocation.enabled,
+                3 => skills.molten_shell.enabled,
+                4 => skills.spirit_offering.enabled,
                 _ => skills.steelskin.enabled,
             });
             assert!(!has_keybind(name));

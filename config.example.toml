@@ -122,4 +122,10 @@ key = "R"
 enabled = false
 key = "F"
 
+# Recall minions whenever the game reports Convocation usable and off cooldown.
+# The ordinary automation safety gates and skill attempt guard still apply.
+[poe1.skills.convocation]
+enabled = false
+key = "W"
+
 # PoE2 uses two slots and 100 ms polling. F11 is the default automation key.

@@ -1023,6 +1023,8 @@ export component AppWindow inherits Window {
     in-out property <string> steel-life: "95";
     in-out property <bool> bladefall-enabled: false;
     in-out property <string> bladefall-key: "F";
+    in-out property <bool> convocation-enabled: false;
+    in-out property <string> convocation-key: "W";
     in-out property <bool> blood-enabled: false;
     in-out property <string> blood-key: "T";
     in-out property <string> blood-life: "80";
@@ -1040,12 +1042,14 @@ export component AppWindow inherits Window {
     in-out property <bool> offering-expanded: true;
     in-out property <bool> steel-expanded: true;
     in-out property <bool> bladefall-expanded: true;
+    in-out property <bool> convocation-expanded: true;
     callback save-skill-sections();
     changed molten-expanded => { root.save-skill-sections(); }
     changed blood-expanded => { root.save-skill-sections(); }
     changed offering-expanded => { root.save-skill-sections(); }
     changed steel-expanded => { root.save-skill-sections(); }
     changed bladefall-expanded => { root.save-skill-sections(); }
+    changed convocation-expanded => { root.save-skill-sections(); }
 
     callback profile-draft-changed();
     changed hideout => { root.profile-draft-changed(); }
@@ -1072,6 +1076,8 @@ export component AppWindow inherits Window {
     changed steel-life => { root.profile-draft-changed(); }
     changed bladefall-enabled => { root.profile-draft-changed(); }
     changed bladefall-key => { root.profile-draft-changed(); }
+    changed convocation-enabled => { root.profile-draft-changed(); }
+    changed convocation-key => { root.profile-draft-changed(); }
     changed blood-enabled => { root.profile-draft-changed(); }
     changed blood-key => { root.profile-draft-changed(); }
     changed blood-life => { root.profile-draft-changed(); }
@@ -1675,6 +1681,19 @@ if root.page == 1 && root.game-index == 0: VerticalBox {
                 Separator { indent: 12px; }
                 RadiusRow { value <=> root.blood-radius; }
             }
+        }
+    }
+    SectionCard {
+        ToggleRow {
+            label: "Convocation"; strong-label: true; enabled-color: #ffffff;
+            checked <=> root.convocation-enabled;
+            collapsible: true; expanded <=> root.convocation-expanded;
+            toggled => { if (root.convocation-enabled) { root.convocation-expanded = true; } }
+        }
+        if root.convocation-enabled && root.convocation-expanded: VerticalLayout {
+            spacing: 0px;
+            Separator {}
+            SkillKeyRow { skill-name: "Convocation"; value <=> root.convocation-key; }
         }
     }
     SectionCard {

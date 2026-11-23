@@ -34,6 +34,7 @@ pub struct Poe1SkillsConfig {
     pub spirit_offering: SpiritOfferingConfig,
     pub steelskin: SteelskinConfig,
     pub bladefall_of_trarthus: BladefallOfTrarthusConfig,
+    pub convocation: ConvocationConfig,
 }
 
 impl Poe1SkillsConfig {
@@ -47,6 +48,7 @@ impl Poe1SkillsConfig {
                 self.bladefall_of_trarthus.enabled,
                 self.bladefall_of_trarthus.binding(),
             ),
+            (self.convocation.enabled, self.convocation.binding()),
         ] {
             if enabled && toggle.conflicts_with(binding?) {
                 return Err(invalid(format!(
@@ -55,6 +57,33 @@ impl Poe1SkillsConfig {
                 )));
             }
         }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ConvocationConfig {
+    pub enabled: bool,
+    pub key: String,
+}
+
+impl Default for ConvocationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            key: "W".to_string(),
+        }
+    }
+}
+
+impl ConvocationConfig {
+    pub fn binding(&self) -> io::Result<KeyBinding> {
+        skill_binding(&self.key, "poe1.skills.convocation.key")
+    }
+
+    pub fn validate(&self) -> io::Result<()> {
+        self.binding()?;
         Ok(())
     }
 }
@@ -434,6 +463,13 @@ impl Config {
         }
 
         let mut skills = Vec::new();
+        let convocation = &self.poe1.skills.convocation;
+        if convocation.enabled {
+            skills.push(summary_entry(
+                "Convocation",
+                std::slice::from_ref(&convocation.key),
+            ));
+        }
         let bladefall = &self.poe1.skills.bladefall_of_trarthus;
         if bladefall.enabled {
             skills.push(summary_entry(
@@ -540,6 +576,7 @@ impl Poe1Config {
         self.skills.spirit_offering.validate()?;
         self.skills.steelskin.validate()?;
         self.skills.bladefall_of_trarthus.validate()?;
+        self.skills.convocation.validate()?;
         let enabled_keys = [
             (
                 self.skills.molten_shell.enabled,
@@ -560,6 +597,10 @@ impl Poe1Config {
             (
                 self.skills.bladefall_of_trarthus.enabled,
                 self.skills.bladefall_of_trarthus.binding()?,
+            ),
+            (
+                self.skills.convocation.enabled,
+                self.skills.convocation.binding()?,
             ),
         ];
         for (index, (enabled, key)) in enabled_keys.iter().enumerate() {

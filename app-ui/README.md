@@ -36,7 +36,7 @@ icon is used by the sidebar, tray, Windows executable and AppImage.
 
 - **Flasks:** Life/Mana recovery, PoE1 utility selection and Writhing Jar.
 - **Skills:** alphabetical PoE1 presets for Bladefall of Trarthus, Blood Rage,
-  Molten Shell, Spirit Offering and Steelskin.
+  Convocation, Molten Shell, Spirit Offering and Steelskin.
 - **Profiles:** creation at the top, active selection and Rename / Duplicate /
   Reset / Delete menus. Reset confirms inline and restores backend defaults.
   The last profile for each game is protected.

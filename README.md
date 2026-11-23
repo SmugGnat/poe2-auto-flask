@@ -28,9 +28,9 @@ state cannot be validated. Hideouts are blocked unless enabled in Settings.
 
 ## Version 1.0.1
 
-Adds Steelskin and Bladefall of Trarthus presets and an alphabetical skill
-list. Tinctures remain manual and no longer interrupt automation for the
-other equipped flasks. All skill presets default off.
+Adds Convocation, Steelskin and Bladefall of Trarthus presets and an
+alphabetical skill list. Tinctures remain manual and no longer interrupt
+automation for the other equipped flasks. All skill presets default off.
 
 ## Download and run
 

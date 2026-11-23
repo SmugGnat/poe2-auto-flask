@@ -151,6 +151,9 @@ Flask-key conflicts are warned on configuration/binding changes.
   Keybind; the game handles resource costs, including build-specific changes.
 - **Blood Rage:** minimum-Life threshold, absent-buff check and optional nearby
   enemies; nearby gating defaults on when the preset is configured.
+- **Convocation:** uses the configured key whenever the game reports the skill
+  usable and off cooldown. Only Enable and Keybind are configurable; the usual
+  automation safety checks and skill attempt guard still apply.
 - **Molten Shell:** maximum-Life threshold and validated skill readiness.
 - **Spirit Offering:** usable Actor skill, absent `offering_spirit` player buff
   and enough nearby corpse candidates, with a one-second attempt interval.

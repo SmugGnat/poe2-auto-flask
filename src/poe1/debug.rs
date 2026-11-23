@@ -165,6 +165,7 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                             SkillId::SpiritOffering,
                             SkillId::Steelskin,
                             SkillId::BladefallOfTrarthus,
+                            SkillId::Convocation,
                         ],
                     );
                     let skill = skills
@@ -176,6 +177,13 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                     let spirit_offering = skills
                         .as_ref()
                         .map(|snapshot| snapshot[&SkillId::SpiritOffering]);
+                    println!(
+                        "  Convocation (read-only): skill {}",
+                        match &skills {
+                            Ok(snapshot) => format!("{:?}", snapshot[&SkillId::Convocation]),
+                            Err(error) => format!("unavailable ({error})"),
+                        }
+                    );
                     for (id, buff) in [
                         (SkillId::BladefallOfTrarthus, BLADEFALL_OF_TRARTHUS_BUFF),
                         (SkillId::Steelskin, STEELSKIN_BUFF),

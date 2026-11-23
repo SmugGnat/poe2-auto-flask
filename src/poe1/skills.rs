@@ -25,6 +25,7 @@ pub enum SkillId {
     SpiritOffering,
     Steelskin,
     BladefallOfTrarthus,
+    Convocation,
 }
 
 impl SkillId {
@@ -35,6 +36,7 @@ impl SkillId {
             Self::SpiritOffering => "Spirit Offering",
             Self::Steelskin => "Steelskin",
             Self::BladefallOfTrarthus => "Bladefall of Trarthus",
+            Self::Convocation => "Convocation",
         }
     }
 
@@ -59,6 +61,10 @@ impl SkillId {
             Self::BladefallOfTrarthus => {
                 name.eq_ignore_ascii_case("BladefallAltZ")
                     || name.eq_ignore_ascii_case("bladefall_alt_z")
+            }
+            Self::Convocation => {
+                name.eq_ignore_ascii_case("Convocation")
+                    || name.eq_ignore_ascii_case("ConvocationOld")
             }
         }
     }
@@ -338,6 +344,22 @@ mod tests {
             assert!(!SkillId::BladefallOfTrarthus.matches_internal_name(name));
         }
         assert!(!SkillId::Steelskin.matches_internal_name("VaalQuickGuard"));
+    }
+
+    #[test]
+    fn convocation_matches_current_and_legacy_gems_and_respects_cooldown() {
+        for name in ["Convocation", "convocation", "ConvocationOld"] {
+            assert!(SkillId::Convocation.matches_internal_name(name));
+        }
+        for name in ["VaalConvocation", "ConvocationTotem", "MinionRecall"] {
+            assert!(!SkillId::Convocation.matches_internal_name(name));
+        }
+        let wanted = BTreeSet::from([SkillId::Convocation]);
+        let found = BTreeMap::from([(SkillId::Convocation, (42, false))]);
+        let statuses = classify(&wanted, &found, &BTreeSet::new(), &HashSet::from([42]));
+        assert_eq!(statuses[&SkillId::Convocation], SkillReadiness::NotUsable);
+        let statuses = classify(&wanted, &found, &BTreeSet::new(), &HashSet::new());
+        assert_eq!(statuses[&SkillId::Convocation], SkillReadiness::Usable);
     }
 
     #[test]

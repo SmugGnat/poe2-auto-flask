@@ -43,6 +43,7 @@ blood_rage_expanded = true
 spirit_offering_expanded = false
 steelskin_expanded = true
 bladefall_of_trarthus_expanded = true
+convocation_expanded = true
 ```
 
 `automation_key` may be omitted for F11. It accepts one letter, digit or

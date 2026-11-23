@@ -491,6 +491,7 @@ mod tests {
         let defaults = Config::default();
         assert!(!defaults.poe1.skills.steelskin.enabled);
         assert!(!defaults.poe1.skills.bladefall_of_trarthus.enabled);
+        assert!(!defaults.poe1.skills.convocation.enabled);
         let source = "[poe1.skills.steelskin]\nenabled = true\nkey = \"Ctrl+R\"\nthreshold_percent = 65\n[poe1.skills.bladefall_of_trarthus]\nenabled = true\nkey = \"Alt+F\"\n";
         let config = Config::parse(Path::new("test.toml"), source).unwrap();
         assert_eq!(config.poe1.skills.steelskin.threshold_percent, 65);
@@ -512,7 +513,22 @@ mod tests {
             let source = format!("[poe1.skills.steelskin]\nthreshold_percent = {percent}\n");
             assert!(Config::parse(Path::new("test.toml"), &source).is_err());
         }
-        for skill in ["steelskin", "bladefall_of_trarthus"] {
+        let convocation = Config::parse(
+            Path::new("test.toml"),
+            "[poe1.skills.convocation]\nenabled = true\nkey = \"Alt+W\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            convocation
+                .poe1
+                .skills
+                .convocation
+                .binding()
+                .unwrap()
+                .label(),
+            "Alt+W"
+        );
+        for skill in ["steelskin", "bladefall_of_trarthus", "convocation"] {
             let source = format!("[poe1.skills.{skill}]\nkey = \"Ctrl+Shift+R\"\n");
             assert!(Config::parse(Path::new("test.toml"), &source).is_err());
         }
@@ -521,13 +537,14 @@ mod tests {
     #[test]
     fn new_skills_share_existing_key_conflict_validation() {
         let path = Path::new("test.toml");
-        for added in ["steelskin", "bladefall_of_trarthus"] {
+        for added in ["steelskin", "bladefall_of_trarthus", "convocation"] {
             for other in [
                 "molten_shell",
                 "blood_rage",
                 "spirit_offering",
                 "steelskin",
                 "bladefall_of_trarthus",
+                "convocation",
             ] {
                 if added == other {
                     continue;

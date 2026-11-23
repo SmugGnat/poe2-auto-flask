@@ -112,6 +112,14 @@ pub fn configured_rules(config: &Poe1SkillsConfig) -> io::Result<Vec<SkillRule>>
             ],
         });
     }
+    let convocation = &config.convocation;
+    if convocation.enabled {
+        rules.push(SkillRule {
+            id: SkillId::Convocation,
+            key: convocation.binding()?,
+            conditions: vec![Condition::SkillUsable],
+        });
+    }
     Ok(rules)
 }
 
@@ -863,11 +871,73 @@ mod tests {
                 SkillId::BloodRage,
                 SkillId::SpiritOffering,
                 SkillId::BladefallOfTrarthus,
+                SkillId::Convocation,
             ] {
                 assert!(skill_attempt_ready(&attempts, skill, at));
             }
             attempts.clear();
             assert!(skill_attempt_ready(&attempts, sent, at));
         }
+    }
+
+    #[test]
+    fn convocation_uses_readiness_without_extra_life_proximity_or_buff_gates() {
+        let mut config = Poe1SkillsConfig::default();
+        assert!(!config.convocation.enabled);
+        config.convocation.enabled = true;
+        let rule = configured_rules(&config).unwrap().remove(0);
+        assert_eq!(rule.id, SkillId::Convocation);
+        assert!(!requires_nearby(&rule));
+        let state = vitals(1);
+        let mut effects = empty();
+        effects.effects.push(Effect {
+            name: "existing_regeneration".into(),
+            flask_slot: None,
+            buff_type: 2,
+            time_left: 30.0,
+        });
+        assert!(preconditions_met(&rule, state));
+        assert!(observations_allow(&rule, state, &effects));
+        let at = Instant::now();
+        let mut guard = SkillAttemptGuard::default();
+        guard.mark(at);
+        assert!(!guard.ready(at + Duration::from_millis(100)));
+        assert!(guard.ready(at + Duration::from_secs(1)));
+        assert_eq!(
+            evaluate(
+                &rule,
+                state,
+                &effects,
+                None,
+                Some(SkillReadiness::NotUsable)
+            ),
+            RuleDecision::SkillNotUsable
+        );
+        // A cooldown that recovers early through gear can allow the next use;
+        // the preset does not wait for a hard-coded three-second timer.
+        assert_eq!(
+            evaluate(&rule, state, &effects, None, Some(SkillReadiness::Usable)),
+            RuleDecision::Eligible
+        );
+        for status in [
+            None,
+            Some(SkillReadiness::NotFound),
+            Some(SkillReadiness::Ambiguous),
+        ] {
+            assert_eq!(
+                evaluate(&rule, state, &effects, None, status),
+                RuleDecision::SkillUnavailable
+            );
+        }
+        assert_eq!(
+            evaluate(
+                &rule,
+                vitals(0),
+                &effects,
+                None,
+                Some(SkillReadiness::Usable)
+            ),
+            RuleDecision::InvalidVitals
+        );
     }
 }
