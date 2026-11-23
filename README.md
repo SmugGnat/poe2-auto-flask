@@ -14,7 +14,8 @@ required.
 - Automatic Life and Mana flasks with configurable thresholds in both games.
 - PoE1: five flask slots, 18 opt-in utility types, Writhing Jar, duplicate
   rotation, charge-cost checks and optional movement/proximity conditions.
-- PoE1: opt-in Molten Shell, Blood Rage and Spirit Offering presets.
+- PoE1: opt-in Bladefall of Trarthus, Blood Rage, Convocation, Immortal Call,
+  Molten Shell, Spirit Offering and Steelskin presets.
 - Profiles, validated settings editing, Save/Discard and manual TOML editing.
 - Sidebar connection/automation state, Life/Mana/Shield, area and PoE1 name.
 - Tray support; presentation work stops while hidden or minimized and
@@ -26,11 +27,13 @@ it; change the shortcut in **Settings → Enable / Disable Key**. Automation
 pauses when the game loses focus, in towns, while dead or when required game
 state cannot be validated. Hideouts are blocked unless enabled in Settings.
 
-## Version 1.0.1
+## Version 1.0.2
 
-Adds Convocation, Steelskin and Bladefall of Trarthus presets and an
-alphabetical skill list. Tinctures remain manual and no longer interrupt
-automation for the other equipped flasks. All skill presets default off.
+Adds Immortal Call and an optional Shield threshold for all three Guard
+presets. Either Life or Shield can trigger a Guard, with Life taking priority;
+Shield at 0% disables that condition, and characters without Shield ignore it.
+Active Guard effects, shared attempts and game cooldowns prevent repeated or
+simultaneous Guard presses. All skill presets default off.
 
 ## Download and run
 

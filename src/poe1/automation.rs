@@ -22,7 +22,8 @@ use super::nearby::NearbySnapshot;
 use super::rotation::FlaskRotation;
 use super::skill_rules::{
     configured_rules, evaluate, nearby_conditions_met, observations_allow, preconditions_met,
-    requires_nearby, skill_attempt_ready, Condition, RuleDecision, SkillAttemptGuard, SkillRule,
+    prioritize_guard_skills, requires_nearby, skill_attempt_ready, Condition, RuleDecision,
+    SkillAttemptGuard, SkillRule,
 };
 use super::skills::SkillId;
 use super::state::{Preflight, TickState};
@@ -368,6 +369,7 @@ impl GameAutomationPolicy for Policy {
                 }
             }
         };
+        prioritize_guard_skills(&mut skills, preflight.vitals);
         for rule in skills {
             if !self.guard_ready(rule.id, started) {
                 continue;

@@ -35,6 +35,7 @@ pub struct Poe1SkillsConfig {
     pub steelskin: SteelskinConfig,
     pub bladefall_of_trarthus: BladefallOfTrarthusConfig,
     pub convocation: ConvocationConfig,
+    pub immortal_call: ImmortalCallConfig,
 }
 
 impl Poe1SkillsConfig {
@@ -49,6 +50,7 @@ impl Poe1SkillsConfig {
                 self.bladefall_of_trarthus.binding(),
             ),
             (self.convocation.enabled, self.convocation.binding()),
+            (self.immortal_call.enabled, self.immortal_call.binding()),
         ] {
             if enabled && toggle.conflicts_with(binding?) {
                 return Err(invalid(format!(
@@ -57,6 +59,48 @@ impl Poe1SkillsConfig {
                 )));
             }
         }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ImmortalCallConfig {
+    pub enabled: bool,
+    pub threshold_percent: u8,
+    /// Alternative to the Life trigger; 0 disables the Shield condition.
+    pub shield_threshold_percent: u8,
+    pub key: String,
+}
+
+impl Default for ImmortalCallConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold_percent: 95,
+            shield_threshold_percent: 0,
+            key: "D".to_string(),
+        }
+    }
+}
+
+impl ImmortalCallConfig {
+    pub fn binding(&self) -> io::Result<KeyBinding> {
+        skill_binding(&self.key, "poe1.skills.immortal_call.key")
+    }
+
+    pub fn validate(&self) -> io::Result<()> {
+        if !(1..=99).contains(&self.threshold_percent) {
+            return Err(invalid(
+                "poe1.skills.immortal_call.threshold_percent must be 1..=99",
+            ));
+        }
+        if self.shield_threshold_percent > 99 {
+            return Err(invalid(
+                "poe1.skills.immortal_call.shield_threshold_percent must be 0..=99 (0 disables Shield)",
+            ));
+        }
+        self.binding()?;
         Ok(())
     }
 }
@@ -93,6 +137,8 @@ impl ConvocationConfig {
 pub struct SteelskinConfig {
     pub enabled: bool,
     pub threshold_percent: u8,
+    /// Alternative to the Life trigger; 0 disables the Shield condition.
+    pub shield_threshold_percent: u8,
     pub key: String,
 }
 
@@ -101,6 +147,7 @@ impl Default for SteelskinConfig {
         Self {
             enabled: false,
             threshold_percent: 95,
+            shield_threshold_percent: 0,
             key: "R".to_string(),
         }
     }
@@ -115,6 +162,11 @@ impl SteelskinConfig {
         if !(1..=99).contains(&self.threshold_percent) {
             return Err(invalid(
                 "poe1.skills.steelskin.threshold_percent must be 1..=99",
+            ));
+        }
+        if self.shield_threshold_percent > 99 {
+            return Err(invalid(
+                "poe1.skills.steelskin.shield_threshold_percent must be 0..=99 (0 disables Shield)",
             ));
         }
         self.binding()?;
@@ -155,6 +207,8 @@ impl BladefallOfTrarthusConfig {
 pub struct MoltenShellConfig {
     pub enabled: bool,
     pub threshold_percent: u8,
+    /// Alternative to the Life trigger; 0 disables the Shield condition.
+    pub shield_threshold_percent: u8,
     /// Windows keyboard key; the user must bind the same key to Molten Shell in PoE1.
     pub key: String,
 }
@@ -164,6 +218,7 @@ impl Default for MoltenShellConfig {
         Self {
             enabled: false,
             threshold_percent: 95,
+            shield_threshold_percent: 0,
             key: "Q".to_string(),
         }
     }
@@ -178,6 +233,11 @@ impl MoltenShellConfig {
         if !(1..=99).contains(&self.threshold_percent) {
             return Err(invalid(
                 "poe1.skills.molten_shell.threshold_percent must be 1..=99",
+            ));
+        }
+        if self.shield_threshold_percent > 99 {
+            return Err(invalid(
+                "poe1.skills.molten_shell.shield_threshold_percent must be 0..=99 (0 disables Shield)",
             ));
         }
         self.binding()?;
@@ -477,14 +537,26 @@ impl Config {
                 std::slice::from_ref(&bladefall.key),
             ));
         }
+        let call = &self.poe1.skills.immortal_call;
+        if call.enabled {
+            skills.push(summary_entry(
+                "Immortal Call",
+                &guard_summary(
+                    &call.key,
+                    call.threshold_percent,
+                    call.shield_threshold_percent,
+                ),
+            ));
+        }
         let shell = &self.poe1.skills.molten_shell;
         if shell.enabled {
             skills.push(summary_entry(
                 "Molten Shell",
-                &[format!(
-                    "{}, Life <={}%",
-                    shell.key, shell.threshold_percent
-                )],
+                &guard_summary(
+                    &shell.key,
+                    shell.threshold_percent,
+                    shell.shield_threshold_percent,
+                ),
             ));
         }
         let blood = &self.poe1.skills.blood_rage;
@@ -519,10 +591,11 @@ impl Config {
         if steel.enabled {
             skills.push(summary_entry(
                 "Steelskin",
-                &[format!(
-                    "{}, Life <={}%",
-                    steel.key, steel.threshold_percent
-                )],
+                &guard_summary(
+                    &steel.key,
+                    steel.threshold_percent,
+                    steel.shield_threshold_percent,
+                ),
             ));
         }
 
@@ -547,6 +620,15 @@ fn threshold_summary(config: &FlaskConfig) -> String {
     } else {
         "OFF".to_string()
     }
+}
+
+fn guard_summary(key: &str, life: u8, shield: u8) -> Vec<String> {
+    let threshold = if shield == 0 {
+        format!("Life <={life}%")
+    } else {
+        format!("Life <={life}% OR Shield <={shield}%")
+    };
+    vec![key.to_string(), threshold]
 }
 
 fn nearby_summary(count: u16, rarity: MinimumRarity, radius: u16) -> String {
@@ -577,6 +659,7 @@ impl Poe1Config {
         self.skills.steelskin.validate()?;
         self.skills.bladefall_of_trarthus.validate()?;
         self.skills.convocation.validate()?;
+        self.skills.immortal_call.validate()?;
         let enabled_keys = [
             (
                 self.skills.molten_shell.enabled,
@@ -601,6 +684,10 @@ impl Poe1Config {
             (
                 self.skills.convocation.enabled,
                 self.skills.convocation.binding()?,
+            ),
+            (
+                self.skills.immortal_call.enabled,
+                self.skills.immortal_call.binding()?,
             ),
         ];
         for (index, (enabled, key)) in enabled_keys.iter().enumerate() {

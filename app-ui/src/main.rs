@@ -491,6 +491,7 @@ impl Editor {
         ui.set_steel_expanded(sections.steelskin_expanded);
         ui.set_bladefall_expanded(sections.bladefall_of_trarthus_expanded);
         ui.set_convocation_expanded(sections.convocation_expanded);
+        ui.set_immortal_expanded(sections.immortal_call_expanded);
         ui.set_quicksilver_ms((c.poe1.quicksilver_min_run_ms as i32).to_string().into());
         ui.set_writhing_enabled(c.poe1.unique.writhing_jar);
         let writhing = c
@@ -507,10 +508,17 @@ impl Editor {
         ui.set_molten_enabled(ms.enabled);
         ui.set_molten_key(ms.key.as_str().into());
         ui.set_molten_life((ms.threshold_percent as i32).to_string().into());
+        ui.set_molten_shield(ms.shield_threshold_percent.to_string().into());
         let steel = &c.poe1.skills.steelskin;
         ui.set_steel_enabled(steel.enabled);
         ui.set_steel_key(steel.key.as_str().into());
         ui.set_steel_life(steel.threshold_percent.to_string().into());
+        ui.set_steel_shield(steel.shield_threshold_percent.to_string().into());
+        let call = &c.poe1.skills.immortal_call;
+        ui.set_immortal_enabled(call.enabled);
+        ui.set_immortal_key(call.key.as_str().into());
+        ui.set_immortal_life(call.threshold_percent.to_string().into());
+        ui.set_immortal_shield(call.shield_threshold_percent.to_string().into());
         let bladefall = &c.poe1.skills.bladefall_of_trarthus;
         ui.set_bladefall_enabled(bladefall.enabled);
         ui.set_bladefall_key(bladefall.key.as_str().into());
@@ -629,6 +637,8 @@ impl Editor {
                 update_skill_key(&mut ms.key, &ui.get_molten_key());
                 ms.threshold_percent =
                     parse_integer(&ui.get_molten_life(), "Molten Shell Life", 1, 99)? as u8;
+                ms.shield_threshold_percent =
+                    parse_integer(&ui.get_molten_shield(), "Molten Shell Shield", 0, 99)? as u8;
             }
 
             let steel = &mut c.poe1.skills.steelskin;
@@ -637,6 +647,17 @@ impl Editor {
                 update_skill_key(&mut steel.key, &ui.get_steel_key());
                 steel.threshold_percent =
                     parse_integer(&ui.get_steel_life(), "Steelskin Life", 1, 99)? as u8;
+                steel.shield_threshold_percent =
+                    parse_integer(&ui.get_steel_shield(), "Steelskin Shield", 0, 99)? as u8;
+            }
+            let call = &mut c.poe1.skills.immortal_call;
+            call.enabled = ui.get_immortal_enabled();
+            if call.enabled {
+                update_skill_key(&mut call.key, &ui.get_immortal_key());
+                call.threshold_percent =
+                    parse_integer(&ui.get_immortal_life(), "Immortal Call Life", 1, 99)? as u8;
+                call.shield_threshold_percent =
+                    parse_integer(&ui.get_immortal_shield(), "Immortal Call Shield", 0, 99)? as u8;
             }
             let bladefall = &mut c.poe1.skills.bladefall_of_trarthus;
             bladefall.enabled = ui.get_bladefall_enabled();
@@ -1142,6 +1163,7 @@ fn bind_profile_editor(window: &AppWindow, editor: &Rc<RefCell<Editor>>) {
                     steelskin_expanded: ui.get_steel_expanded(),
                     bladefall_of_trarthus_expanded: ui.get_bladefall_expanded(),
                     convocation_expanded: ui.get_convocation_expanded(),
+                    immortal_call_expanded: ui.get_immortal_expanded(),
                 };
                 if editor.store.settings().ui.skills == sections {
                     return Ok(());
@@ -1953,6 +1975,113 @@ mod tests {
     }
 
     #[test]
+    fn guard_shield_drafts_validate_save_discard_and_survive_restart() {
+        let _slint = init_slint_test();
+        let path = env::temp_dir().join(format!("auto-flask-guard-shield-{}", std::process::id()));
+        let mut state = Editor::open(path.clone(), &path.join("missing.toml")).unwrap();
+        let mut config = state.saved_config.clone();
+        config.poe1.skills.molten_shell.enabled = true;
+        config.poe1.skills.steelskin.enabled = true;
+        config.poe1.skills.immortal_call.enabled = true;
+        state
+            .store
+            .save_profile(state.game, &state.edit.info.id, config)
+            .unwrap();
+        state.reload_selected().unwrap();
+        let ui = AppWindow::new().unwrap();
+        state.update_ui(&ui);
+        let editor = Rc::new(RefCell::new(state));
+        bind_profile_editor(&ui, &editor);
+        ui.show().unwrap();
+        assert_eq!(ui.get_molten_shield().as_str(), "0");
+        assert_eq!(ui.get_steel_shield().as_str(), "0");
+        assert_eq!(ui.get_immortal_shield().as_str(), "0");
+        ui.set_molten_shield("95".into());
+        i_slint_backend_testing::mock_elapsed_time(Duration::ZERO);
+        assert!(ui.get_dirty_settings());
+        ui.invoke_discard_settings();
+        i_slint_backend_testing::mock_elapsed_time(Duration::ZERO);
+        assert_eq!(ui.get_molten_shield().as_str(), "0");
+        assert!(!ui.get_dirty_settings());
+
+        ui.set_molten_life("80".into());
+        ui.set_molten_shield("95".into());
+        ui.set_steel_life("90".into());
+        ui.set_steel_shield("50".into());
+        ui.set_immortal_life("70".into());
+        ui.set_immortal_shield("85".into());
+        ui.set_molten_expanded(false);
+        ui.set_steel_expanded(false);
+        ui.set_immortal_expanded(false);
+        i_slint_backend_testing::mock_elapsed_time(Duration::ZERO);
+        let draft = editor.borrow().snapshot(&ui).unwrap();
+        assert_eq!(draft.poe1.skills.molten_shell.shield_threshold_percent, 95);
+        assert_eq!(draft.poe1.skills.steelskin.shield_threshold_percent, 50);
+        assert_eq!(draft.poe1.skills.immortal_call.shield_threshold_percent, 85);
+        for bad in ["", "-1", "100", "1.5", "1yt"] {
+            ui.set_steel_shield(bad.into());
+            assert!(editor.borrow().snapshot(&ui).is_err(), "{bad}");
+        }
+        ui.invoke_save_settings();
+        assert_eq!(
+            editor
+                .borrow()
+                .saved_config
+                .poe1
+                .skills
+                .molten_shell
+                .shield_threshold_percent,
+            0
+        );
+        ui.set_steel_shield("50".into());
+        for bad in ["", "-1", "100", "1.5", "1yt"] {
+            ui.set_immortal_shield(bad.into());
+            assert!(editor.borrow().snapshot(&ui).is_err(), "{bad}");
+        }
+        ui.set_immortal_shield("85".into());
+        ui.invoke_save_settings();
+        i_slint_backend_testing::mock_elapsed_time(Duration::ZERO);
+        assert!(!ui.get_dirty_settings());
+        let mut reopened = Editor::open(path.clone(), &path.join("missing.toml")).unwrap();
+        let restored = AppWindow::new().unwrap();
+        reopened.update_ui(&restored);
+        assert_eq!(restored.get_molten_life().as_str(), "80");
+        assert_eq!(restored.get_molten_shield().as_str(), "95");
+        assert_eq!(restored.get_steel_life().as_str(), "90");
+        assert_eq!(restored.get_steel_shield().as_str(), "50");
+        assert_eq!(restored.get_immortal_life().as_str(), "70");
+        assert_eq!(restored.get_immortal_shield().as_str(), "85");
+        assert!(!restored.get_molten_expanded());
+        assert!(!restored.get_steel_expanded());
+        assert!(!restored.get_immortal_expanded());
+        // Zero is accepted and saved as a disabled Shield condition.
+        ui.set_molten_shield("0".into());
+        ui.set_immortal_shield("0".into());
+        ui.invoke_save_settings();
+        assert_eq!(
+            editor
+                .borrow()
+                .saved_config
+                .poe1
+                .skills
+                .molten_shell
+                .shield_threshold_percent,
+            0
+        );
+        assert_eq!(
+            editor
+                .borrow()
+                .saved_config
+                .poe1
+                .skills
+                .immortal_call
+                .shield_threshold_percent,
+            0
+        );
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
     fn folding_skills_preserves_enabled_rules_and_unsaved_keybinds() {
         use i_slint_backend_testing::ElementHandle;
         use slint::platform::PointerEventButton;
@@ -1974,13 +2103,14 @@ mod tests {
         config.poe1.skills.steelskin.enabled = true;
         config.poe1.skills.bladefall_of_trarthus.enabled = true;
         config.poe1.skills.convocation.enabled = true;
+        config.poe1.skills.immortal_call.enabled = true;
         state
             .store
             .save_profile(state.game, &state.edit.info.id, config)
             .unwrap();
         state.reload_selected().unwrap();
         let ui = AppWindow::new().unwrap();
-        ui.window().set_size(PhysicalSize::new(780, 1400));
+        ui.window().set_size(PhysicalSize::new(780, 1800));
         state.update_ui(&ui);
         let editor = Rc::new(RefCell::new(state));
         bind_profile_editor(&ui, &editor);
@@ -2004,6 +2134,7 @@ mod tests {
             "Bladefall of Trarthus",
             "Blood Rage",
             "Convocation",
+            "Immortal Call",
             "Molten Shell",
             "Spirit Offering",
             "Steelskin",
@@ -2037,8 +2168,9 @@ mod tests {
                 0 => ui.set_bladefall_key("Ctrl+F".into()),
                 1 => ui.set_blood_key("Shift+T".into()),
                 2 => ui.set_convocation_key("Alt+W".into()),
-                3 => ui.set_molten_key("Ctrl+Q".into()),
-                4 => ui.set_offering_key("Alt+E".into()),
+                3 => ui.set_immortal_key("Shift+D".into()),
+                4 => ui.set_molten_key("Ctrl+Q".into()),
+                5 => ui.set_offering_key("Alt+E".into()),
                 _ => ui.set_steel_key("Ctrl+R".into()),
             }
             i_slint_backend_testing::mock_elapsed_time(Duration::ZERO);
@@ -2059,8 +2191,9 @@ mod tests {
                 0 => skills.bladefall_of_trarthus.enabled,
                 1 => skills.blood_rage.enabled,
                 2 => skills.convocation.enabled,
-                3 => skills.molten_shell.enabled,
-                4 => skills.spirit_offering.enabled,
+                3 => skills.immortal_call.enabled,
+                4 => skills.molten_shell.enabled,
+                5 => skills.spirit_offering.enabled,
                 _ => skills.steelskin.enabled,
             });
             assert!(!has_keybind(name));
@@ -2126,7 +2259,6 @@ mod tests {
         bind_field_input(&ui);
         ui.set_page(1);
         ui.set_molten_enabled(true);
-        ui.set_blood_enabled(true);
         ui.show().unwrap();
 
         let click = |label| {
@@ -2154,6 +2286,17 @@ mod tests {
         release(Key::Control.into());
         assert_eq!(ui.get_molten_key().as_str(), "Ctrl+Q");
 
+        // Keep each key field visible in the normal compact window.
+        ui.set_molten_enabled(false);
+        ui.set_immortal_enabled(true);
+        click("Immortal Call keybind");
+        press(Key::Shift.into());
+        type_key("d".into());
+        release(Key::Shift.into());
+        assert_eq!(ui.get_immortal_key().as_str(), "Shift+D");
+
+        ui.set_immortal_enabled(false);
+        ui.set_blood_enabled(true);
         click("Blood Rage keybind");
         press(Key::Shift.into());
         type_key("b".into());

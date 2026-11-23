@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use super::config::Poe1SkillsConfig;
 use super::movement::RUN_ANIMATION_ID;
 use super::skill_rules::{
-    configured_rules, evaluate, BLADEFALL_OF_TRARTHUS_BUFF, BLOOD_RAGE_BUFF, MOLTEN_SHELL_BUFF,
-    SPIRIT_OFFERING_BUFF, STEELSKIN_BUFF,
+    configured_rules, evaluate, BLADEFALL_OF_TRARTHUS_BUFF, BLOOD_RAGE_BUFF, IMMORTAL_CALL_BUFF,
+    MOLTEN_SHELL_BUFF, SPIRIT_OFFERING_BUFF, STEELSKIN_BUFF,
 };
 use super::skills::SkillId;
 use crate::process::Process;
@@ -166,6 +166,7 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                             SkillId::Steelskin,
                             SkillId::BladefallOfTrarthus,
                             SkillId::Convocation,
+                            SkillId::ImmortalCall,
                         ],
                     );
                     let skill = skills
@@ -187,6 +188,7 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                     for (id, buff) in [
                         (SkillId::BladefallOfTrarthus, BLADEFALL_OF_TRARTHUS_BUFF),
                         (SkillId::Steelskin, STEELSKIN_BUFF),
+                        (SkillId::ImmortalCall, IMMORTAL_CALL_BUFF),
                     ] {
                         let active = buffs.effects.iter().any(|effect| effect.name == buff);
                         let readiness = match &skills {

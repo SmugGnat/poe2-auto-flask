@@ -50,6 +50,7 @@ pub struct SkillSections {
     pub steelskin_expanded: bool,
     pub bladefall_of_trarthus_expanded: bool,
     pub convocation_expanded: bool,
+    pub immortal_call_expanded: bool,
 }
 
 impl Default for SkillSections {
@@ -61,6 +62,7 @@ impl Default for SkillSections {
             steelskin_expanded: true,
             bladefall_of_trarthus_expanded: true,
             convocation_expanded: true,
+            immortal_call_expanded: true,
         }
     }
 }
@@ -847,10 +849,12 @@ mod tests {
         settings.window = Some(geometry);
         settings.skills.molten_shell_expanded = false;
         settings.skills.spirit_offering_expanded = false;
+        settings.skills.immortal_call_expanded = false;
         editor.save_ui_settings(settings).unwrap();
         assert!(matches!(helper.check_for_reload(), ConfigReload::Unchanged));
         assert_eq!(helper.settings().ui.window, Some(geometry));
         assert!(!helper.settings().ui.skills.molten_shell_expanded);
+        assert!(!helper.settings().ui.skills.immortal_call_expanded);
         assert!(helper.settings().ui.skills.blood_rage_expanded);
         assert_eq!(helper.settings().automation_key, key);
         assert_eq!(helper.active_profile_id(), profile);

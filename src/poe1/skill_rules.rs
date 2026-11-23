@@ -16,6 +16,8 @@ pub const MOLTEN_SHELL_BUFF: &str = "molten_shell_shield";
 pub const BLOOD_RAGE_BUFF: &str = "blood_rage";
 /// Active effects published in PoEDB's Steelskin and Bladefall of Trarthus data.
 pub const STEELSKIN_BUFF: &str = "quick_guard";
+/// Current damage-reduction effect; the older immunity effect is immortal_call.
+pub const IMMORTAL_CALL_BUFF: &str = "mortal_call";
 pub const BLADEFALL_OF_TRARTHUS_BUFF: &str = "righteous_blades";
 /// Verified in the player's PoE1 Buffs snapshot during live Spirit Offering.
 pub const SPIRIT_OFFERING_BUFF: &str = "offering_spirit";
@@ -23,7 +25,7 @@ const MIN_ATTEMPT_GAP: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Condition {
-    LifeAtOrBelow(u8),
+    LifeOrShieldAtOrBelow { life: u8, shield: u8 },
     LifeAtOrAbove(u8),
     BuffAbsent(&'static str),
     NearbyMonsters { radius: u16, minimum_count: u16 },
@@ -38,7 +40,7 @@ pub struct SkillRule {
     pub conditions: Vec<Condition>,
 }
 
-/// Presets define their own conditions. A future warcry need not have LifeAtOrBelow.
+/// Presets define their own conditions; not every skill needs a resource gate.
 pub fn configured_rules(config: &Poe1SkillsConfig) -> io::Result<Vec<SkillRule>> {
     let mut rules = Vec::new();
     let molten = &config.molten_shell;
@@ -46,12 +48,7 @@ pub fn configured_rules(config: &Poe1SkillsConfig) -> io::Result<Vec<SkillRule>>
         rules.push(SkillRule {
             id: SkillId::MoltenShell,
             key: molten.binding()?,
-            conditions: vec![
-                Condition::LifeAtOrBelow(molten.threshold_percent),
-                Condition::BuffAbsent(MOLTEN_SHELL_BUFF),
-                Condition::BuffAbsent(STEELSKIN_BUFF),
-                Condition::SkillUsable,
-            ],
+            conditions: guard_conditions(molten.threshold_percent, molten.shield_threshold_percent),
         });
     }
     let blood = &config.blood_rage;
@@ -93,12 +90,15 @@ pub fn configured_rules(config: &Poe1SkillsConfig) -> io::Result<Vec<SkillRule>>
         rules.push(SkillRule {
             id: SkillId::Steelskin,
             key: steel.binding()?,
-            conditions: vec![
-                Condition::LifeAtOrBelow(steel.threshold_percent),
-                Condition::BuffAbsent(STEELSKIN_BUFF),
-                Condition::BuffAbsent(MOLTEN_SHELL_BUFF),
-                Condition::SkillUsable,
-            ],
+            conditions: guard_conditions(steel.threshold_percent, steel.shield_threshold_percent),
+        });
+    }
+    let call = &config.immortal_call;
+    if call.enabled {
+        rules.push(SkillRule {
+            id: SkillId::ImmortalCall,
+            key: call.binding()?,
+            conditions: guard_conditions(call.threshold_percent, call.shield_threshold_percent),
         });
     }
     let bladefall = &config.bladefall_of_trarthus;
@@ -123,10 +123,20 @@ pub fn configured_rules(config: &Poe1SkillsConfig) -> io::Result<Vec<SkillRule>>
     Ok(rules)
 }
 
+fn guard_conditions(life: u8, shield: u8) -> Vec<Condition> {
+    vec![
+        Condition::LifeOrShieldAtOrBelow { life, shield },
+        Condition::BuffAbsent(MOLTEN_SHELL_BUFF),
+        Condition::BuffAbsent(STEELSKIN_BUFF),
+        Condition::BuffAbsent(IMMORTAL_CALL_BUFF),
+        Condition::SkillUsable,
+    ]
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuleDecision {
     InvalidVitals,
-    LifeAboveThreshold,
+    GuardThresholdsNotMet,
     LifeBelowThreshold,
     AlreadyActive,
     NotEnoughNearbyMonsters,
@@ -138,7 +148,9 @@ pub enum RuleDecision {
 
 pub fn preconditions_met(rule: &SkillRule, vitals: LiveVitals) -> bool {
     rule.conditions.iter().all(|condition| match condition {
-        Condition::LifeAtOrBelow(threshold) => life_at_or_below(vitals, *threshold),
+        Condition::LifeOrShieldAtOrBelow { life, shield } => {
+            guard_trigger(vitals, *life, *shield).is_some()
+        }
         Condition::LifeAtOrAbove(threshold) => life_at_or_above(vitals, *threshold),
         Condition::BuffAbsent(_)
         | Condition::NearbyMonsters { .. }
@@ -155,7 +167,9 @@ pub fn observations_allow(rule: &SkillRule, vitals: LiveVitals, effects: &Effect
         return false;
     }
     rule.conditions.iter().all(|condition| match *condition {
-        Condition::LifeAtOrBelow(threshold) => life_at_or_below(vitals, threshold),
+        Condition::LifeOrShieldAtOrBelow { life, shield } => {
+            guard_trigger(vitals, life, shield).is_some()
+        }
         Condition::LifeAtOrAbove(threshold) => life_at_or_above(vitals, threshold),
         Condition::NearbyMonsters { .. } | Condition::NearbyCorpses { .. } => true,
         Condition::BuffAbsent(name) => !effects
@@ -221,20 +235,20 @@ pub fn evaluate(
     }
     for condition in &rule.conditions {
         match *condition {
-            Condition::LifeAtOrBelow(threshold) => {
-                if !(1..=99).contains(&threshold) {
-                    return RuleDecision::InvalidVitals;
-                }
-                if !life_at_or_below(vitals, threshold) {
-                    return RuleDecision::LifeAboveThreshold;
-                }
-            }
             Condition::LifeAtOrAbove(threshold) => {
                 if !(1..=100).contains(&threshold) {
                     return RuleDecision::InvalidVitals;
                 }
                 if !life_at_or_above(vitals, threshold) {
                     return RuleDecision::LifeBelowThreshold;
+                }
+            }
+            Condition::LifeOrShieldAtOrBelow { life, shield } => {
+                if !(1..=99).contains(&life) || shield > 99 {
+                    return RuleDecision::InvalidVitals;
+                }
+                if guard_trigger(vitals, life, shield).is_none() {
+                    return RuleDecision::GuardThresholdsNotMet;
                 }
             }
             Condition::NearbyMonsters { .. } => {
@@ -275,6 +289,64 @@ fn buff_present(effect: &super::buffs::Effect, name: &str) -> bool {
         && (matches!(name, SPIRIT_OFFERING_BUFF | BLADEFALL_OF_TRARTHUS_BUFF)
             || !effect.time_left.is_finite()
             || effect.time_left >= 0.0)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GuardTrigger {
+    Life,
+    Shield,
+}
+
+fn guard_trigger(vitals: LiveVitals, life: u8, shield: u8) -> Option<GuardTrigger> {
+    let health = vitals.health;
+    if !(1..=99).contains(&life)
+        || shield > 99
+        || !health.looks_valid()
+        || health.current <= 0
+        || health.current > health.usable_max()
+    {
+        return None;
+    }
+    if life_at_or_below(vitals, life) {
+        return Some(GuardTrigger::Life);
+    }
+    let pool = vitals.energy_shield?;
+    let max = pool.usable_max();
+    (shield > 0
+        && pool.looks_valid()
+        && max > 0
+        && pool.current >= 0
+        && pool.current <= max
+        && i64::from(pool.current) * 100 <= i64::from(max) * i64::from(shield))
+    .then_some(GuardTrigger::Shield)
+}
+
+/// Prefer a Life-triggered Guard over a Shield-triggered Guard using fresh
+/// preflight vitals. Only Guard positions change; unrelated skills keep order.
+pub fn prioritize_guard_skills(rules: &mut [SkillRule], vitals: LiveVitals) {
+    let triggered_by_life = |rule: &SkillRule| {
+        rule.conditions.iter().any(|condition| match *condition {
+            Condition::LifeOrShieldAtOrBelow { life, shield } => {
+                guard_trigger(vitals, life, shield) == Some(GuardTrigger::Life)
+            }
+            _ => false,
+        })
+    };
+    for index in 0..rules.len() {
+        if !rules[index].id.is_guard() || !triggered_by_life(&rules[index]) {
+            continue;
+        }
+        // Move this Life candidate past preceding Shield candidates, using
+        // only Guard positions. Preserve the order within each trigger group.
+        let mut current = index;
+        while let Some(previous) = (0..current).rfind(|&i| rules[i].id.is_guard()) {
+            if triggered_by_life(&rules[previous]) {
+                break;
+            }
+            rules.swap(previous, current);
+            current = previous;
+        }
+    }
 }
 
 fn life_at_or_below(vitals: LiveVitals, threshold: u8) -> bool {
@@ -360,12 +432,258 @@ mod tests {
             effects: Vec::new(),
         }
     }
+    fn shield_vitals(life: i32, shield: i32, max_shield: i32) -> LiveVitals {
+        LiveVitals {
+            energy_shield: Some(VitalPool {
+                current: shield,
+                total: max_shield,
+                reserved_flat: 0,
+                reserved_fraction: 0,
+            }),
+            ..vitals(life)
+        }
+    }
+
+    fn guard_rules(life: u8, shield: u8) -> Vec<SkillRule> {
+        let mut config = Poe1SkillsConfig::default();
+        config.molten_shell.enabled = true;
+        config.molten_shell.threshold_percent = life;
+        config.molten_shell.shield_threshold_percent = shield;
+        config.steelskin.enabled = true;
+        config.steelskin.threshold_percent = life;
+        config.steelskin.shield_threshold_percent = shield;
+        config.immortal_call.enabled = true;
+        config.immortal_call.threshold_percent = life;
+        config.immortal_call.shield_threshold_percent = shield;
+        configured_rules(&config).unwrap()
+    }
+
+    #[test]
+    fn guards_trigger_on_either_resource_with_life_first_at_all_evaluation_stages() {
+        let rules = guard_rules(80, 95);
+        for (life, shield, trigger) in [
+            (100, 100, None),
+            (81, 96, None),
+            (100, 95, Some(GuardTrigger::Shield)),
+            (100, 0, Some(GuardTrigger::Shield)),
+            (80, 100, Some(GuardTrigger::Life)),
+            (80, 95, Some(GuardTrigger::Life)),
+            (1, 0, Some(GuardTrigger::Life)),
+        ] {
+            let state = shield_vitals(life, shield, 100);
+            assert_eq!(guard_trigger(state, 80, 95), trigger);
+            for rule in &rules {
+                assert_eq!(preconditions_met(rule, state), trigger.is_some());
+                assert_eq!(observations_allow(rule, state, &empty()), trigger.is_some());
+                assert_eq!(
+                    evaluate(rule, state, &empty(), None, Some(SkillReadiness::Usable)),
+                    if trigger.is_some() {
+                        RuleDecision::Eligible
+                    } else {
+                        RuleDecision::GuardThresholdsNotMet
+                    }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn absent_invalid_or_disabled_shield_never_creates_a_guard_trigger() {
+        for state in [
+            vitals(100),
+            shield_vitals(100, 0, 0),
+            shield_vitals(100, -1, 100),
+            shield_vitals(100, 101, 100),
+            shield_vitals(100, 0, -100),
+            shield_vitals(100, 0, crate::game_state::MAX_VITAL_TOTAL + 1),
+            LiveVitals {
+                energy_shield: Some(VitalPool {
+                    reserved_flat: 100,
+                    ..shield_vitals(100, 0, 100).energy_shield.unwrap()
+                }),
+                ..vitals(100)
+            },
+        ] {
+            assert_eq!(guard_trigger(state, 80, 95), None);
+            assert_eq!(
+                guard_trigger(
+                    LiveVitals {
+                        health: vitals(80).health,
+                        ..state
+                    },
+                    80,
+                    95
+                ),
+                Some(GuardTrigger::Life)
+            );
+        }
+        let depleted = shield_vitals(100, 0, 100);
+        assert_eq!(guard_trigger(depleted, 80, 0), None);
+        assert_eq!(guard_trigger(depleted, 80, 1), Some(GuardTrigger::Shield));
+        // A tiny pool is valid, but the user can turn its condition off.
+        assert_eq!(
+            guard_trigger(shield_vitals(100, 0, 1), 80, 95),
+            Some(GuardTrigger::Shield)
+        );
+        assert_eq!(guard_trigger(shield_vitals(100, 0, 1), 80, 0), None);
+        for state in [
+            shield_vitals(0, 0, 100),
+            shield_vitals(-1, 0, 100),
+            shield_vitals(101, 0, 100),
+        ] {
+            for rule in guard_rules(80, 95) {
+                assert!(!preconditions_met(&rule, state));
+                assert!(!observations_allow(&rule, state, &empty()));
+                assert_eq!(
+                    evaluate(&rule, state, &empty(), None, Some(SkillReadiness::Usable)),
+                    RuleDecision::InvalidVitals
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shield_then_life_keeps_guard_effect_readiness_and_shared_attempt_gates() {
+        let rules = guard_rules(80, 95);
+        let now = Instant::now();
+        let mut attempts = BTreeMap::new();
+        let mut sent = Vec::new();
+        // Both Guard presets qualify, but only the first can send.
+        for rule in &rules {
+            if skill_attempt_ready(&attempts, rule.id, now)
+                && evaluate(
+                    rule,
+                    shield_vitals(100, 90, 100),
+                    &empty(),
+                    None,
+                    Some(SkillReadiness::Usable),
+                ) == RuleDecision::Eligible
+            {
+                sent.push(rule.id);
+                let mut attempt = SkillAttemptGuard::default();
+                attempt.mark(now);
+                attempts.insert(rule.id, attempt);
+            }
+        }
+        assert_eq!(sent.len(), 1);
+        let life_fell = shield_vitals(70, 90, 100);
+        for rule in &rules {
+            assert_eq!(
+                evaluate(
+                    rule,
+                    life_fell,
+                    &empty(),
+                    None,
+                    Some(SkillReadiness::Usable)
+                ),
+                RuleDecision::Eligible
+            );
+            assert!(!skill_attempt_ready(
+                &attempts,
+                rule.id,
+                now + Duration::from_millis(100)
+            ));
+            assert!(skill_attempt_ready(
+                &attempts,
+                rule.id,
+                now + Duration::from_secs(1)
+            ));
+            for state in [life_fell, shield_vitals(100, 90, 100)] {
+                for name in [MOLTEN_SHELL_BUFF, STEELSKIN_BUFF, IMMORTAL_CALL_BUFF] {
+                    let mut effects = empty();
+                    effects.effects.push(Effect {
+                        name: name.into(),
+                        flask_slot: None,
+                        buff_type: 2,
+                        time_left: 1.0,
+                    });
+                    assert!(!observations_allow(rule, state, &effects));
+                    assert_eq!(
+                        evaluate(rule, state, &effects, None, Some(SkillReadiness::Usable)),
+                        RuleDecision::AlreadyActive
+                    );
+                }
+                for readiness in [
+                    None,
+                    Some(SkillReadiness::NotUsable),
+                    Some(SkillReadiness::NotFound),
+                    Some(SkillReadiness::Ambiguous),
+                ] {
+                    assert_ne!(
+                        evaluate(rule, state, &empty(), None, readiness),
+                        RuleDecision::Eligible
+                    );
+                }
+            }
+        }
+        // The same tick where both thresholds match still has one rule per Guard.
+        assert_eq!(
+            guard_trigger(shield_vitals(80, 80, 100), 90, 90),
+            Some(GuardTrigger::Life)
+        );
+    }
+
+    #[test]
+    fn life_guard_priority_preserves_other_skills_and_stable_ties() {
+        let mut config = Poe1SkillsConfig::default();
+        config.molten_shell.enabled = true;
+        config.molten_shell.threshold_percent = 50;
+        config.molten_shell.shield_threshold_percent = 95;
+        config.steelskin.enabled = true;
+        config.steelskin.threshold_percent = 90;
+        config.steelskin.shield_threshold_percent = 95;
+        config.immortal_call.enabled = true;
+        config.immortal_call.threshold_percent = 90;
+        config.immortal_call.shield_threshold_percent = 95;
+        config.blood_rage.enabled = true;
+        config.spirit_offering.enabled = true;
+        config.convocation.enabled = true;
+        let original = configured_rules(&config).unwrap();
+        let ids = |rules: &[SkillRule]| rules.iter().map(|rule| rule.id).collect::<Vec<_>>();
+        for state in [shield_vitals(50, 80, 100), shield_vitals(100, 80, 100)] {
+            let mut rules = original.clone();
+            prioritize_guard_skills(&mut rules, state);
+            assert_eq!(ids(&rules), ids(&original));
+        }
+        let mut rules = original.clone();
+        prioritize_guard_skills(&mut rules, shield_vitals(80, 80, 100));
+        assert_eq!(
+            ids(&rules),
+            [
+                SkillId::Steelskin,
+                SkillId::BloodRage,
+                SkillId::SpiritOffering,
+                SkillId::ImmortalCall,
+                SkillId::MoltenShell,
+                SkillId::Convocation
+            ]
+        );
+        // A later Life candidate keeps both preceding Shield candidates in order.
+        config.steelskin.threshold_percent = 50;
+        let mut rules = configured_rules(&config).unwrap();
+        prioritize_guard_skills(&mut rules, shield_vitals(80, 80, 100));
+        assert_eq!(
+            ids(&rules),
+            [
+                SkillId::ImmortalCall,
+                SkillId::BloodRage,
+                SkillId::SpiritOffering,
+                SkillId::MoltenShell,
+                SkillId::Steelskin,
+                SkillId::Convocation
+            ]
+        );
+    }
+
     fn rule() -> SkillRule {
         SkillRule {
             id: SkillId::MoltenShell,
             key: KeyBinding::new(81, crate::input::KeyModifier::None),
             conditions: vec![
-                Condition::LifeAtOrBelow(95),
+                Condition::LifeOrShieldAtOrBelow {
+                    life: 95,
+                    shield: 0,
+                },
                 Condition::BuffAbsent(MOLTEN_SHELL_BUFF),
                 Condition::SkillUsable,
             ],
@@ -381,14 +699,14 @@ mod tests {
         let rules = configured_rules(&cfg).unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].id, SkillId::MoltenShell);
-        assert_eq!(rules[0].conditions.len(), 4);
+        assert_eq!(rules[0].conditions.len(), 5);
     }
     #[test]
     fn evaluates_life_buff_and_readiness_independently() {
         let r = rule();
         assert_eq!(
             evaluate(&r, vitals(96), &empty(), None, Some(SkillReadiness::Usable)),
-            RuleDecision::LifeAboveThreshold
+            RuleDecision::GuardThresholdsNotMet
         );
         assert_eq!(
             evaluate(&r, vitals(95), &empty(), None, Some(SkillReadiness::Usable)),
@@ -747,7 +1065,7 @@ mod tests {
         assert!(!requires_nearby(steel));
         assert_eq!(
             evaluate(steel, vitals(96), &empty(), None, ready),
-            RuleDecision::LifeAboveThreshold
+            RuleDecision::GuardThresholdsNotMet
         );
         assert_eq!(
             evaluate(steel, vitals(95), &empty(), None, ready),
@@ -763,7 +1081,7 @@ mod tests {
                 RuleDecision::Eligible
             );
         }
-        for name in [STEELSKIN_BUFF, MOLTEN_SHELL_BUFF] {
+        for name in [STEELSKIN_BUFF, MOLTEN_SHELL_BUFF, IMMORTAL_CALL_BUFF] {
             let mut effects = empty();
             effects.effects.push(Effect {
                 name: name.into(),
@@ -849,12 +1167,20 @@ mod tests {
     #[test]
     fn a_guard_attempt_blocks_its_shared_cooldown_partner_only() {
         let at = Instant::now();
-        for sent in [SkillId::MoltenShell, SkillId::Steelskin] {
+        for sent in [
+            SkillId::MoltenShell,
+            SkillId::Steelskin,
+            SkillId::ImmortalCall,
+        ] {
             let mut attempts = BTreeMap::new();
             let mut guard = SkillAttemptGuard::default();
             guard.mark(at);
             attempts.insert(sent, guard);
-            for skill in [SkillId::MoltenShell, SkillId::Steelskin] {
+            for skill in [
+                SkillId::MoltenShell,
+                SkillId::Steelskin,
+                SkillId::ImmortalCall,
+            ] {
                 assert!(!skill_attempt_ready(&attempts, skill, at));
                 assert!(!skill_attempt_ready(
                     &attempts,

@@ -85,6 +85,8 @@ writhing_jar = false
 [poe1.skills.molten_shell]
 enabled = false
 threshold_percent = 95
+# Life OR Shield can trigger the skill. 0 disables Shield; no Shield pool is ignored.
+shield_threshold_percent = 0
 key = "Q"
 
 # Blood Rage maintains its duration through kills, so don't repeatedly
@@ -109,12 +111,21 @@ key = "E"
 nearby_radius = 60
 nearby_minimum_count = 1
 
-# Steelskin follows the same Life threshold rule as Molten Shell.
-# Both Guard skills share their cooldown in game and are never sent together.
+# Steelskin follows the same Life-or-Shield threshold rule as Molten Shell.
+# Guard skills share their cooldown in game and are never sent together.
 [poe1.skills.steelskin]
 enabled = false
 threshold_percent = 95
+shield_threshold_percent = 0
 key = "R"
+
+# Immortal Call shares the same Life-or-Shield rules and Guard checks.
+# The game handles Endurance Charge consumption and the shared cooldown.
+[poe1.skills.immortal_call]
+enabled = false
+threshold_percent = 95
+shield_threshold_percent = 0
+key = "D"
 
 # Start Bladefall of Trarthus only while its sustained effect is absent.
 # The game controls usability and resource costs; no mana threshold is required.

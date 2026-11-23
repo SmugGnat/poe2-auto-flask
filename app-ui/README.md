@@ -36,7 +36,7 @@ icon is used by the sidebar, tray, Windows executable and AppImage.
 
 - **Flasks:** Life/Mana recovery, PoE1 utility selection and Writhing Jar.
 - **Skills:** alphabetical PoE1 presets for Bladefall of Trarthus, Blood Rage,
-  Convocation, Molten Shell, Spirit Offering and Steelskin.
+  Convocation, Immortal Call, Molten Shell, Spirit Offering and Steelskin.
 - **Profiles:** creation at the top, active selection and Rename / Duplicate /
   Reset / Delete menus. Reset confirms inline and restores backend defaults.
   The last profile for each game is protected.
@@ -49,6 +49,12 @@ header space folds or unfolds options without disabling the skill or changing
 its draft. The toggle stays independent; enabling a skill opens its options.
 Fold state saves immediately under `[ui.skills]` in `settings.toml`, so it
 survives restarts without changing the automation profile or its dirty state.
+
+Immortal Call, Molten Shell and Steelskin offer Maximum Life and Maximum
+Shield percentages. Either can trigger the skill, with Life taking priority.
+Shield defaults to 0% (off) and is ignored if the character has no Shield pool.
+Hover its label for guidance. Existing Guard effect, cooldown and shared
+attempt checks apply to both triggers.
 
 Profile changes appear in a **Save / Discard** footer on every page. Invalid
 or unsaved drafts block profile switching. Selecting another utility first

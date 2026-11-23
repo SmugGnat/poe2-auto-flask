@@ -154,12 +154,26 @@ Flask-key conflicts are warned on configuration/binding changes.
 - **Convocation:** uses the configured key whenever the game reports the skill
   usable and off cooldown. Only Enable and Keybind are configurable; the usual
   automation safety checks and skill attempt guard still apply.
-- **Molten Shell:** maximum-Life threshold and validated skill readiness.
+- **Immortal Call:** maximum-Life or optional maximum-Shield threshold and
+  validated skill readiness. The game controls Endurance Charge consumption;
+  no minimum charge count is required by the preset.
+- **Molten Shell:** maximum-Life or optional maximum-Shield threshold and
+  validated skill readiness.
 - **Spirit Offering:** usable Actor skill, absent `offering_spirit` player buff
   and enough nearby corpse candidates, with a one-second attempt interval.
-- **Steelskin:** maximum-Life threshold and validated skill readiness, like
-  Molten Shell. Both Guard presets share an attempt guard and avoid casting
-  over either active Guard effect. Their shared cooldown remains game-controlled.
+- **Steelskin:** maximum-Life or optional maximum-Shield threshold, like
+  Molten Shell. All three Guard presets share an attempt guard and avoid
+  casting over any of their active Guard effects. Their shared cooldown remains
+  game-controlled.
+
+All three Guard presets trigger when either percentage is at or below its limit.
+`threshold_percent` is Life (1–99); `shield_threshold_percent` is Shield
+(0–99, default 0). **0 disables the Shield condition.** An absent or zero-maximum
+Shield pool is ignored. A depleted pool with a positive maximum still qualifies
+when its Shield condition is enabled. Life takes priority when both match,
+including when choosing between Guard presets. A shared attempt guard
+permits only one Guard key press; active effects and game readiness still prevent
+recasting when the other resource later falls below its threshold.
 
 All presets default off. Bladefall does not receive repeated key presses while
 its sustained effect is present, including effects without a countdown. If it

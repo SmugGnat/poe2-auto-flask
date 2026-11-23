@@ -26,6 +26,7 @@ pub enum SkillId {
     Steelskin,
     BladefallOfTrarthus,
     Convocation,
+    ImmortalCall,
 }
 
 impl SkillId {
@@ -37,6 +38,7 @@ impl SkillId {
             Self::Steelskin => "Steelskin",
             Self::BladefallOfTrarthus => "Bladefall of Trarthus",
             Self::Convocation => "Convocation",
+            Self::ImmortalCall => "Immortal Call",
         }
     }
 
@@ -66,11 +68,18 @@ impl SkillId {
                 name.eq_ignore_ascii_case("Convocation")
                     || name.eq_ignore_ascii_case("ConvocationOld")
             }
+            Self::ImmortalCall => {
+                name.eq_ignore_ascii_case("ImmortalCall")
+                    || name.eq_ignore_ascii_case("immortal_call")
+            }
         }
     }
 
     pub fn is_guard(self) -> bool {
-        matches!(self, Self::MoltenShell | Self::Steelskin)
+        matches!(
+            self,
+            Self::MoltenShell | Self::Steelskin | Self::ImmortalCall
+        )
     }
 }
 
@@ -344,6 +353,33 @@ mod tests {
             assert!(!SkillId::BladefallOfTrarthus.matches_internal_name(name));
         }
         assert!(!SkillId::Steelskin.matches_internal_name("VaalQuickGuard"));
+    }
+
+    #[test]
+    fn immortal_call_matches_current_skill_names_and_not_vaal_or_buff_names() {
+        for name in ["ImmortalCall", "immortal_call"] {
+            assert!(SkillId::ImmortalCall.matches_internal_name(name));
+        }
+        for name in [
+            "VaalImmortalCall",
+            "vaal_immortal_call",
+            "mortal_call",
+            "ImmortalCallTotem",
+        ] {
+            assert!(!SkillId::ImmortalCall.matches_internal_name(name));
+        }
+        let wanted = BTreeSet::from([SkillId::ImmortalCall]);
+        let found = BTreeMap::from([(SkillId::ImmortalCall, (42, false))]);
+        assert_eq!(
+            classify(&wanted, &found, &BTreeSet::new(), &HashSet::from([42]))
+                [&SkillId::ImmortalCall],
+            SkillReadiness::NotUsable
+        );
+        assert_eq!(
+            classify(&wanted, &found, &BTreeSet::new(), &HashSet::new())[&SkillId::ImmortalCall],
+            SkillReadiness::Usable
+        );
+        assert!(SkillId::ImmortalCall.is_guard());
     }
 
     #[test]

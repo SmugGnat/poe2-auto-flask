@@ -526,6 +526,7 @@ component ToggleRow inherits Rectangle {
 }
 component NumberRow inherits Rectangle {
     in property <string> label;
+    in property <string> hint: "";
     in property <string> unit;
     in property <length> indent: 0px;
     in-out property <string> value;
@@ -535,8 +536,11 @@ component NumberRow inherits Rectangle {
         padding-left: root.indent;
         spacing: 9px;
         cross-axis-alignment: center;
-        Text { text: root.label; color: #ececf0; font-size: 13px;
-            vertical-alignment: center; }
+        Text {
+            text: root.label; color: #ececf0; font-size: 13px;
+            vertical-alignment: center;
+            if root.hint != "": StatusHint { detail: @markdown("\{root.hint}"); }
+        }
         Rectangle { horizontal-stretch: 1; background: transparent; }
         FieldInput {
             width: 72px;
@@ -1018,9 +1022,15 @@ export component AppWindow inherits Window {
     in-out property <bool> molten-enabled: false;
     in-out property <string> molten-key: "Q";
     in-out property <string> molten-life: "95";
+    in-out property <string> molten-shield: "0";
     in-out property <bool> steel-enabled: false;
     in-out property <string> steel-key: "R";
     in-out property <string> steel-life: "95";
+    in-out property <string> steel-shield: "0";
+    in-out property <bool> immortal-enabled: false;
+    in-out property <string> immortal-key: "D";
+    in-out property <string> immortal-life: "95";
+    in-out property <string> immortal-shield: "0";
     in-out property <bool> bladefall-enabled: false;
     in-out property <string> bladefall-key: "F";
     in-out property <bool> convocation-enabled: false;
@@ -1043,6 +1053,7 @@ export component AppWindow inherits Window {
     in-out property <bool> steel-expanded: true;
     in-out property <bool> bladefall-expanded: true;
     in-out property <bool> convocation-expanded: true;
+    in-out property <bool> immortal-expanded: true;
     callback save-skill-sections();
     changed molten-expanded => { root.save-skill-sections(); }
     changed blood-expanded => { root.save-skill-sections(); }
@@ -1050,6 +1061,7 @@ export component AppWindow inherits Window {
     changed steel-expanded => { root.save-skill-sections(); }
     changed bladefall-expanded => { root.save-skill-sections(); }
     changed convocation-expanded => { root.save-skill-sections(); }
+    changed immortal-expanded => { root.save-skill-sections(); }
 
     callback profile-draft-changed();
     changed hideout => { root.profile-draft-changed(); }
@@ -1071,9 +1083,15 @@ export component AppWindow inherits Window {
     changed molten-enabled => { root.profile-draft-changed(); }
     changed molten-key => { root.profile-draft-changed(); }
     changed molten-life => { root.profile-draft-changed(); }
+    changed molten-shield => { root.profile-draft-changed(); }
     changed steel-enabled => { root.profile-draft-changed(); }
     changed steel-key => { root.profile-draft-changed(); }
     changed steel-life => { root.profile-draft-changed(); }
+    changed steel-shield => { root.profile-draft-changed(); }
+    changed immortal-enabled => { root.profile-draft-changed(); }
+    changed immortal-key => { root.profile-draft-changed(); }
+    changed immortal-life => { root.profile-draft-changed(); }
+    changed immortal-shield => { root.profile-draft-changed(); }
     changed bladefall-enabled => { root.profile-draft-changed(); }
     changed bladefall-key => { root.profile-draft-changed(); }
     changed convocation-enabled => { root.profile-draft-changed(); }
@@ -1698,6 +1716,26 @@ if root.page == 1 && root.game-index == 0: VerticalBox {
     }
     SectionCard {
         ToggleRow {
+            label: "Immortal Call"; strong-label: true; enabled-color: #e05030;
+            checked <=> root.immortal-enabled;
+            collapsible: true; expanded <=> root.immortal-expanded;
+            toggled => { if (root.immortal-enabled) { root.immortal-expanded = true; } }
+        }
+        if root.immortal-enabled && root.immortal-expanded: VerticalLayout {
+            spacing: 0px;
+            Separator {}
+            SkillKeyRow { skill-name: "Immortal Call"; value <=> root.immortal-key; }
+            Separator {}
+            NumberRow { label: "Maximum Life"; value <=> root.immortal-life; unit: "%"; }
+            Separator {}
+            NumberRow {
+                label: "Maximum Shield"; value <=> root.immortal-shield; unit: "%";
+                hint: "0% turns the Shield condition off. Either Life or Shield can trigger this skill. Characters without Shield ignore this condition.";
+            }
+        }
+    }
+    SectionCard {
+        ToggleRow {
             label: "Molten Shell"; strong-label: true; enabled-color: #e05030;
             checked <=> root.molten-enabled;
             collapsible: true; expanded <=> root.molten-expanded;
@@ -1709,6 +1747,11 @@ if root.page == 1 && root.game-index == 0: VerticalBox {
             SkillKeyRow { skill-name: "Molten Shell"; value <=> root.molten-key; }
             Separator {}
             NumberRow { label: "Maximum Life"; value <=> root.molten-life; unit: "%"; }
+            Separator {}
+            NumberRow {
+                label: "Maximum Shield"; value <=> root.molten-shield; unit: "%";
+                hint: "0% turns the Shield condition off. Either Life or Shield can trigger this skill. Characters without Shield ignore this condition.";
+            }
         }
     }
     SectionCard {
@@ -1741,6 +1784,11 @@ if root.page == 1 && root.game-index == 0: VerticalBox {
             SkillKeyRow { skill-name: "Steelskin"; value <=> root.steel-key; }
             Separator {}
             NumberRow { label: "Maximum Life"; value <=> root.steel-life; unit: "%"; }
+            Separator {}
+            NumberRow {
+                label: "Maximum Shield"; value <=> root.steel-shield; unit: "%";
+                hint: "0% turns the Shield condition off. Either Life or Shield can trigger this skill. Characters without Shield ignore this condition.";
+            }
         }
     }
 }

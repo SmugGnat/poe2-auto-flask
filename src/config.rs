@@ -492,6 +492,7 @@ mod tests {
         assert!(!defaults.poe1.skills.steelskin.enabled);
         assert!(!defaults.poe1.skills.bladefall_of_trarthus.enabled);
         assert!(!defaults.poe1.skills.convocation.enabled);
+        assert!(!defaults.poe1.skills.immortal_call.enabled);
         let source = "[poe1.skills.steelskin]\nenabled = true\nkey = \"Ctrl+R\"\nthreshold_percent = 65\n[poe1.skills.bladefall_of_trarthus]\nenabled = true\nkey = \"Alt+F\"\n";
         let config = Config::parse(Path::new("test.toml"), source).unwrap();
         assert_eq!(config.poe1.skills.steelskin.threshold_percent, 65);
@@ -528,16 +529,78 @@ mod tests {
                 .label(),
             "Alt+W"
         );
-        for skill in ["steelskin", "bladefall_of_trarthus", "convocation"] {
+        for skill in [
+            "steelskin",
+            "bladefall_of_trarthus",
+            "convocation",
+            "immortal_call",
+        ] {
             let source = format!("[poe1.skills.{skill}]\nkey = \"Ctrl+Shift+R\"\n");
             assert!(Config::parse(Path::new("test.toml"), &source).is_err());
         }
     }
 
     #[test]
+    fn guard_shield_conditions_are_optional_bounded_and_round_trip() {
+        for skill in ["molten_shell", "steelskin", "immortal_call"] {
+            let parse = |settings: &str| {
+                Config::parse(
+                    Path::new("test.toml"),
+                    &format!("[poe1.skills.{skill}]\n{settings}\n"),
+                )
+            };
+            let old = parse("enabled = true\nthreshold_percent = 80").unwrap();
+            assert_eq!(old.poe1.skills.molten_shell.shield_threshold_percent, 0);
+            assert_eq!(old.poe1.skills.steelskin.shield_threshold_percent, 0);
+            assert_eq!(old.poe1.skills.immortal_call.shield_threshold_percent, 0);
+            for percent in [0, 1, 95, 99] {
+                let config = parse(&format!("shield_threshold_percent = {percent}")).unwrap();
+                let value = match skill {
+                    "molten_shell" => config.poe1.skills.molten_shell.shield_threshold_percent,
+                    "steelskin" => config.poe1.skills.steelskin.shield_threshold_percent,
+                    _ => config.poe1.skills.immortal_call.shield_threshold_percent,
+                };
+                assert_eq!(value, percent);
+                let saved = toml::to_string(&config).unwrap();
+                assert_eq!(
+                    Config::parse(Path::new("test.toml"), &saved).unwrap(),
+                    config
+                );
+            }
+            for value in ["-1", "100", "255", "256", "95.5", "\"95\""] {
+                assert!(
+                    parse(&format!("shield_threshold_percent = {value}")).is_err(),
+                    "{skill}: {value}"
+                );
+            }
+            for value in [0, 100] {
+                assert!(parse(&format!("threshold_percent = {value}")).is_err());
+            }
+        }
+        let mut config = Config::default();
+        config.poe1.skills.molten_shell.enabled = true;
+        config.poe1.skills.molten_shell.threshold_percent = 80;
+        config.poe1.skills.molten_shell.shield_threshold_percent = 95;
+        assert!(config
+            .poe1_summary()
+            .contains("Molten Shell [Q, Life <=80% OR Shield <=95%]"));
+        config.poe1.skills.immortal_call.enabled = true;
+        config.poe1.skills.immortal_call.threshold_percent = 85;
+        config.poe1.skills.immortal_call.shield_threshold_percent = 90;
+        assert!(config
+            .poe1_summary()
+            .contains("Immortal Call [D, Life <=85% OR Shield <=90%]"));
+    }
+
+    #[test]
     fn new_skills_share_existing_key_conflict_validation() {
         let path = Path::new("test.toml");
-        for added in ["steelskin", "bladefall_of_trarthus", "convocation"] {
+        for added in [
+            "steelskin",
+            "bladefall_of_trarthus",
+            "convocation",
+            "immortal_call",
+        ] {
             for other in [
                 "molten_shell",
                 "blood_rage",
@@ -545,6 +608,7 @@ mod tests {
                 "steelskin",
                 "bladefall_of_trarthus",
                 "convocation",
+                "immortal_call",
             ] {
                 if added == other {
                     continue;
