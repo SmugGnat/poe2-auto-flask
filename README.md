@@ -33,6 +33,8 @@ state cannot be validated. Hideouts are blocked unless enabled in Settings.
   character. **Show all** opens the full list, and hidden skills retain their
   saved settings.
 - Focus is available as a PoE1 preset with Life and Shield thresholds.
+- Automated Convocation casts are at least three seconds apart and still
+  depend on the game's cooldown check.
 - Holding Ctrl pauses automation while pressing shortcuts such as the
   Awakened PoE Trade price check. Use the automation toggle for longer
   interactions with an overlay.

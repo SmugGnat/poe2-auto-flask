@@ -133,8 +133,7 @@ key = "D"
 enabled = false
 key = "F"
 
-# Recall minions whenever the game reports Convocation usable and off cooldown.
-# The ordinary automation safety gates and skill attempt guard still apply.
+# Recall minions when Convocation is usable, at least 3 seconds between casts.
 [poe1.skills.convocation]
 enabled = false
 key = "W"

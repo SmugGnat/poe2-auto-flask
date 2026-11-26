@@ -169,9 +169,9 @@ Flask-key conflicts are warned on configuration/binding changes.
   Keybind; the game handles resource costs, including build-specific changes.
 - **Blood Rage:** minimum-Life threshold, absent-buff check and optional nearby
   enemies; nearby gating defaults on when the preset is configured.
-- **Convocation:** uses the configured key whenever the game reports the skill
-  usable and off cooldown. Only Enable and Keybind are configurable; the usual
-  automation safety checks and skill attempt guard still apply.
+- **Convocation:** uses the configured key when the game reports the skill
+  usable and at least three seconds have passed since the last automated cast.
+  The usual automation safety checks apply. Enable and Keybind are configurable.
 - **Focus:** uses the gear-granted skill when Life or Energy Shield is at or
   below its configured threshold, the Focused buff is absent, and the game
   reports the skill ready. Both thresholds accept 0–99% and 0 disables that

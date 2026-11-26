@@ -24,6 +24,7 @@ pub const FOCUS_BUFF: &str = "focus";
 /// Verified in the player's PoE1 Buffs snapshot during live Spirit Offering.
 pub const SPIRIT_OFFERING_BUFF: &str = "offering_spirit";
 const MIN_ATTEMPT_GAP: Duration = Duration::from_secs(1);
+const CONVOCATION_RECAST_GAP: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Condition {
@@ -390,7 +391,7 @@ fn life_at_or_above(vitals: LiveVitals, threshold: u8) -> bool {
 
 #[derive(Debug, Default)]
 pub struct SkillAttemptGuard {
-    last_sent: Option<Instant>,
+    next_cast_at: Option<Instant>,
     retry_after: Option<Instant>,
 }
 
@@ -413,12 +414,15 @@ pub fn skill_attempt_ready(
 
 impl SkillAttemptGuard {
     pub fn ready(&self, now: Instant) -> bool {
-        self.last_sent
-            .is_none_or(|sent| now.saturating_duration_since(sent) >= MIN_ATTEMPT_GAP)
-            && self.retry_after.is_none_or(|at| now >= at)
+        self.next_cast_at.is_none_or(|at| now >= at) && self.retry_after.is_none_or(|at| now >= at)
     }
-    pub fn mark(&mut self, sent_at: Instant) {
-        self.last_sent = Some(sent_at);
+    pub fn mark(&mut self, skill: SkillId, sent_at: Instant) {
+        let gap = if skill == SkillId::Convocation {
+            CONVOCATION_RECAST_GAP
+        } else {
+            MIN_ATTEMPT_GAP
+        };
+        self.next_cast_at = Some(sent_at + gap);
         self.retry_after = None;
     }
     pub fn defer(&mut self, now: Instant) {
@@ -580,7 +584,7 @@ mod tests {
             {
                 sent.push(rule.id);
                 let mut attempt = SkillAttemptGuard::default();
-                attempt.mark(now);
+                attempt.mark(rule.id, now);
                 attempts.insert(rule.id, attempt);
             }
         }
@@ -1003,7 +1007,7 @@ mod tests {
         };
         let mut guard = SkillAttemptGuard::default();
         let start = Instant::now();
-        guard.mark(start); // Key dispatched, but the game interrupted the cast.
+        guard.mark(rule.id, start); // Key dispatched, but the game interrupted the cast.
         assert!(!guard.ready(start + Duration::from_millis(999)));
         assert!(guard.ready(start + Duration::from_secs(1)));
         assert_eq!(
@@ -1016,7 +1020,7 @@ mod tests {
             ),
             RuleDecision::Eligible
         );
-        guard.mark(start + Duration::from_secs(1));
+        guard.mark(rule.id, start + Duration::from_secs(1));
         assert!(!guard.ready(start + Duration::from_millis(1500)));
         assert!(guard.ready(start + Duration::from_secs(2)));
     }
@@ -1058,7 +1062,7 @@ mod tests {
         let mut guard = SkillAttemptGuard::default();
         let at = Instant::now();
         assert!(guard.ready(at));
-        guard.mark(at);
+        guard.mark(SkillId::BloodRage, at);
         assert!(!guard.ready(at + Duration::from_millis(100)));
         assert!(guard.ready(at + Duration::from_secs(1)));
         guard.defer(at + Duration::from_secs(1));
@@ -1193,7 +1197,7 @@ mod tests {
         ] {
             let mut attempts = BTreeMap::new();
             let mut guard = SkillAttemptGuard::default();
-            guard.mark(at);
+            guard.mark(sent, at);
             attempts.insert(sent, guard);
             for skill in [
                 SkillId::MoltenShell,
@@ -1295,7 +1299,7 @@ mod tests {
     }
 
     #[test]
-    fn convocation_uses_readiness_without_extra_life_proximity_or_buff_gates() {
+    fn convocation_requires_three_seconds_and_game_readiness() {
         let mut config = Poe1SkillsConfig::default();
         assert!(!config.convocation.enabled);
         config.convocation.enabled = true;
@@ -1314,9 +1318,21 @@ mod tests {
         assert!(observations_allow(&rule, state, &effects));
         let at = Instant::now();
         let mut guard = SkillAttemptGuard::default();
-        guard.mark(at);
-        assert!(!guard.ready(at + Duration::from_millis(100)));
-        assert!(guard.ready(at + Duration::from_secs(1)));
+        let mut attempts = BTreeMap::new();
+        assert!(skill_attempt_ready(&attempts, rule.id, at));
+        guard.mark(rule.id, at);
+        attempts.insert(rule.id, guard);
+        assert!(!skill_attempt_ready(
+            &attempts,
+            rule.id,
+            at + Duration::from_millis(2999)
+        ));
+        assert!(skill_attempt_ready(
+            &attempts,
+            rule.id,
+            at + Duration::from_secs(3)
+        ));
+        assert!(skill_attempt_ready(&attempts, SkillId::BloodRage, at));
         assert_eq!(
             evaluate(
                 &rule,
@@ -1327,8 +1343,6 @@ mod tests {
             ),
             RuleDecision::SkillNotUsable
         );
-        // A cooldown that recovers early through gear can allow the next use;
-        // the preset does not wait for a hard-coded three-second timer.
         assert_eq!(
             evaluate(&rule, state, &effects, None, Some(SkillReadiness::Usable)),
             RuleDecision::Eligible

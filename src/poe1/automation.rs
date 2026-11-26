@@ -75,7 +75,10 @@ impl Policy {
     }
 
     fn mark_skill(&mut self, skill: SkillId, sent_at: Instant) {
-        self.skill_attempts.entry(skill).or_default().mark(sent_at);
+        self.skill_attempts
+            .entry(skill)
+            .or_default()
+            .mark(skill, sent_at);
     }
 
     fn defer_skill(&mut self, skill: SkillId, started: Instant) {
@@ -111,7 +114,9 @@ impl GameAutomationPolicy for Policy {
                 self.run_tracker.reset();
                 self.rotation.reset();
                 self.activation_guard.reset();
-                self.skill_attempts.clear();
+                // Profile edits must not shorten Convocation's recast interval.
+                self.skill_attempts
+                    .retain(|skill, _| *skill == SkillId::Convocation);
                 println!("PoE1 config reloaded:\n{}", config.poe1_summary());
                 warn_key_conflicts(&self.skill_rules, self.bindings.current());
             }
