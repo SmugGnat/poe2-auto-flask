@@ -593,6 +593,32 @@ mod tests {
     }
 
     #[test]
+    fn focus_supports_life_or_shield_only_and_validates_the_enabled_rule() {
+        let parse = |settings: &str| {
+            Config::parse(
+                Path::new("test.toml"),
+                &format!("[poe1.skills.focus]\n{settings}"),
+            )
+        };
+        assert!(!Config::default().poe1.skills.focus.enabled);
+        let life = parse("enabled = true\nthreshold_percent = 80").unwrap();
+        assert_eq!(life.poe1.skills.focus.shield_threshold_percent, 0);
+        let shield = parse("enabled = true\nthreshold_percent = 0\nshield_threshold_percent = 80\nkey = \"Ctrl+G\"").unwrap();
+        assert!(shield
+            .poe1_summary()
+            .contains("Focus [Ctrl+G, Shield <=80%]"));
+        assert_eq!(
+            Config::parse(Path::new("test.toml"), &toml::to_string(&shield).unwrap()).unwrap(),
+            shield
+        );
+        assert!(
+            parse("enabled = true\nthreshold_percent = 0\nshield_threshold_percent = 0").is_err()
+        );
+        assert!(parse("threshold_percent = 100").is_err());
+        assert!(parse("shield_threshold_percent = 100").is_err());
+    }
+
+    #[test]
     fn new_skills_share_existing_key_conflict_validation() {
         let path = Path::new("test.toml");
         for added in [
@@ -600,6 +626,7 @@ mod tests {
             "bladefall_of_trarthus",
             "convocation",
             "immortal_call",
+            "focus",
         ] {
             for other in [
                 "molten_shell",
@@ -609,6 +636,7 @@ mod tests {
                 "bladefall_of_trarthus",
                 "convocation",
                 "immortal_call",
+                "focus",
             ] {
                 if added == other {
                     continue;

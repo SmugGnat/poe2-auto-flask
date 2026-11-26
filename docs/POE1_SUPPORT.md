@@ -172,6 +172,11 @@ Flask-key conflicts are warned on configuration/binding changes.
 - **Convocation:** uses the configured key whenever the game reports the skill
   usable and off cooldown. Only Enable and Keybind are configurable; the usual
   automation safety checks and skill attempt guard still apply.
+- **Focus:** uses the gear-granted skill when Life or Energy Shield is at or
+  below its configured threshold, the Focused buff is absent, and the game
+  reports the skill ready. Both thresholds accept 0–99% and 0 disables that
+  condition. At least one must be above 0% when enabled. Characters without
+  an Energy Shield pool ignore that condition.
 - **Immortal Call:** maximum-Life or optional maximum-Shield threshold and
   validated skill readiness. The game controls Endurance Charge consumption;
   no minimum charge count is required by the preset.
@@ -217,8 +222,8 @@ absent; a confirmed active offering buff blocks another attempt.
 ## Diagnostics, validation and limitations
 
 ```sh
-./poe2-auto-flask-x86_64.AppImage --game poe1 --debug
-./poe2-auto-flask-x86_64.AppImage --game poe1 --debug --nearby
+./poe-auto-flask.AppImage --game poe1 --debug
+./poe-auto-flask.AppImage --game poe1 --debug --nearby
 ```
 
 Both modes are read-only and send no automation input. The second reports

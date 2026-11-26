@@ -392,11 +392,11 @@ fn files_match(left: &Path, right: &Path) -> io::Result<bool> {
 }
 
 fn print_help() {
-    println!("poe2-auto-flask Linux launcher");
+    println!("PoE Auto Flask for Linux");
     println!();
     println!("Usage:");
     println!(
-        "  poe2-auto-flask-linux-launcher [--auto | --debug] [--game poe1|poe2] [--nearby] [--helper PATH]"
+        "  poe-auto-flask.AppImage [--auto | --debug] [--game poe1|poe2] [--nearby] [--helper PATH]"
     );
     println!();
     println!("The selected Path of Exile game must already be running through Steam Proton.");

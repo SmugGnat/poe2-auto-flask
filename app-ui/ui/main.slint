@@ -929,6 +929,18 @@ component MenuOption inherits Rectangle {
     }
 }
 
+export struct DetectedSkills {
+    known: bool,
+    bladefall: bool,
+    blood-rage: bool,
+    convocation: bool,
+    focus: bool,
+    immortal-call: bool,
+    molten-shell: bool,
+    spirit-offering: bool,
+    steelskin: bool,
+}
+
 export component AppWindow inherits Window {
     title: "Auto Flask";
     icon: @image-url("icon.png");
@@ -976,6 +988,27 @@ export component AppWindow inherits Window {
     in-out property <bool> profile-reset-open: false;
     in-out property <string> status-line: "";
     in-out property <bool> dirty-settings: false;
+    in property <DetectedSkills> detected-skills;
+    private property <DetectedSkills> retained-skills;
+    private property <DetectedSkills> displayed-skills:
+        root.dirty-settings ? root.retained-skills : root.detected-skills;
+    in-out property <bool> show-all-skills: false;
+    private property <bool> skill-detection-active:
+        root.page == 1 && root.game-index == 0 && root.presentation-active;
+    private property <bool> show-skill-catalog:
+        root.show-all-skills || !root.displayed-skills.known;
+    callback skill-detection-changed(bool);
+    changed skill-detection-active => {
+        root.skill-detection-changed(root.skill-detection-active);
+    }
+    // Keep the displayed list stable during edits. The latest detection
+    // result takes effect as soon as the profile is saved or discarded.
+    changed detected-skills => {
+        if (!root.dirty-settings) { root.retained-skills = root.detected-skills; }
+    }
+    changed dirty-settings => {
+        if (!root.dirty-settings) { root.retained-skills = root.detected-skills; }
+    }
     in-out property <string> error-line: "";
     in-out property <bool> hide-on-close: true;
     in property <string> app-version;
@@ -1035,6 +1068,10 @@ export component AppWindow inherits Window {
     in-out property <string> bladefall-key: "F";
     in-out property <bool> convocation-enabled: false;
     in-out property <string> convocation-key: "W";
+    in-out property <bool> focus-enabled: false;
+    in-out property <string> focus-key: "G";
+    in-out property <string> focus-life: "95";
+    in-out property <string> focus-shield: "0";
     in-out property <bool> blood-enabled: false;
     in-out property <string> blood-key: "T";
     in-out property <string> blood-life: "80";
@@ -1053,6 +1090,7 @@ export component AppWindow inherits Window {
     in-out property <bool> steel-expanded: true;
     in-out property <bool> bladefall-expanded: true;
     in-out property <bool> convocation-expanded: true;
+    in-out property <bool> focus-expanded: true;
     in-out property <bool> immortal-expanded: true;
     callback save-skill-sections();
     changed molten-expanded => { root.save-skill-sections(); }
@@ -1061,6 +1099,7 @@ export component AppWindow inherits Window {
     changed steel-expanded => { root.save-skill-sections(); }
     changed bladefall-expanded => { root.save-skill-sections(); }
     changed convocation-expanded => { root.save-skill-sections(); }
+    changed focus-expanded => { root.save-skill-sections(); }
     changed immortal-expanded => { root.save-skill-sections(); }
 
     callback profile-draft-changed();
@@ -1096,6 +1135,10 @@ export component AppWindow inherits Window {
     changed bladefall-key => { root.profile-draft-changed(); }
     changed convocation-enabled => { root.profile-draft-changed(); }
     changed convocation-key => { root.profile-draft-changed(); }
+    changed focus-enabled => { root.profile-draft-changed(); }
+    changed focus-key => { root.profile-draft-changed(); }
+    changed focus-life => { root.profile-draft-changed(); }
+    changed focus-shield => { root.profile-draft-changed(); }
     changed blood-enabled => { root.profile-draft-changed(); }
     changed blood-key => { root.profile-draft-changed(); }
     changed blood-life => { root.profile-draft-changed(); }
@@ -1663,8 +1706,34 @@ if root.page == 0: VerticalBox {
 if root.page == 1 && root.game-index == 0: VerticalBox {
     horizontal-stretch: 1;
     spacing: 12px;
+    HorizontalLayout {
+        spacing: 12px;
+        alignment: space-between;
+        cross-axis-alignment: center;
+        Text {
+            text: !root.displayed-skills.known ? "Skill detection unavailable" :
+                root.show-all-skills ? "All supported skills" : "Detected skills";
+            color: #a1a2a9;
+            font-size: 12px;
+        }
+        if root.displayed-skills.known: ActionButton {
+            width: 104px;
+            label: root.show-all-skills ? "Show detected" : "Show all";
+            clicked => { root.show-all-skills = !root.show-all-skills; }
+        }
+    }
+    if !root.show-skill-catalog && !root.displayed-skills.bladefall &&
+        !root.displayed-skills.blood-rage && !root.displayed-skills.convocation &&
+        !root.displayed-skills.focus && !root.displayed-skills.immortal-call && !root.displayed-skills.molten-shell &&
+        !root.displayed-skills.spirit-offering && !root.displayed-skills.steelskin: SectionCard {
+        Text {
+            text: "No supported skills detected on this character.";
+            color: #cfd0d5;
+            font-size: 13px;
+        }
+    }
     // Keep skill cards alphabetical by display name.
-    SectionCard {
+    if root.show-skill-catalog || root.displayed-skills.bladefall: SectionCard {
         ToggleRow {
             label: "Bladefall of Trarthus"; strong-label: true; enabled-color: #70ff70;
             checked <=> root.bladefall-enabled;
@@ -1677,7 +1746,7 @@ if root.page == 1 && root.game-index == 0: VerticalBox {
             SkillKeyRow { skill-name: "Bladefall of Trarthus"; value <=> root.bladefall-key; }
         }
     }
-    SectionCard {
+    if root.show-skill-catalog || root.displayed-skills.blood-rage: SectionCard {
         ToggleRow {
             label: "Blood Rage"; strong-label: true; enabled-color: #70ff70;
             checked <=> root.blood-enabled;
@@ -1701,7 +1770,7 @@ if root.page == 1 && root.game-index == 0: VerticalBox {
             }
         }
     }
-    SectionCard {
+    if root.show-skill-catalog || root.displayed-skills.convocation: SectionCard {
         ToggleRow {
             label: "Convocation"; strong-label: true; enabled-color: #ffffff;
             checked <=> root.convocation-enabled;
@@ -1714,7 +1783,30 @@ if root.page == 1 && root.game-index == 0: VerticalBox {
             SkillKeyRow { skill-name: "Convocation"; value <=> root.convocation-key; }
         }
     }
-    SectionCard {
+    if root.show-skill-catalog || root.displayed-skills.focus: SectionCard {
+        ToggleRow {
+            label: "Focus"; strong-label: true; enabled-color: #ffffff;
+            checked <=> root.focus-enabled;
+            collapsible: true; expanded <=> root.focus-expanded;
+            toggled => { if (root.focus-enabled) { root.focus-expanded = true; } }
+        }
+        if root.focus-enabled && root.focus-expanded: VerticalLayout {
+            spacing: 0px;
+            Separator {}
+            SkillKeyRow { skill-name: "Focus"; value <=> root.focus-key; }
+            Separator {}
+            NumberRow {
+                label: "Maximum Life"; value <=> root.focus-life; unit: "%";
+                hint: "0% = Off. Either threshold can trigger Focus.";
+            }
+            Separator {}
+            NumberRow {
+                label: "Maximum Shield"; value <=> root.focus-shield; unit: "%";
+                hint: "0% = Off. Requires an Energy Shield pool.";
+            }
+        }
+    }
+    if root.show-skill-catalog || root.displayed-skills.immortal-call: SectionCard {
         ToggleRow {
             label: "Immortal Call"; strong-label: true; enabled-color: #e05030;
             checked <=> root.immortal-enabled;
@@ -1734,7 +1826,7 @@ if root.page == 1 && root.game-index == 0: VerticalBox {
             }
         }
     }
-    SectionCard {
+    if root.show-skill-catalog || root.displayed-skills.molten-shell: SectionCard {
         ToggleRow {
             label: "Molten Shell"; strong-label: true; enabled-color: #e05030;
             checked <=> root.molten-enabled;
@@ -1754,7 +1846,7 @@ if root.page == 1 && root.game-index == 0: VerticalBox {
             }
         }
     }
-    SectionCard {
+    if root.show-skill-catalog || root.displayed-skills.spirit-offering: SectionCard {
         ToggleRow {
             label: "Spirit Offering"; strong-label: true; enabled-color: #7070ff;
             checked <=> root.offering-enabled;
@@ -1771,7 +1863,7 @@ if root.page == 1 && root.game-index == 0: VerticalBox {
             RadiusRow { value <=> root.offering-radius; }
         }
     }
-    SectionCard {
+    if root.show-skill-catalog || root.displayed-skills.steelskin: SectionCard {
         ToggleRow {
             label: "Steelskin"; strong-label: true; enabled-color: #e05030;
             checked <=> root.steel-enabled;

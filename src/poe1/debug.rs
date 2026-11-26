@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use super::config::Poe1SkillsConfig;
 use super::movement::RUN_ANIMATION_ID;
 use super::skill_rules::{
-    configured_rules, evaluate, BLADEFALL_OF_TRARTHUS_BUFF, BLOOD_RAGE_BUFF, IMMORTAL_CALL_BUFF,
-    MOLTEN_SHELL_BUFF, SPIRIT_OFFERING_BUFF, STEELSKIN_BUFF,
+    configured_rules, evaluate, BLADEFALL_OF_TRARTHUS_BUFF, BLOOD_RAGE_BUFF, FOCUS_BUFF,
+    IMMORTAL_CALL_BUFF, MOLTEN_SHELL_BUFF, SPIRIT_OFFERING_BUFF, STEELSKIN_BUFF,
 };
 use super::skills::SkillId;
 use crate::process::Process;
@@ -167,18 +167,7 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                             .join(", "),
                     );
                     // All preset readiness comes from one shared Actor pass.
-                    let skills = session.poe1_skills(
-                        process,
-                        &[
-                            SkillId::MoltenShell,
-                            SkillId::BloodRage,
-                            SkillId::SpiritOffering,
-                            SkillId::Steelskin,
-                            SkillId::BladefallOfTrarthus,
-                            SkillId::Convocation,
-                            SkillId::ImmortalCall,
-                        ],
-                    );
+                    let skills = session.poe1_skills(process, &SkillId::ALL);
                     let skill = skills
                         .as_ref()
                         .map(|snapshot| snapshot[&SkillId::MoltenShell]);
@@ -196,6 +185,7 @@ pub fn run(process: &Process, mut session: GameSession, nearby_debug: bool) -> i
                         }
                     );
                     for (id, buff) in [
+                        (SkillId::Focus, FOCUS_BUFF),
                         (SkillId::BladefallOfTrarthus, BLADEFALL_OF_TRARTHUS_BUFF),
                         (SkillId::Steelskin, STEELSKIN_BUFF),
                         (SkillId::ImmortalCall, IMMORTAL_CALL_BUFF),

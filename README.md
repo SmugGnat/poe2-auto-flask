@@ -14,7 +14,7 @@ required.
 - Automatic Life and Mana flasks with configurable thresholds in both games.
 - PoE1: five flask slots, 18 opt-in utility types, Writhing Jar, duplicate
   rotation, charge-cost checks and optional movement/proximity conditions.
-- PoE1: opt-in Bladefall of Trarthus, Blood Rage, Convocation, Immortal Call,
+- PoE1: opt-in Bladefall of Trarthus, Blood Rage, Convocation, Focus, Immortal Call,
   Molten Shell, Spirit Offering and Steelskin presets.
 - Profiles, validated settings editing, Save/Discard and manual TOML editing.
 - Sidebar connection/automation state, Life/Mana/Shield, area and PoE1 name.
@@ -27,19 +27,23 @@ it; change the shortcut in **Settings → Enable / Disable Key**. Automation
 pauses when the game loses focus, in towns, while dead or when required game
 state cannot be validated. Hideouts are blocked unless enabled in Settings.
 
-## Version 1.0.3
+## Version 1.0.4
 
-PoE1 Nearby Enemies conditions now exclude hidden Unique enemies, bosses
-frozen during Covens Fate selection, and more encounter objects that cannot
-be fought. Enemies count again when the applicable effect clears. Read-only
-boss diagnostics report changes to Life, effects, and encounter state.
+- The PoE1 Skills page filters presets to those available on the current
+  character. **Show all** opens the full list, and hidden skills retain their
+  saved settings.
+- Focus is available as a PoE1 preset with Life and Shield thresholds.
+- Holding Ctrl pauses automation while pressing shortcuts such as the
+  Awakened PoE Trade price check. Use the automation toggle for longer
+  interactions with an overlay.
+- Fixed an intermittent Windows title bar overlapping the app header.
 
 ## Download and run
 
 Public assets on the [Releases page](https://github.com/SmugGnat/poe2-auto-flask/releases):
 
-- Windows: `poe2-auto-flask-windows-x64.exe`
-- Linux: `poe2-auto-flask-x86_64.AppImage`
+- Windows: `poe-auto-flask.exe`
+- Linux: `poe-auto-flask.AppImage`
 - License notices: `LICENSES.txt`
 
 These instructions describe this source tree's combined UI application;
@@ -59,7 +63,7 @@ An unfamiliar directory prompts for the game in the UI. Multiple matching
 clients are rejected. To select explicitly:
 
 ```text
-poe2-auto-flask-windows-x64.exe --game poe1
+poe-auto-flask.exe --game poe1
 ```
 
 ### Linux / Steam Proton
@@ -67,8 +71,8 @@ poe2-auto-flask-windows-x64.exe --game poe1
 Start the game through Steam, then make the AppImage executable once and run it:
 
 ```sh
-chmod +x poe2-auto-flask-x86_64.AppImage
-./poe2-auto-flask-x86_64.AppImage
+chmod +x poe-auto-flask.AppImage
+./poe-auto-flask.AppImage
 ```
 
 The launcher discovers the running game's Steam AppID, active prefix and
@@ -117,11 +121,11 @@ can also serve as a legacy migration source; it is not a profile document.
 Read-only diagnostics open a console and send no automation input:
 
 ```text
-poe2-auto-flask-windows-x64.exe --debug --game poe1
+poe-auto-flask.exe --debug --game poe1
 ```
 
 ```sh
-./poe2-auto-flask-x86_64.AppImage --debug --game poe1
+./poe-auto-flask.AppImage --debug --game poe1
 ```
 
 PoE1 `--debug --nearby` adds the bounded nearby-monster/corpse census and

@@ -79,8 +79,8 @@ through the native launcher in the selected game's active Proton environment.
 - All three crates inherit Rust 1.100.0 from `rust-toolchain.toml`.
 - Slint and slint-build are pinned together. Keep toolchains and locked builds
   aligned across the backend, UI, Linux launcher and CI.
-- Public assets are `poe2-auto-flask-windows-x64.exe`,
-  `poe2-auto-flask-x86_64.AppImage` and `LICENSES.txt`.
+- Public assets are `poe-auto-flask.exe`, `poe-auto-flask.AppImage` and
+  `LICENSES.txt`.
 - Build and Release use the same packaging scripts. Normal launch opens the
   UI without a console; `--debug` retains read-only console diagnostics.
 - The root Cargo package is the application version source. License collection

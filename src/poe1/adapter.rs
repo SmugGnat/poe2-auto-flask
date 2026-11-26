@@ -88,6 +88,13 @@ impl Adapter {
             .sample_many(process, &self.probe, requested)
     }
 
+    pub(crate) fn present_skills(
+        &mut self,
+        process: &Process,
+    ) -> io::Result<std::collections::BTreeSet<SkillId>> {
+        self.skill_cache.sample_present(process, &self.probe)
+    }
+
     /// Bypass the within-tick cache for a fresh pre-input buff check.
     pub fn verify_effects(&mut self, process: &Process) -> io::Result<EffectsSnapshot> {
         super::buffs::sample(process, &self.probe, &mut self.effect_cache)

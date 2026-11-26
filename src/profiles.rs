@@ -50,6 +50,8 @@ pub struct SkillSections {
     pub steelskin_expanded: bool,
     pub bladefall_of_trarthus_expanded: bool,
     pub convocation_expanded: bool,
+    #[serde(skip_serializing_if = "is_true")]
+    pub focus_expanded: bool,
     pub immortal_call_expanded: bool,
 }
 
@@ -62,6 +64,7 @@ impl Default for SkillSections {
             steelskin_expanded: true,
             bladefall_of_trarthus_expanded: true,
             convocation_expanded: true,
+            focus_expanded: true,
             immortal_call_expanded: true,
         }
     }
@@ -71,6 +74,10 @@ impl SkillSections {
     fn is_default(&self) -> bool {
         *self == Self::default()
     }
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

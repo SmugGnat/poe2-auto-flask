@@ -226,7 +226,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: poe2-auto-flask-windows-x64
+          name: poe-auto-flask-exe
           path: dist/
           if-no-files-found: error
 
@@ -293,7 +293,7 @@ jobs:
       - name: Download Windows application
         uses: actions/download-artifact@v8
         with:
-          name: poe2-auto-flask-windows-x64
+          name: poe-auto-flask-exe
           path: windows-artifact
 
       - name: Download Linux launcher
@@ -306,11 +306,11 @@ jobs:
         run: |
           bash scripts/package-appimage.sh windows-artifact \
             linux-artifact/poe2-auto-flask-linux-launcher \
-            dist/poe2-auto-flask-x86_64.AppImage
+            dist/poe-auto-flask.AppImage
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v7
         with:
-          name: poe2-auto-flask-x86_64-appimage
-          path: dist/poe2-auto-flask-x86_64.AppImage
+          name: poe-auto-flask-appimage
+          path: dist/poe-auto-flask.AppImage
           if-no-files-found: error

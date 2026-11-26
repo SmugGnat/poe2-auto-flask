@@ -99,12 +99,21 @@ impl AutomationKey {
     }
 
     pub fn is_down(self) -> bool {
-        unsafe { (GetAsyncKeyState(i32::from(self.0)) as u16 & 0x8000) != 0 }
+        key_is_down(self.0)
     }
 
     pub fn is_default(&self) -> bool {
         *self == Self::default()
     }
+}
+
+fn key_is_down(vk: u16) -> bool {
+    unsafe { GetAsyncKeyState(i32::from(vk)) < 0 }
+}
+
+/// The Win32 Ctrl state includes either side of the keyboard.
+pub(crate) fn control_is_down() -> bool {
+    key_is_down(VK_CONTROL)
 }
 
 impl TryFrom<String> for AutomationKey {

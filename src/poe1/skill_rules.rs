@@ -19,6 +19,8 @@ pub const STEELSKIN_BUFF: &str = "quick_guard";
 /// Current damage-reduction effect; the older immunity effect is immortal_call.
 pub const IMMORTAL_CALL_BUFF: &str = "mortal_call";
 pub const BLADEFALL_OF_TRARTHUS_BUFF: &str = "righteous_blades";
+/// Focused buff definition in the game data, distinct from the has_focus stat.
+pub const FOCUS_BUFF: &str = "focus";
 /// Verified in the player's PoE1 Buffs snapshot during live Spirit Offering.
 pub const SPIRIT_OFFERING_BUFF: &str = "offering_spirit";
 const MIN_ATTEMPT_GAP: Duration = Duration::from_secs(1);
@@ -118,6 +120,21 @@ pub fn configured_rules(config: &Poe1SkillsConfig) -> io::Result<Vec<SkillRule>>
             id: SkillId::Convocation,
             key: convocation.binding()?,
             conditions: vec![Condition::SkillUsable],
+        });
+    }
+    let focus = &config.focus;
+    if focus.enabled {
+        rules.push(SkillRule {
+            id: SkillId::Focus,
+            key: focus.binding()?,
+            conditions: vec![
+                Condition::LifeOrShieldAtOrBelow {
+                    life: focus.threshold_percent,
+                    shield: focus.shield_threshold_percent,
+                },
+                Condition::BuffAbsent(FOCUS_BUFF),
+                Condition::SkillUsable,
+            ],
         });
     }
     Ok(rules)
@@ -244,7 +261,7 @@ pub fn evaluate(
                 }
             }
             Condition::LifeOrShieldAtOrBelow { life, shield } => {
-                if !(1..=99).contains(&life) || shield > 99 {
+                if life > 99 || shield > 99 || (life == 0 && shield == 0) {
                     return RuleDecision::InvalidVitals;
                 }
                 if guard_trigger(vitals, life, shield).is_none() {
@@ -282,12 +299,14 @@ pub fn evaluate(
     RuleDecision::Eligible
 }
 
-/// Sustained effects and offerings remain active even without a countdown.
+/// These effects block input while their buff entry is present.
 /// Other timed buff rules retain their original duration semantics.
 fn buff_present(effect: &super::buffs::Effect, name: &str) -> bool {
     effect.name == name
-        && (matches!(name, SPIRIT_OFFERING_BUFF | BLADEFALL_OF_TRARTHUS_BUFF)
-            || !effect.time_left.is_finite()
+        && (matches!(
+            name,
+            SPIRIT_OFFERING_BUFF | BLADEFALL_OF_TRARTHUS_BUFF | FOCUS_BUFF
+        ) || !effect.time_left.is_finite()
             || effect.time_left >= 0.0)
 }
 
@@ -299,7 +318,7 @@ enum GuardTrigger {
 
 fn guard_trigger(vitals: LiveVitals, life: u8, shield: u8) -> Option<GuardTrigger> {
     let health = vitals.health;
-    if !(1..=99).contains(&life)
+    if life > 99
         || shield > 99
         || !health.looks_valid()
         || health.current <= 0
@@ -1204,6 +1223,75 @@ mod tests {
             attempts.clear();
             assert!(skill_attempt_ready(&attempts, sent, at));
         }
+    }
+
+    #[test]
+    fn focus_uses_either_threshold_and_requires_fresh_readiness_and_no_buff() {
+        let mut config = Poe1SkillsConfig::default();
+        config.focus.enabled = true;
+        config.focus.threshold_percent = 80;
+        config.focus.shield_threshold_percent = 90;
+        let rule = configured_rules(&config).unwrap().pop().unwrap();
+        assert_eq!(rule.id, SkillId::Focus);
+        assert!(!rule.id.is_guard());
+        let ready = Some(SkillReadiness::Usable);
+        for state in [
+            vitals(80),
+            shield_vitals(100, 90, 100),
+            shield_vitals(80, 90, 100),
+        ] {
+            assert!(preconditions_met(&rule, state));
+            assert_eq!(
+                evaluate(&rule, state, &empty(), None, ready),
+                RuleDecision::Eligible
+            );
+        }
+        let state = shield_vitals(100, 90, 100);
+        let mut active = empty();
+        active.effects.push(Effect {
+            name: FOCUS_BUFF.into(),
+            flask_slot: None,
+            buff_type: 2,
+            time_left: 3.0,
+        });
+        assert!(!observations_allow(&rule, state, &active));
+        assert_eq!(
+            evaluate(&rule, state, &active, None, ready),
+            RuleDecision::AlreadyActive
+        );
+        assert_eq!(
+            evaluate(
+                &rule,
+                state,
+                &empty(),
+                None,
+                Some(SkillReadiness::NotUsable)
+            ),
+            RuleDecision::SkillNotUsable
+        );
+        assert_eq!(
+            evaluate(&rule, state, &empty(), None, Some(SkillReadiness::NotFound)),
+            RuleDecision::SkillUnavailable
+        );
+
+        config.focus.threshold_percent = 0;
+        let shield_only = configured_rules(&config).unwrap().pop().unwrap();
+        assert!(preconditions_met(&shield_only, state));
+        assert!(!preconditions_met(&shield_only, vitals(5)));
+        assert_eq!(
+            evaluate(&shield_only, state, &empty(), None, ready),
+            RuleDecision::Eligible
+        );
+        assert_eq!(
+            evaluate(
+                &shield_only,
+                shield_vitals(5, 91, 100),
+                &empty(),
+                None,
+                ready
+            ),
+            RuleDecision::GuardThresholdsNotMet
+        );
     }
 
     #[test]

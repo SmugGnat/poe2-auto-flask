@@ -1,5 +1,6 @@
 //! The UI owns the lifetime of a single Rust automation thread.
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::io;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,16 +10,41 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use poe2_auto_flask::backend;
+use poe2_auto_flask::poe1::skills::SkillId;
 use poe2_auto_flask::runtime::{BackendCommand, BackendControl, BackendStatus, Connection};
 use poe2_auto_flask::telemetry::{Pool, Reader, Snapshot};
 use slint::ComponentHandle;
 
-use crate::{AppWindow, Editor};
+use crate::{AppWindow, DetectedSkills, Editor};
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+struct SkillRequest {
+    active: bool,
+    revision: u64,
+}
 
 #[derive(Clone, Default)]
 struct DisplayState {
     backend: Option<BackendStatus>,
     telemetry: Option<Snapshot>,
+    skill_request: SkillRequest,
+}
+
+fn detected_skills(present: Option<&BTreeSet<SkillId>>) -> DetectedSkills {
+    let Some(present) = present else {
+        return DetectedSkills::default();
+    };
+    DetectedSkills {
+        known: true,
+        bladefall: present.contains(&SkillId::BladefallOfTrarthus),
+        blood_rage: present.contains(&SkillId::BloodRage),
+        convocation: present.contains(&SkillId::Convocation),
+        focus: present.contains(&SkillId::Focus),
+        immortal_call: present.contains(&SkillId::ImmortalCall),
+        molten_shell: present.contains(&SkillId::MoltenShell),
+        spirit_offering: present.contains(&SkillId::SpiritOffering),
+        steelskin: present.contains(&SkillId::Steelskin),
+    }
 }
 
 fn pool_text(pool: Option<Pool>) -> slint::SharedString {
@@ -83,6 +109,25 @@ impl BackendHost {
             }
             let _ = wake.try_send(BackendCommand::RequestStatus);
         });
+        let skill_state = latest.clone();
+        let skill_wake = commands.clone();
+        let skill_ui = window.as_weak();
+        window.on_skill_detection_changed(move |active| {
+            {
+                let mut state = skill_state.lock().unwrap();
+                state.skill_request.active = active;
+                state.skill_request.revision = state.skill_request.revision.wrapping_add(1);
+                if let Some(sample) = &mut state.telemetry {
+                    sample.present_skills = None;
+                }
+            }
+            if active {
+                if let Some(ui) = skill_ui.upgrade() {
+                    ui.set_detected_skills(DetectedSkills::default());
+                }
+                let _ = skill_wake.try_send(BackendCommand::RequestStatus);
+            }
+        });
         let state = latest.clone();
         let ui_editor = editor.clone();
         let ui_weak = window.as_weak();
@@ -99,6 +144,9 @@ impl BackendHost {
                 editor.update_backend_state(&ui);
                 drop(editor);
                 let sample = state.telemetry.as_ref();
+                ui.set_detected_skills(detected_skills(
+                    sample.and_then(|s| s.present_skills.as_ref()),
+                ));
                 ui.set_live_life(pool_text(sample.map(|s| s.life)));
                 ui.set_live_mana(pool_text(sample.and_then(|s| s.mana)));
                 ui.set_live_shield(pool_text(sample.and_then(|s| s.shield)));
@@ -139,6 +187,7 @@ impl BackendHost {
                     let mut reader = None;
                     let mut target = None;
                     let mut next_sample = Instant::now();
+                    let mut last_skill_request = SkillRequest::default();
                     loop {
                         let active = visible.load(Ordering::Acquire);
                         let sample_due = active && target.is_some();
@@ -174,12 +223,21 @@ impl BackendHost {
                         }
                         // This bridge owns its own read-only session. The automation
                         // thread never waits for a presentation read or render.
+                        let skill_request = latest.lock().unwrap().skill_request;
+                        if skill_request != last_skill_request {
+                            last_skill_request = skill_request;
+                            if skill_request.active {
+                                next_sample = Instant::now();
+                            }
+                        }
                         if visible.load(Ordering::Acquire) && Instant::now() >= next_sample {
                             if let Some((game, pid)) = target {
                                 if reader.is_none() {
                                     reader = Reader::open(game, pid).ok();
                                 }
-                                let sample = reader.as_mut().and_then(|r| r.sample().ok());
+                                let mut sample = reader
+                                    .as_mut()
+                                    .and_then(|r| r.sample(skill_request.active).ok());
                                 let retry = if sample.is_some() {
                                     500
                                 } else if reader.is_some() {
@@ -189,6 +247,13 @@ impl BackendHost {
                                 };
                                 next_sample = Instant::now() + Duration::from_millis(retry);
                                 let mut display = latest.lock().unwrap();
+                                // A scan started before leaving or reopening Skills
+                                // cannot supply the result for the new view.
+                                if skill_request != display.skill_request {
+                                    if let Some(sample) = &mut sample {
+                                        sample.present_skills = None;
+                                    }
+                                }
                                 let sample = if visible.load(Ordering::Acquire) {
                                     sample
                                 } else {

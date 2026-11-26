@@ -1,9 +1,11 @@
 //! Presentation-only reads, using independent handles and the validated adapters.
 //! This module never participates in automation decisions or sends input.
+use std::collections::BTreeSet;
 use std::io;
 
 use crate::game::Game;
 use crate::game_state::VitalPool;
+use crate::poe1::skills::SkillId;
 use crate::process::Process;
 use crate::session::GameSession;
 
@@ -29,6 +31,7 @@ pub struct Snapshot {
     pub shield: Option<Pool>,
     pub area: String,
     pub character_name: Option<String>,
+    pub present_skills: Option<BTreeSet<SkillId>>,
 }
 
 pub struct Reader {
@@ -49,7 +52,7 @@ impl Reader {
         })
     }
 
-    pub fn sample(&mut self) -> io::Result<Snapshot> {
+    pub fn sample(&mut self, detect_skills: bool) -> io::Result<Snapshot> {
         // Refresh the presentation session independently after area/player
         // changes. A failed read clears the UI; it cannot affect automation.
         self.session.refresh(&self.process)?;
@@ -69,6 +72,11 @@ impl Reader {
             shield: display_shield(self.game, vitals.energy_shield),
             area,
             character_name: self.session.poe1_character_name(&self.process).ok(),
+            present_skills: if detect_skills && self.game == Game::Poe1 {
+                self.session.poe1_present_skills(&self.process).ok()
+            } else {
+                None
+            },
         })
     }
 }

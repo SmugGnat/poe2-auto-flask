@@ -491,6 +491,7 @@ impl Editor {
         ui.set_steel_expanded(sections.steelskin_expanded);
         ui.set_bladefall_expanded(sections.bladefall_of_trarthus_expanded);
         ui.set_convocation_expanded(sections.convocation_expanded);
+        ui.set_focus_expanded(sections.focus_expanded);
         ui.set_immortal_expanded(sections.immortal_call_expanded);
         ui.set_quicksilver_ms((c.poe1.quicksilver_min_run_ms as i32).to_string().into());
         ui.set_writhing_enabled(c.poe1.unique.writhing_jar);
@@ -525,6 +526,11 @@ impl Editor {
         let convocation = &c.poe1.skills.convocation;
         ui.set_convocation_enabled(convocation.enabled);
         ui.set_convocation_key(convocation.key.as_str().into());
+        let focus = &c.poe1.skills.focus;
+        ui.set_focus_enabled(focus.enabled);
+        ui.set_focus_key(focus.key.as_str().into());
+        ui.set_focus_life(focus.threshold_percent.to_string().into());
+        ui.set_focus_shield(focus.shield_threshold_percent.to_string().into());
         let blood = &c.poe1.skills.blood_rage;
         ui.set_blood_enabled(blood.enabled);
         ui.set_blood_key(blood.key.as_str().into());
@@ -668,6 +674,16 @@ impl Editor {
             convocation.enabled = ui.get_convocation_enabled();
             if convocation.enabled {
                 update_skill_key(&mut convocation.key, &ui.get_convocation_key());
+            }
+
+            let focus = &mut c.poe1.skills.focus;
+            focus.enabled = ui.get_focus_enabled();
+            if focus.enabled {
+                update_skill_key(&mut focus.key, &ui.get_focus_key());
+                focus.threshold_percent =
+                    parse_integer(&ui.get_focus_life(), "Focus Life", 0, 99)? as u8;
+                focus.shield_threshold_percent =
+                    parse_integer(&ui.get_focus_shield(), "Focus Shield", 0, 99)? as u8;
             }
 
             let blood = &mut c.poe1.skills.blood_rage;
@@ -1163,6 +1179,7 @@ fn bind_profile_editor(window: &AppWindow, editor: &Rc<RefCell<Editor>>) {
                     steelskin_expanded: ui.get_steel_expanded(),
                     bladefall_of_trarthus_expanded: ui.get_bladefall_expanded(),
                     convocation_expanded: ui.get_convocation_expanded(),
+                    focus_expanded: ui.get_focus_expanded(),
                     immortal_call_expanded: ui.get_immortal_expanded(),
                 };
                 if editor.store.settings().ui.skills == sections {
@@ -1793,7 +1810,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 restore_window_geometry(&ui, saved_geometry);
                 #[cfg(windows)]
                 {
-                    desktop::prepare_background(ui.window())?;
+                    desktop::prepare_window(ui.window())?;
                     round_window_corners(ui.window(), &Cell::new(None));
                     ui.show()?;
                 }
@@ -2082,6 +2099,134 @@ mod tests {
     }
 
     #[test]
+    fn detected_skills_filter_keeps_hidden_settings_and_preserves_an_open_draft() {
+        use i_slint_backend_testing::ElementHandle;
+        use slint::platform::PointerEventButton;
+
+        let _slint = init_slint_test();
+        let path = env::temp_dir().join(format!("auto-flask-skill-filter-{}", std::process::id()));
+        let mut state = Editor::open(path.clone(), &path.join("missing.toml")).unwrap();
+        let mut config = state.saved_config.clone();
+        config.poe1.skills.molten_shell.enabled = true;
+        config.poe1.skills.molten_shell.shield_threshold_percent = 75;
+        config.poe1.skills.blood_rage.enabled = true;
+        state
+            .store
+            .save_profile(state.game, &state.edit.info.id, config.clone())
+            .unwrap();
+        state.reload_selected().unwrap();
+        let ui = AppWindow::new().unwrap();
+        state.update_ui(&ui);
+        let editor = Rc::new(RefCell::new(state));
+        bind_profile_editor(&ui, &editor);
+        let demand = Rc::new(std::cell::Cell::new(false));
+        let observed_demand = demand.clone();
+        ui.on_skill_detection_changed(move |active| observed_demand.set(active));
+        ui.window().set_size(PhysicalSize::new(780, 1600));
+        ui.set_page(1);
+        ui.show().unwrap();
+        let has = |label: &str| {
+            ElementHandle::find_by_accessible_label(&ui, label)
+                .next()
+                .is_some()
+        };
+        let flush = || i_slint_backend_testing::mock_elapsed_time(Duration::ZERO);
+        let found = DetectedSkills {
+            known: true,
+            molten_shell: true,
+            focus: true,
+            ..Default::default()
+        };
+        let empty = DetectedSkills {
+            known: true,
+            ..Default::default()
+        };
+
+        flush();
+        assert!(demand.get(), "Entering Skills starts detection");
+        ui.set_presentation_active(false);
+        flush();
+        assert!(!demand.get(), "Hiding the window stops detection");
+        ui.set_presentation_active(true);
+        flush();
+        assert!(demand.get(), "Restoring Skills starts detection again");
+        assert!(
+            has("Blood Rage enabled"),
+            "Offline editing shows the catalog"
+        );
+        ui.set_detected_skills(found.clone());
+        flush();
+        assert!(!has("Blood Rage enabled"));
+        assert!(has("Molten Shell enabled"));
+        assert!(has("Focus enabled"), "Disabled presets can be detected");
+        assert!(!ui.get_dirty_settings());
+        assert_eq!(editor.borrow().snapshot(&ui).unwrap(), config);
+
+        ui.set_molten_shield("85".into());
+        flush();
+        assert!(ui.get_dirty_settings());
+        ui.set_detected_skills(empty.clone());
+        flush();
+        assert!(
+            has("Molten Shell keybind"),
+            "Keep the card visible while editing"
+        );
+        ui.invoke_save_settings();
+        flush();
+        assert!(!has("Molten Shell enabled"));
+        assert!(!has("Focus enabled"));
+        assert!(!ui.get_dirty_settings());
+
+        ElementHandle::find_by_accessible_label(&ui, "Show all")
+            .next()
+            .unwrap()
+            .mock_single_click(PointerEventButton::Left);
+        flush();
+        assert!(has("Blood Rage enabled"));
+        assert!(ui.get_blood_enabled());
+        assert_eq!(ui.get_molten_shield().as_str(), "85");
+        ElementHandle::find_by_accessible_label(&ui, "Show detected")
+            .next()
+            .unwrap()
+            .mock_single_click(PointerEventButton::Left);
+        flush();
+        assert!(!has("Blood Rage enabled"));
+        ui.set_detected_skills(found);
+        flush();
+        assert!(has("Molten Shell keybind"));
+        assert_eq!(ui.get_molten_shield().as_str(), "85");
+
+        ui.set_molten_shield("96".into());
+        flush();
+        ui.set_detected_skills(empty);
+        flush();
+        ui.invoke_discard_settings();
+        flush();
+        assert!(!ui.get_dirty_settings(), "Discard finishes the edit");
+        assert_eq!(ui.get_molten_shield().as_str(), "85");
+        assert!(!has("Molten Shell enabled"));
+        ui.set_detected_skills(DetectedSkills::default());
+        flush();
+        assert!(
+            has("Molten Shell enabled"),
+            "Detection failure shows the catalog (known: {}, Show all button: {}, Blood Rage: {}, size: {:?})",
+            ui.get_detected_skills().known,
+            has("Show all"),
+            has("Blood Rage enabled"),
+            ui.window().size(),
+        );
+        assert!(ui.get_molten_enabled());
+        assert!(ui.get_molten_expanded());
+        assert!(
+            has("Molten Shell keybind"),
+            "Read failure returns to the catalog"
+        );
+        assert_eq!(ui.get_molten_shield().as_str(), "85");
+        ui.hide().unwrap();
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
     fn folding_skills_preserves_enabled_rules_and_unsaved_keybinds() {
         use i_slint_backend_testing::ElementHandle;
         use slint::platform::PointerEventButton;
@@ -2103,6 +2248,7 @@ mod tests {
         config.poe1.skills.steelskin.enabled = true;
         config.poe1.skills.bladefall_of_trarthus.enabled = true;
         config.poe1.skills.convocation.enabled = true;
+        config.poe1.skills.focus.enabled = true;
         config.poe1.skills.immortal_call.enabled = true;
         state
             .store
@@ -2134,6 +2280,7 @@ mod tests {
             "Bladefall of Trarthus",
             "Blood Rage",
             "Convocation",
+            "Focus",
             "Immortal Call",
             "Molten Shell",
             "Spirit Offering",
@@ -2168,9 +2315,14 @@ mod tests {
                 0 => ui.set_bladefall_key("Ctrl+F".into()),
                 1 => ui.set_blood_key("Shift+T".into()),
                 2 => ui.set_convocation_key("Alt+W".into()),
-                3 => ui.set_immortal_key("Shift+D".into()),
-                4 => ui.set_molten_key("Ctrl+Q".into()),
-                5 => ui.set_offering_key("Alt+E".into()),
+                3 => {
+                    ui.set_focus_key("Ctrl+G".into());
+                    ui.set_focus_life("0".into());
+                    ui.set_focus_shield("75".into());
+                }
+                4 => ui.set_immortal_key("Shift+D".into()),
+                5 => ui.set_molten_key("Ctrl+Q".into()),
+                6 => ui.set_offering_key("Alt+E".into()),
                 _ => ui.set_steel_key("Ctrl+R".into()),
             }
             i_slint_backend_testing::mock_elapsed_time(Duration::ZERO);
@@ -2191,9 +2343,10 @@ mod tests {
                 0 => skills.bladefall_of_trarthus.enabled,
                 1 => skills.blood_rage.enabled,
                 2 => skills.convocation.enabled,
-                3 => skills.immortal_call.enabled,
-                4 => skills.molten_shell.enabled,
-                5 => skills.spirit_offering.enabled,
+                3 => skills.focus.enabled,
+                4 => skills.immortal_call.enabled,
+                5 => skills.molten_shell.enabled,
+                6 => skills.spirit_offering.enabled,
                 _ => skills.steelskin.enabled,
             });
             assert!(!has_keybind(name));

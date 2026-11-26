@@ -243,13 +243,13 @@ jobs:
         run: |
           bash scripts/package-appimage.sh windows-artifact \
             linux-artifact/poe2-auto-flask-linux-launcher \
-            dist/poe2-auto-flask-x86_64.AppImage
+            dist/poe-auto-flask.AppImage
 
       - name: Upload Linux release asset
         uses: actions/upload-artifact@v7
         with:
           name: release-linux-appimage
-          path: dist/poe2-auto-flask-x86_64.AppImage
+          path: dist/poe-auto-flask.AppImage
           if-no-files-found: error
 
   publish:
@@ -357,8 +357,8 @@ jobs:
           set -euo pipefail
 
           assets=(
-            release-dist/poe2-auto-flask-windows-x64.exe
-            release-dist/poe2-auto-flask-x86_64.AppImage
+            release-dist/poe-auto-flask.exe
+            release-dist/poe-auto-flask.AppImage
             release-dist/LICENSES.txt
           )
 

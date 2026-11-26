@@ -36,7 +36,7 @@ icon is used by the sidebar, tray, Windows executable and AppImage.
 
 - **Flasks:** Life/Mana recovery, PoE1 utility selection and Writhing Jar.
 - **Skills:** alphabetical PoE1 presets for Bladefall of Trarthus, Blood Rage,
-  Convocation, Immortal Call, Molten Shell, Spirit Offering and Steelskin.
+  Convocation, Focus, Immortal Call, Molten Shell, Spirit Offering and Steelskin.
 - **Profiles:** creation at the top, active selection and Rename / Duplicate /
   Reset / Delete menus. Reset confirms inline and restores backend defaults.
   The last profile for each game is protected.
@@ -50,11 +50,24 @@ its draft. The toggle stays independent; enabling a skill opens its options.
 Fold state saves immediately under `[ui.skills]` in `settings.toml`, so it
 survives restarts without changing the automation profile or its dirty state.
 
+Skills defaults to the supported presets detected on the current PoE1
+character, including skills on cooldown and presets with automation off.
+Use **Show all** to edit a preset the character does not currently have.
+The full catalog is also available when detection is unavailable. Detection
+runs on the existing read-only telemetry poll while the Skills page is
+visible. The displayed list stays in place during unsaved edits and refreshes
+after Save or Discard. Removing a skill from the character preserves its
+profile settings and fold state. Match each preset's keybind to the game.
+
 Immortal Call, Molten Shell and Steelskin offer Maximum Life and Maximum
 Shield percentages. Either can trigger the skill, with Life taking priority.
 Shield defaults to 0% (off) and is ignored if the character has no Shield pool.
 Hover its label for guidance. Existing Guard effect, cooldown and shared
 attempt checks apply to both triggers.
+
+Focus appears when the character has the gear-granted skill. Either its Life
+or Shield threshold can trigger it. Set either threshold to 0% to turn that
+condition off. At least one threshold is required when Focus is enabled.
 
 Profile changes appear in a **Save / Discard** footer on every page. Invalid
 or unsaved drafts block profile switching. Selecting another utility first
@@ -166,6 +179,8 @@ prepared while the HWND is hidden. This avoids exposing the default backing
 surface before Slint's first visible frame. Rounded regions do not request
 a separate synchronous native repaint. Win32 regions provide rounded corners
 under Proton without requesting a transparent alpha surface.
+On native Windows the main window clears the Win32 caption style so the
+system title bar cannot paint over Slint's custom header.
 Activation invalidates the full client area once. A Wine-only stacking
 workaround adjusts our UI beneath the backend-selected foreground fullscreen
 game without activating either window; it does not change the game's window.
@@ -198,8 +213,8 @@ Slint regression tests. Release builds omit that test metadata.
 
 The local Windows executable is
 `app-ui/target/x86_64-pc-windows-msvc/release/poe2-auto-flask-ui.exe`.
-Build and Release rename it to `poe2-auto-flask-windows-x64.exe`; the AppImage
-bundles the same executable as `usr/lib/poe2-auto-flask/poe2-auto-flask.exe`.
+Build and Release package it as `poe-auto-flask.exe`. The
+`poe-auto-flask.AppImage` bundles the same executable.
 The launcher maintains a host-side copy and uses `proton runinprefix`.
 Desktop launch has `Terminal=false`; only explicit `--debug` opens a terminal.
 

@@ -139,4 +139,12 @@ key = "F"
 enabled = false
 key = "W"
 
+# Use gear-granted Focus when either threshold is met and the skill is ready.
+# 0 disables the corresponding condition. At least one must be active when enabled.
+[poe1.skills.focus]
+enabled = false
+key = "G"
+threshold_percent = 95
+shield_threshold_percent = 0
+
 # PoE2 uses two slots and 100 ms polling. F11 is the default automation key.

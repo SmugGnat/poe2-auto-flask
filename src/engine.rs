@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use crate::config::{Config, ConfigManager, ConfigReload};
 use crate::diagnostics::FailureMonitor;
-use crate::input::{is_process_foreground, AutomationKey};
+use crate::input::{control_is_down, is_process_foreground, AutomationKey};
 use crate::process::Process;
 use crate::session::GameSession;
 
@@ -18,6 +18,7 @@ const CONFIG_RELOAD: Duration = Duration::from_secs(1);
 const BINDING_RELOAD: Duration = Duration::from_secs(2);
 const PROCESS_CHECK: Duration = Duration::from_secs(1);
 const REFRESH_RETRY: Duration = Duration::from_millis(250);
+const CONTROL_RELEASE_DELAY: Duration = Duration::from_millis(300);
 
 /// Outcome of one game-policy decision tick. Parsing and deciding are kept
 /// outside the engine. Only the policy may authorize a key press.
@@ -88,6 +89,22 @@ impl ArmLatch {
     }
 }
 
+#[derive(Default)]
+struct ControlPause {
+    was_down: bool,
+    resume_at: Option<Instant>,
+}
+
+impl ControlPause {
+    fn update(&mut self, down: bool, now: Instant) -> bool {
+        if self.was_down && !down {
+            self.resume_at = Some(now + CONTROL_RELEASE_DELAY);
+        }
+        self.was_down = down;
+        down || self.resume_at.is_some_and(|at| now < at)
+    }
+}
+
 /// The only auto-mode polling loop for PoE1 and PoE2. No game-specific reads
 /// or game-specific input decisions belong here.
 pub fn run<P: GameAutomationPolicy>(
@@ -106,6 +123,7 @@ pub fn run<P: GameAutomationPolicy>(
     };
     let mut status = None;
     let mut failures = FailureMonitor::default();
+    let mut control_pause = ControlPause::default();
     let mut needs_refresh = false;
     let mut next_refresh = Instant::now();
     let mut next_config_reload = Instant::now() + CONFIG_RELOAD;
@@ -166,7 +184,9 @@ pub fn run<P: GameAutomationPolicy>(
         }
 
         let focused = is_process_foreground(process.pid());
-        if let Some(armed) = latch.observe(toggle.is_down(), focused) {
+        let toggle_down = toggle.is_down();
+        let ctrl_down = focused && (latch.armed || toggle_down) && control_is_down();
+        if let Some(armed) = latch.observe(toggle_down, focused && !ctrl_down) {
             policy.on_arm_change(armed);
             needs_refresh = armed;
             next_refresh = started;
@@ -180,16 +200,24 @@ pub fn run<P: GameAutomationPolicy>(
             );
         }
         if !latch.armed {
+            control_pause = ControlPause::default();
             failures.clear();
             policy.on_inactive();
             nap(started, control, latch.armed, focused, status);
             continue;
         }
         if !focused {
+            control_pause = ControlPause::default();
             failures.clear();
             needs_refresh = true;
             policy.on_focus_lost();
             show(&mut status, policy.focus_status());
+            nap(started, control, latch.armed, focused, status);
+            continue;
+        }
+        if control_pause.update(ctrl_down, started) {
+            policy.on_inactive();
+            show(&mut status, "PAUSED (Ctrl shortcut)");
             nap(started, control, latch.armed, focused, status);
             continue;
         }
@@ -276,7 +304,27 @@ fn nap(
 
 #[cfg(test)]
 mod tests {
-    use super::{ArmLatch, TickOutcome};
+    use super::{ArmLatch, ControlPause, TickOutcome, CONTROL_RELEASE_DELAY};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn ctrl_pause_extends_through_release_and_restarts_on_another_shortcut() {
+        let mut pause = ControlPause::default();
+        let start = Instant::now();
+        assert!(!pause.update(false, start));
+        assert!(pause.update(true, start));
+        let released = start + Duration::from_secs(1);
+        assert!(pause.update(false, released));
+        let pressed_again = released + CONTROL_RELEASE_DELAY - Duration::from_millis(1);
+        assert!(pause.update(true, pressed_again));
+        let released_again = pressed_again + Duration::from_secs(1);
+        assert!(pause.update(false, released_again));
+        assert!(pause.update(
+            false,
+            released_again + CONTROL_RELEASE_DELAY - Duration::from_millis(1)
+        ));
+        assert!(!pause.update(false, released_again + CONTROL_RELEASE_DELAY));
+    }
 
     #[test]
     fn reported_enabled_state_follows_the_latch_through_focus_pauses() {

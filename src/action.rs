@@ -7,7 +7,7 @@
 use std::io;
 use std::time::Instant;
 
-use crate::input::{is_process_foreground, send_key, KeyBinding};
+use crate::input::{control_is_down, is_process_foreground, send_key, KeyBinding};
 use crate::process::Process;
 
 /// Maximum number of flask slots any supported game can request.
@@ -63,8 +63,8 @@ impl DispatchError {
     }
 }
 
-/// Focus is checked before AND after policy validation, so a slow memory
-/// sample cannot authorize sending to a window that lost focus meanwhile.
+/// Recheck focus and Ctrl across policy validation. A read can finish after
+/// focus moved or after the user started a shortcut such as a price check.
 /// The policy decides whether to re-sample memory, effects or chat.
 pub fn dispatch<T>(
     process: &Process,
@@ -73,7 +73,7 @@ pub fn dispatch<T>(
 ) -> Result<Dispatch<T>, DispatchError> {
     dispatch_with(
         action,
-        || is_process_foreground(process.pid()),
+        || is_process_foreground(process.pid()) && !control_is_down(),
         validate,
         send_key,
     )
@@ -81,7 +81,7 @@ pub fn dispatch<T>(
 
 fn dispatch_with<T>(
     action: ActionRequest,
-    focused: impl Fn() -> bool,
+    input_allowed: impl Fn() -> bool,
     validate: impl FnOnce() -> io::Result<Option<T>>,
     send: impl FnOnce(KeyBinding) -> io::Result<()>,
 ) -> Result<Dispatch<T>, DispatchError> {
@@ -95,13 +95,13 @@ fn dispatch_with<T>(
             )));
         }
     }
-    if !focused() {
+    if !input_allowed() {
         return Ok(Dispatch::Skipped);
     }
     let Some(validated) = validate().map_err(DispatchError::Validation)? else {
         return Ok(Dispatch::Skipped);
     };
-    if !focused() {
+    if !input_allowed() {
         return Ok(Dispatch::Skipped);
     }
     send(action.binding).map_err(DispatchError::Input)?;

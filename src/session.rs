@@ -120,6 +120,16 @@ impl GameSession {
         }
     }
 
+    pub(crate) fn poe1_present_skills(
+        &mut self,
+        process: &Process,
+    ) -> io::Result<std::collections::BTreeSet<poe1::skills::SkillId>> {
+        match &mut self.reader {
+            Reader::Poe1(adapter) => adapter.present_skills(process),
+            Reader::Poe2(_) => Err(unsupported()),
+        }
+    }
+
     pub fn poe1_nearby(&mut self, process: &Process) -> io::Result<poe1::nearby::NearbySnapshot> {
         match &mut self.reader {
             Reader::Poe1(adapter) => adapter.nearby(process),

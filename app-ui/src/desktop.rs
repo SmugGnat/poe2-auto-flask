@@ -1,4 +1,4 @@
-//! Windows console attachment and per-configuration-directory instance ownership.
+//! Native window setup, console attachment and per-configuration-directory instance ownership.
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io;
 use std::path::Path;
@@ -35,28 +35,31 @@ fn native_handle(window: &slint::Window) -> Option<windows_sys::Win32::Foundatio
         .flatten()
 }
 
-pub fn prepare_background(window: &slint::Window) -> io::Result<()> {
+pub fn prepare_window(window: &slint::Window) -> io::Result<()> {
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
     use windows_sys::Win32::Graphics::Gdi::{
         FillRect, GetStockObject, SetDCBrushColor, DC_BRUSH, HDC,
     };
     use windows_sys::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, WM_ERASEBKGND, WM_NCDESTROY};
-    const BACKGROUND_SUBCLASS: usize = 0xAF110;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetClientRect, GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_STYLE, STYLESTRUCT,
+        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WM_ERASEBKGND,
+        WM_NCDESTROY, WM_STYLECHANGING, WS_CAPTION,
+    };
+    const WINDOW_SUBCLASS: usize = 0xAF110;
 
-    unsafe extern "system" fn background(
+    unsafe extern "system" fn window_proc(
         hwnd: HWND,
         message: u32,
         wparam: WPARAM,
         lparam: LPARAM,
         id: usize,
-        _data: usize,
+        suppress_caption: usize,
     ) -> LRESULT {
-        // Winit has no class background brush. An opaque Wine window can expose
-        // a white backing surface between mapping and Slint's first present.
-        // Handle only native background erasure; Slint still owns every frame.
         unsafe {
             if message == WM_ERASEBKGND {
+                // Winit has no class background brush. An opaque Wine window can
+                // expose a white surface between mapping and Slint's first present.
                 let dc = wparam as HDC;
                 let mut rect = RECT::default();
                 if !dc.is_null() && GetClientRect(hwnd, &mut rect) != 0 {
@@ -68,8 +71,16 @@ pub fn prepare_background(window: &slint::Window) -> io::Result<()> {
                         return 1;
                     }
                 }
+            } else if message == WM_STYLECHANGING
+                && wparam as i32 == GWL_STYLE
+                && suppress_caption != 0
+                && lparam != 0
+            {
+                // Winit can reapply the caption style when showing or restoring.
+                let styles = &mut *(lparam as *mut STYLESTRUCT);
+                styles.styleNew &= !WS_CAPTION;
             } else if message == WM_NCDESTROY {
-                RemoveWindowSubclass(hwnd, Some(background), id);
+                RemoveWindowSubclass(hwnd, Some(window_proc), id);
             }
             DefSubclassProc(hwnd, message, wparam, lparam)
         }
@@ -77,10 +88,37 @@ pub fn prepare_background(window: &slint::Window) -> io::Result<()> {
 
     let hwnd =
         native_handle(window).ok_or_else(|| io::Error::other("Native window unavailable"))?;
-    // Called on the UI thread before the HWND is mapped. The subclass is
-    // removed at destruction and uses a stock brush, with no owned resources.
-    if unsafe { SetWindowSubclass(hwnd, Some(background), BACKGROUND_SUBCLASS, 0) } == 0 {
-        return Err(io::Error::last_os_error());
+    let suppress_caption = !poe2_auto_flask::platform::running_under_wine();
+    // Install on the UI thread while the HWND is still hidden.
+    unsafe {
+        if SetWindowSubclass(
+            hwnd,
+            Some(window_proc),
+            WINDOW_SUBCLASS,
+            usize::from(suppress_caption),
+        ) == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        if suppress_caption {
+            // Winit keeps WS_CAPTION on frameless top-level windows for snapping.
+            // A native caption can still paint over Slint's custom header.
+            let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
+            if style & WS_CAPTION != 0
+                && (SetWindowLongW(hwnd, GWL_STYLE, (style & !WS_CAPTION) as i32) == 0
+                    || SetWindowPos(
+                        hwnd,
+                        std::ptr::null_mut(),
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
+                    ) == 0)
+            {
+                return Err(io::Error::last_os_error());
+            }
+        }
     }
     Ok(())
 }

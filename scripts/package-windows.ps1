@@ -8,7 +8,7 @@ $temporary = Join-Path ([System.IO.Path]::GetTempPath()) ("poe-auto-flask-licens
 
 try {
     New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
-    Copy-Item -LiteralPath $ExecutablePath -Destination (Join-Path $OutputDir "poe2-auto-flask-windows-x64.exe")
+    Copy-Item -LiteralPath $ExecutablePath -Destination (Join-Path $OutputDir "poe-auto-flask.exe")
 
     $thirdParty = Join-Path $temporary "THIRD_PARTY_NOTICES.txt"
     & "$PSScriptRoot/collect-third-party-licenses.ps1" `

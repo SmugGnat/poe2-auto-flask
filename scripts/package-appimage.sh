@@ -17,7 +17,7 @@ appdir="$package_dir/AppDir"
 mkdir -p "$appdir/usr/bin" "$appdir/usr/lib/poe2-auto-flask" \
     "$appdir/usr/share/licenses/poe2-auto-flask" "$(dirname -- "$output")"
 cp -- "$linux_launcher" "$appdir/usr/bin/poe2-auto-flask"
-cp -- "$windows_artifact/poe2-auto-flask-windows-x64.exe" \
+cp -- "$windows_artifact/poe-auto-flask.exe" \
     "$appdir/usr/lib/poe2-auto-flask/poe2-auto-flask.exe"
 cp -- "$windows_artifact/LICENSES.txt" "$appdir/usr/share/licenses/poe2-auto-flask/"
 cp -- "$repo_root/LICENSE" "$appdir/usr/share/licenses/poe2-auto-flask/LICENSE"

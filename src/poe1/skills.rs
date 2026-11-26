@@ -26,10 +26,22 @@ pub enum SkillId {
     Steelskin,
     BladefallOfTrarthus,
     Convocation,
+    Focus,
     ImmortalCall,
 }
 
 impl SkillId {
+    pub(super) const ALL: [Self; 8] = [
+        Self::MoltenShell,
+        Self::BloodRage,
+        Self::SpiritOffering,
+        Self::Steelskin,
+        Self::BladefallOfTrarthus,
+        Self::Convocation,
+        Self::Focus,
+        Self::ImmortalCall,
+    ];
+
     pub fn label(self) -> &'static str {
         match self {
             Self::MoltenShell => "Molten Shell",
@@ -38,6 +50,7 @@ impl SkillId {
             Self::Steelskin => "Steelskin",
             Self::BladefallOfTrarthus => "Bladefall of Trarthus",
             Self::Convocation => "Convocation",
+            Self::Focus => "Focus",
             Self::ImmortalCall => "Immortal Call",
         }
     }
@@ -68,6 +81,7 @@ impl SkillId {
                 name.eq_ignore_ascii_case("Convocation")
                     || name.eq_ignore_ascii_case("ConvocationOld")
             }
+            Self::Focus => name.eq_ignore_ascii_case("Focus"),
             Self::ImmortalCall => {
                 name.eq_ignore_ascii_case("ImmortalCall")
                     || name.eq_ignore_ascii_case("immortal_call")
@@ -99,28 +113,37 @@ pub struct SkillCache {
     names: HashMap<usize, String>,
 }
 
+#[derive(Default)]
+struct SkillMatches {
+    found: BTreeMap<SkillId, (u32, bool)>,
+    ambiguous: BTreeSet<SkillId>,
+}
+
 impl SkillCache {
     pub fn clear(&mut self) {
         self.actor = None;
         self.names.clear();
     }
 
-    /// Inspect the character's Actor ActiveSkills vector exactly once for
-    /// every requested preset, then inspect cooldowns once. No game-wide
-    /// skill database enumeration occurs here.
-    pub fn sample_many(
+    /// Presentation only. A detected skill is present even when the game
+    /// marks it unusable or more than one entry matches the preset.
+    pub(crate) fn sample_present(
         &mut self,
         process: &Process,
         probe: &Probe,
-        requested: &[SkillId],
-    ) -> io::Result<BTreeMap<SkillId, SkillReadiness>> {
-        let wanted: BTreeSet<SkillId> = requested.iter().copied().collect();
-        if wanted.is_empty() {
-            return Ok(BTreeMap::new());
-        }
-        if wanted.len() > MAX_SKILLS {
-            return Err(invalid("PoE1 requested skill count exceeds limit"));
-        }
+    ) -> io::Result<BTreeSet<SkillId>> {
+        let wanted = BTreeSet::from(SkillId::ALL);
+        let (_, matches) = self.scan_matches(process, probe, &wanted, true)?;
+        Ok(matches.found.into_keys().collect())
+    }
+
+    fn scan_matches(
+        &mut self,
+        process: &Process,
+        probe: &Probe,
+        wanted: &BTreeSet<SkillId>,
+        verify_snapshot: bool,
+    ) -> io::Result<(usize, SkillMatches)> {
         if read_player_id(process, probe.local_player)? != probe.player_id {
             self.clear();
             return Err(io::Error::new(
@@ -148,8 +171,7 @@ impl SkillCache {
 
         // Game skill ID and the Actor's base unusable flag. The static
         // definition name is cached across ticks, not the live usability.
-        let mut found: BTreeMap<SkillId, (u32, bool)> = BTreeMap::new();
-        let mut ambiguous = BTreeSet::new();
+        let mut matches = SkillMatches::default();
         for entry in list.chunks_exact(16) {
             let details_ptr = u64_at(entry, 0) as usize;
             if !plausible_ptr(details_ptr) {
@@ -173,13 +195,13 @@ impl SkillCache {
                 self.names.insert(row, name);
             }
             let name = self.names.get(&row).expect("skill name was resolved");
-            for &skill in &wanted {
+            for &skill in wanted {
                 if !skill.matches_internal_name(name) {
                     continue;
                 }
                 record_match(
-                    &mut found,
-                    &mut ambiguous,
+                    &mut matches.found,
+                    &mut matches.ambiguous,
                     skill,
                     (
                         u32_at(&details, SKILL_DETAIL_ID),
@@ -188,6 +210,37 @@ impl SkillCache {
                 );
             }
         }
+
+        if verify_snapshot
+            && (process.read_bytes(actor + ACTOR_SKILLS, 16)? != header
+                || read_player_id(process, probe.local_player)? != probe.player_id)
+        {
+            self.clear();
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "PoE1 player or skill list changed during detection",
+            ));
+        }
+        Ok((actor, matches))
+    }
+
+    /// Inspect the character's Actor skill list once for all requested
+    /// presets, then read cooldowns for skills that may be usable.
+    pub fn sample_many(
+        &mut self,
+        process: &Process,
+        probe: &Probe,
+        requested: &[SkillId],
+    ) -> io::Result<BTreeMap<SkillId, SkillReadiness>> {
+        let wanted: BTreeSet<SkillId> = requested.iter().copied().collect();
+        if wanted.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        if wanted.len() > MAX_SKILLS {
+            return Err(invalid("PoE1 requested skill count exceeds limit"));
+        }
+        let (actor, SkillMatches { found, ambiguous }) =
+            self.scan_matches(process, probe, &wanted, false)?;
 
         // No cooldown read is necessary when every requested skill is
         // absent or the Actor already reports it unusable.
@@ -380,6 +433,14 @@ mod tests {
             SkillReadiness::Usable
         );
         assert!(SkillId::ImmortalCall.is_guard());
+    }
+
+    #[test]
+    fn focus_matches_the_granted_action_without_matching_the_trigger_support() {
+        assert!(SkillId::Focus.matches_internal_name("Focus"));
+        assert!(SkillId::Focus.matches_internal_name("focus"));
+        assert!(!SkillId::Focus.matches_internal_name("SupportTriggerSpellFromHelmet"));
+        assert!(!SkillId::Focus.matches_internal_name("ElementalFocus"));
     }
 
     #[test]

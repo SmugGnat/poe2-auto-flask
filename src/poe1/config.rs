@@ -35,6 +35,7 @@ pub struct Poe1SkillsConfig {
     pub steelskin: SteelskinConfig,
     pub bladefall_of_trarthus: BladefallOfTrarthusConfig,
     pub convocation: ConvocationConfig,
+    pub focus: FocusConfig,
     pub immortal_call: ImmortalCallConfig,
 }
 
@@ -50,6 +51,7 @@ impl Poe1SkillsConfig {
                 self.bladefall_of_trarthus.binding(),
             ),
             (self.convocation.enabled, self.convocation.binding()),
+            (self.focus.enabled, self.focus.binding()),
             (self.immortal_call.enabled, self.immortal_call.binding()),
         ] {
             if enabled && toggle.conflicts_with(binding?) {
@@ -127,6 +129,47 @@ impl ConvocationConfig {
     }
 
     pub fn validate(&self) -> io::Result<()> {
+        self.binding()?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FocusConfig {
+    pub enabled: bool,
+    pub key: String,
+    /// Zero disables the Life condition.
+    pub threshold_percent: u8,
+    /// Zero disables the Shield condition.
+    pub shield_threshold_percent: u8,
+}
+
+impl Default for FocusConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            key: "G".to_string(),
+            threshold_percent: 95,
+            shield_threshold_percent: 0,
+        }
+    }
+}
+
+impl FocusConfig {
+    pub fn binding(&self) -> io::Result<KeyBinding> {
+        skill_binding(&self.key, "poe1.skills.focus.key")
+    }
+
+    pub fn validate(&self) -> io::Result<()> {
+        if self.threshold_percent > 99 || self.shield_threshold_percent > 99 {
+            return Err(invalid("Focus Life and Shield thresholds must be 0..=99"));
+        }
+        if self.enabled && self.threshold_percent == 0 && self.shield_threshold_percent == 0 {
+            return Err(invalid(
+                "Focus requires a Life or Shield threshold above 0%",
+            ));
+        }
         self.binding()?;
         Ok(())
     }
@@ -530,6 +573,17 @@ impl Config {
                 std::slice::from_ref(&convocation.key),
             ));
         }
+        let focus = &self.poe1.skills.focus;
+        if focus.enabled {
+            skills.push(summary_entry(
+                "Focus",
+                &resource_threshold_summary(
+                    &focus.key,
+                    focus.threshold_percent,
+                    focus.shield_threshold_percent,
+                ),
+            ));
+        }
         let bladefall = &self.poe1.skills.bladefall_of_trarthus;
         if bladefall.enabled {
             skills.push(summary_entry(
@@ -541,7 +595,7 @@ impl Config {
         if call.enabled {
             skills.push(summary_entry(
                 "Immortal Call",
-                &guard_summary(
+                &resource_threshold_summary(
                     &call.key,
                     call.threshold_percent,
                     call.shield_threshold_percent,
@@ -552,7 +606,7 @@ impl Config {
         if shell.enabled {
             skills.push(summary_entry(
                 "Molten Shell",
-                &guard_summary(
+                &resource_threshold_summary(
                     &shell.key,
                     shell.threshold_percent,
                     shell.shield_threshold_percent,
@@ -591,7 +645,7 @@ impl Config {
         if steel.enabled {
             skills.push(summary_entry(
                 "Steelskin",
-                &guard_summary(
+                &resource_threshold_summary(
                     &steel.key,
                     steel.threshold_percent,
                     steel.shield_threshold_percent,
@@ -622,11 +676,11 @@ fn threshold_summary(config: &FlaskConfig) -> String {
     }
 }
 
-fn guard_summary(key: &str, life: u8, shield: u8) -> Vec<String> {
-    let threshold = if shield == 0 {
-        format!("Life <={life}%")
-    } else {
-        format!("Life <={life}% OR Shield <={shield}%")
+fn resource_threshold_summary(key: &str, life: u8, shield: u8) -> Vec<String> {
+    let threshold = match (life, shield) {
+        (0, shield) => format!("Shield <={shield}%"),
+        (life, 0) => format!("Life <={life}%"),
+        (life, shield) => format!("Life <={life}% OR Shield <={shield}%"),
     };
     vec![key.to_string(), threshold]
 }
@@ -659,6 +713,7 @@ impl Poe1Config {
         self.skills.steelskin.validate()?;
         self.skills.bladefall_of_trarthus.validate()?;
         self.skills.convocation.validate()?;
+        self.skills.focus.validate()?;
         self.skills.immortal_call.validate()?;
         let enabled_keys = [
             (
@@ -685,6 +740,7 @@ impl Poe1Config {
                 self.skills.convocation.enabled,
                 self.skills.convocation.binding()?,
             ),
+            (self.skills.focus.enabled, self.skills.focus.binding()?),
             (
                 self.skills.immortal_call.enabled,
                 self.skills.immortal_call.binding()?,

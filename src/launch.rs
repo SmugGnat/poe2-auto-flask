@@ -16,7 +16,7 @@ pub struct LaunchOptions {
 
 impl LaunchOptions {
     pub const HELP: &str = "PoE Auto Flask
-Usage: poe2-auto-flask.exe [--auto | --debug] [--game poe1|poe2] [--nearby]
+Usage: poe-auto-flask.exe [--auto | --debug] [--game poe1|poe2] [--nearby]
                           [--config-dir PATH] [--renderer=software|femtovg]
 Normal launch opens the UI with automation disabled.
 --debug runs read-only terminal diagnostics.
